@@ -259,6 +259,10 @@ Windows 11（宿主）
 | 3 m 悬停 | ✅ | 实测位置 `(0.00, 0.04, -2.99)`，`failsafe=false`，`pre_flight_checks_pass=true` |
 | 集成脚本（环境/启动/巡检/重建） | ✅ | `scripts/env.sh`、`run_agent.sh`、`run_px4_sitl.sh`、`run_offboard.sh`、`check_stack.sh`、`build_px4_sitl.sh`、`build_ros_ws.sh` |
 | 飞行日志留存 | ✅ | `logs/2026-09-14/10_54_06.ulg` |
+| 航点任务状态机 | ✅ | `mission/waypoint_mission.py`：WAIT_PX4 → ARM → OFFBOARD → TAKEOFF → CRUISE → LAND → WAIT_DISARM → DONE，含逐阶段超时与中止处理 |
+| 5 m 方形航迹 | ✅ | 实测航点误差 0.15 / 0.26 / 0.44 / 0.45 / 0.46 m，均在 0.5 m 判定半径内；起飞高度误差 0.03 m |
+| Offboard 桥接与看门狗 | ✅ | `px4_interface/offboard_bridge.py`：20 Hz 设定点流；目标 2 s 未刷新即保持当前位置；PX4 状态丢失即停止发设定点交还 failsafe |
+| 坐标系转换与单元测试 | ✅ | `px4_interface/frames.py`（NED↔ENU、偏航换算）+ 8 个 pytest 用例 |
 
 完整链路已打通：
 
@@ -273,10 +277,19 @@ failsafe: False
 position z ≈ -3 m
 ```
 
+当前 ROS 2 工作区结构：
+
+```text
+ros2_px4_ws/src/
+├── px4_msgs/            （submodule）
+├── px4_offboard/        早期单文件验证节点（保留为对照）
+├── px4_interface/       接口层：QoS、坐标系、状态跟踪、Offboard 桥接
+└── mission/             任务层：航点状态机 + 启动文件
+```
+
 ## 4.4 尚未实现
 
 ```text
-□ 多航点飞行、航点状态机
 □ 自动降落（已尝试，未通过，见 4.5）
 □ 人工接管（RC → PX4 优先通道）与 failsafe 故障注入验证
 □ 传感器接入（AirSim RGB / Depth / LiDAR → ROS 2）
@@ -290,11 +303,16 @@ position z ≈ -3 m
 ## 4.5 已知问题
 
 ```text
-自动降落：下发 commander land 后进入 AUTO_LAND（nav_state=18），
-但落地后报 High Accelerometer Bias / vertical velocity unstable，
-vehicle_land_detected.landed 未置位，local position 的 z 出现漂移。
-取证日志：logs/2026-09-14/10_54_06.ulg
-处理计划：路线图阶段 A 首要调试项
+自动降落未通过：下发 land 后进入 AUTO_LAND，但 40 s 内未落地（任务按超时中止）。
+2026-09-16 现场读到的 vehicle_land_detected：
+  in_ground_effect=true, in_descend=true, close_to_ground_or_skipped_check=true,
+  has_low_throttle=false, ground_contact=false, at_rest=false, landed=false
+即飞机在近地面悬停而非触地，落地检测链路无法置位。
+取证日志：logs/2026-09-14/10_54_06.ulg、logs/2026-09-16/05_45_12.ulg
+处理计划：路线图阶段 A 首要调试项（分析 .ulg，必要时改用近地判定 + 显式 disarm 收尾）
+
+航段速度偏慢：5 m 直线航段耗时约 15–19 s（约 0.3 m/s），
+远低于 PX4 默认 MPC_XY_VEL_MAX，需确认限制来自轨迹生成还是 AirSim 锁步时间。
 ```
 
 ---

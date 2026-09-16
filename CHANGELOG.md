@@ -15,6 +15,61 @@
 
 ---
 
+## [2026-09-16] 阶段 A：Offboard 桥接与航点任务（dev 分支）
+
+### 新增
+
+- `ros2_px4_ws/src/px4_interface`（新包 0.1.0）——项目中唯一直接收发 PX4 `/fmu/*` 的接口层：
+  - `offboard_bridge` 节点：20 Hz 位置设定点流；接收 ENU 目标点（`geometry_msgs/PoseStamped`）
+    并转换为 PX4 的 NED；接收文本指令 `arm` / `disarm` / `disarm_force` / `offboard` / `land` / `hold`；
+    看门狗：PX4 状态超时即停止发送设定点（交还 PX4 failsafe），目标点 2 s 未刷新即保持当前位置。
+  - `frames.py`：NED↔ENU 位置、偏航换算与距离函数（全项目坐标系约定的唯一实现处）。
+  - `qos.py`：PX4 话题 QoS（BEST_EFFORT + TRANSIENT_LOCAL），避免默认 RELIABLE 导致收不到数据。
+  - `state.py`：`Px4State` 快照 + `Px4StateMonitor`（状态订阅、时间戳与超时判定；实现为库而非节点）。
+  - `test/test_frames.py`：8 个坐标系换算单元测试。
+- `ros2_px4_ws/src/mission`（新包 0.1.0）——任务层，不直接接触 PX4 消息：
+  - `waypoint_mission` 节点：WAIT_PX4 → ARM → OFFBOARD → TAKEOFF → CRUISE → LAND → WAIT_DISARM → DONE；
+    逐阶段超时、到达判定（半径 0.5 m + 保持 1 s）、failsafe 或离开 OFFBOARD 立即中止、
+    超时中止时自动触发降落。
+  - `launch/square_5m.launch.py`：一键启动桥接与 5 m 方形航迹任务。
+
+### 变更
+
+- README 4.3 / 4.4 / 4.5：补充航点任务与桥接能力、更新未实现清单与已知问题。
+- `docs/roadmap.md` 阶段 A：写入本次进度与遗留项。
+
+### 验证
+
+- 单元测试：`pytest src/px4_interface/test/test_frames.py` → 8 passed。
+- 编译：`colcon build --symlink-install --packages-select px4_interface mission` → 2 个包成功（1 分 31 秒）。
+- 端到端飞行（AirSim + PX4 SITL + uXRCE-DDS + ROS 2）：
+
+```text
+起飞高度误差                       0.03 m
+航点 0 / 1 / 2 / 3 / 4 位置误差     0.15 / 0.26 / 0.44 / 0.45 / 0.46 m（判定半径 0.5 m）
+指令 ACK                           arm(400) OK、offboard(176) OK、land(21) OK
+设定点流                           20 Hz（保持既有验证结论）
+任务结果                           LEG 全部通过后，LAND 阶段 40 s 超时 → ABORT
+取证                               logs/2026-09-16/05_45_12.ulg、logs/2026-09-16/mission_run2_console.log
+                                   （日志目录按约定不入库，保留在本地）
+```
+
+### 已知问题
+
+- **自动降落仍未通过**（沿用 2026-09-14 的遗留项）：`AUTO_LAND` 后 40 s 未落地。
+  现场读取 `vehicle_land_detected`：`in_ground_effect=true`、`in_descend=true`、
+  `close_to_ground_or_skipped_check=true`，但 `has_low_throttle=false`、
+  `ground_contact=false`、`at_rest=false`、`landed=false`，
+  即飞机在近地面悬停而非触地，落地检测链路无法置位。
+- **航段速度偏慢**：5 m 直线航段耗时约 15–19 s（约 0.3 m/s），与 PX4 默认参数不符，
+  待确认限制来自轨迹生成参数还是 AirSim 锁步时间。
+- **首次运行失败（已修复）**：任务只在进入阶段时发布一次目标，被桥接节点的 2 s 目标超时判定为过期，
+  导致未起飞即超时；已改为任务侧按 5 Hz 周期刷新目标。
+- 状态桥接以共享库形式实现（与路线图原描述的“独立节点”不同），
+  原因是避免重复订阅代码与额外进程，属于有意偏离。
+
+---
+
 ## [2026-09-16]
 
 ### 新增

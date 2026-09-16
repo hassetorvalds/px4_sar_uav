@@ -45,6 +45,19 @@ ros2_px4_ws/src/
   复盘，先解决低速/地面段估计器问题，再谈自动降落验收。
 - 位置控制精度受 AirSim 传感器与 EKF 影响，验收前先确认悬停段 `eph/epv` 量级。
 
+进度（2026-09-16）：
+
+- ✅ 航点状态机与 5 m 方形航迹：实测误差 0.15 / 0.26 / 0.44 / 0.45 / 0.46 m（判定半径 0.5 m），
+  起飞高度误差 0.03 m；
+- ✅ 设定点看门狗（目标超时保持位置、PX4 状态丢失交还 failsafe）与逐阶段超时中止；
+- ⏳ 自动降落未通过：`AUTO_LAND` 后 40 s 未落地。现场读数为近地悬停
+  （`has_low_throttle=false`、`ground_contact=false`、`at_rest=false`，而
+  `in_ground_effect=true`、`in_descend=true`），下一步分析 `.ulg` 并确定收尾策略；
+- ⏳ 航段速度约 0.3 m/s（5 m 用 15–19 s），待确认是否受轨迹生成参数或 AirSim 锁步影响；
+- 实现落点：`px4_interface`（`offboard_bridge` / `frames` / `qos` / `state`）与
+  `mission`（`waypoint_mission` + `square_5m.launch.py`）。
+  其中状态桥接实现为**共享库**（`Px4StateMonitor`）而非独立节点，避免重复订阅与多余进程。
+
 ## 2. 阶段 B：人工接管与安全层（1–2 周）
 
 **目标**：让“随时接管”成为可验证能力，而不是架构口号。
