@@ -334,8 +334,10 @@ ros2_px4_ws/src/
     ├── px4_ros_uxrce_dds_ws/       Micro-XRCE-DDS-Agent 2.4.2
     │
     ├── ros2_px4_ws/                ROS 2 工作区
-    │   ├── px4_msgs/
-    │   └── px4_offboard/
+    │   ├── px4_msgs/               submodule，与固件匹配的消息定义
+    │   ├── px4_offboard/           早期单文件验证节点（保留作对照）
+    │   ├── px4_interface/          接口层：QoS / 坐标系 / 状态跟踪 / Offboard 桥接
+    │   └── mission/                任务层：航点状态机 + launch
     │
     ├── scripts/                    环境与启动脚本
     │   ├── env.sh                  统一 source 入口（推荐每个终端先执行）
@@ -465,6 +467,14 @@ ros2_px4_ws/src/
 
 # 6. 推荐的最终 ROS 2 软件模块
 
+模块实现状态（2026-09-16）：
+
+```text
+✅ px4_interface     QoS、坐标系转换、状态跟踪、Offboard 桥接（offboard_bridge）
+✅ mission           航点状态机（phase A 主体已实现，自动降落待修）
+□ sensor_bridge □ mapping □ planner □ vlm □ perception □ safety
+```
+
 ## 6.1 `px4_interface`
 
 负责所有 PX4 接口：
@@ -474,6 +484,10 @@ px4_state_bridge
 px4_command
 px4_offboard
 ```
+
+当前实现（2026-09-16）：`offboard_bridge` 节点 + `frames` / `qos` / `state` 三个库模块。
+其中状态跟踪做成**共享库**（`Px4StateMonitor`）而不是独立节点，避免重复订阅；
+`px4_command` 的指令入口目前是 `std_msgs/String` 文本话题，后续需要结构化接口时再升级为服务/动作。
 
 输入：
 
@@ -1119,7 +1133,7 @@ VLM：
 
 ## Phase 1：基础自主飞行
 
-当前基本完成。
+当前基本完成（详见第 4.3 节的能力清单）。
 
 ```text
 ✅ AirSim + UE4
@@ -1130,15 +1144,15 @@ VLM：
 ✅ Offboard
 ✅ ARM
 ✅ 3 m 悬停
+✅ 航点状态机
+✅ 5 m 方形航迹（实测误差 0.15–0.46 m）
 ```
 
 下一步：
 
 ```text
-□ 多航点
-□ 5 m 方形航迹
-□ 自动降落
-□ 航点状态机
+⏳ 自动降落（流程已实现，未通过：AUTO_LAND 后近地悬停不触地，见 4.5）
+□ 降落后的自动上锁与任务收尾
 ```
 
 ---
@@ -1506,12 +1520,12 @@ PX4 Manual
 ## 飞控层
 
 ```text
-□ PX4 正常运行
-□ AirSim 正常连接
-□ ROS 2 正常通信
-□ Offboard 稳定
-□ ARM 正常
-□ 自动降落
+✅ PX4 正常运行
+✅ AirSim 正常连接
+✅ ROS 2 正常通信
+✅ Offboard 稳定（20 Hz 设定点流，含看门狗）
+✅ ARM 正常
+⏳ 自动降落（未通过，见 4.5）
 ```
 
 ## 安全层
@@ -1528,7 +1542,7 @@ PX4 Manual
 ## 规划层
 
 ```text
-□ 多航点
+✅ 多航点（5 m 方形航迹，误差 0.15–0.46 m）
 □ 在线重规划
 □ 静态避障
 □ 动态避障
@@ -1662,11 +1676,18 @@ VLM
 ✅ Offboard
 ✅ ARM
 ✅ 3 m Hover
+✅ 航点状态机 + 5 m 方形航迹
 ```
 
-下一阶段建议：
+当前进行中：
 
-### Step 1
+```text
+⏳ 自动降落（AUTO_LAND 后近地悬停不触地，见 4.5 与 docs/roadmap.md）
+```
+
+后续步骤：
+
+### Step 1（已完成）
 
 实现：
 
@@ -1681,6 +1702,8 @@ VLM
 ```
 
 ### Step 2
+
+状态：进行中。
 
 实现：
 
