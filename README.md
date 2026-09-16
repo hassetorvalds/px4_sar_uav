@@ -309,8 +309,9 @@ vehicle_land_detected.landed 未置位，local position 的 z 出现漂移。
 └── px4_sar_uav/                    ← 项目根目录
     │
     ├── README.md                   本规划文档
+    ├── CHANGELOG.md                变更日志（所有改动留痕）
     │
-    ├── PX4-Autopilot/              PX4 1.18（main 分支不变）
+    ├── PX4-Autopilot/              PX4 1.18（main 分支不变，submodule 固定版本）
     │
     ├── px4_ros_uxrce_dds_ws/       Micro-XRCE-DDS-Agent 2.4.2
     │
@@ -324,10 +325,13 @@ vehicle_land_detected.landed 未置位，local position 的 z 出现漂移。
     │   ├── run_px4_sitl.sh         启动 PX4 SITL（连接 Windows 侧 AirSim）
     │   ├── run_offboard.sh         运行当前 Offboard 验证节点
     │   ├── check_stack.sh          链路冒烟检查
+    │   ├── build_dds_ws.sh         重建 Micro XRCE-DDS Agent 工作区
     │   ├── build_ros_ws.sh         重建 ROS 2 工作区
     │   └── build_px4_sitl.sh       重建 PX4 SITL
     │
-    └── docs/                       迁移记录与开发路线图
+    ├── docs/                       迁移记录与开发路线图
+    │
+    └── logs/                       飞行日志（不入库）
 ```
 
 迁移结论与注意事项：
@@ -346,6 +350,44 @@ scripts/run_px4_sitl.sh        # 终端 2
 scripts/run_offboard.sh        # 终端 3
 scripts/check_stack.sh         # 终端 4：链路检查
 ```
+
+## 5.1 从远程仓库克隆与重建
+
+远程仓库：`https://github.com/hassetorvalds/px4_sar_uav.git`
+
+仓库内只包含**自研源码、脚本与文档**；三个第三方依赖以 submodule 形式固定版本，
+构建产物（`build/`、`install/`、`log/`）与飞行日志（`logs/`、`*.ulg`）不入库。
+
+在新机器上从零建立可运行环境：
+
+```bash
+git clone https://github.com/hassetorvalds/px4_sar_uav.git
+cd px4_sar_uav
+
+# 1) 拉取三个外部依赖（PX4 自带二级子模块，耗时较长；只需执行一次）
+git submodule update --init --recursive
+
+# 2) 重建三套构建（Agent 与 PX4 首次构建需要联网）
+scripts/build_dds_ws.sh        # Micro XRCE-DDS Agent
+scripts/build_px4_sitl.sh      # PX4 SITL
+scripts/build_ros_ws.sh        # px4_msgs + px4_offboard
+
+# 3) 启动链路（Windows 侧 AirSim 需先运行）
+source scripts/env.sh
+scripts/run_agent.sh           # 终端 1
+scripts/run_px4_sitl.sh        # 终端 2
+scripts/run_offboard.sh        # 终端 3
+scripts/check_stack.sh         # 终端 4：链路检查
+```
+
+注意：
+
+- `git submodule update --init`（不带 `--recursive`）只拉取三个外部依赖本身，
+  PX4 构建所需的二级子模块仍然缺失，`make px4_sitl` 会报错；
+- 三个 `build_*` 脚本都会**清空并重建**对应工作区，因为它们内部含绝对路径，
+  这也是换目录后必须重建的原因（详见 `docs/migration-2026-09-14.md`）；
+- 飞行日志不入库，如需留存请从
+  `PX4-Autopilot/build/px4_sitl_default/rootfs/log/` 自行取出保存。
 
 未来建议逐步扩展：
 

@@ -15,6 +15,45 @@
 
 ---
 
+## [2026-09-16]
+
+### 新增
+
+- 版本库初始化：项目根目录建立 Git 仓库，主分支 `main`，首个提交 `52daa86`
+  （25 个文件，仓库对象 144 KiB，提交树 0.07 MB）。
+  - `.gitignore`：排除构建产物（`build/`、`install/`、`log/`）、飞行与仿真数据
+    （`logs/`、`*.ulg`、`*.bag`、`*.db3`、`*.mcap`）、Python 缓存与编辑器目录。
+  - `.gitmodules`：三个第三方依赖以 submodule 固定版本，源码不入库：
+    - `PX4-Autopilot` → `PX4/PX4-Autopilot` @ `d0c6c0df7f`（main 分支）
+    - `ros2_px4_ws/src/px4_msgs` → `PX4/px4_msgs` @ `598c7aa`（release/1.18 分支）
+    - `px4_ros_uxrce_dds_ws/src/Micro-XRCE-DDS-Agent` → `eProsima/Micro-XRCE-DDS-Agent` @ `57d0862`（v2.4.2）
+- `scripts/build_dds_ws.sh`：重建 Micro XRCE-DDS Agent 工作区。
+  Agent 的 `install/`（含 `MicroXRCEAgent` 可执行文件）不入库，
+  新克隆的仓库必须执行本脚本才能得到 Agent；首次构建需要联网。
+- README 新增「5.1 从远程仓库克隆与重建」：从零克隆 → 初始化 submodule →
+  重建三套构建 → 启动链路，并说明 `--recursive` 的必要性。
+
+### 变更
+
+- 推送 `main` 到远程仓库 `https://github.com/hassetorvalds/px4_sar_uav.git`，
+  本地 `main` 已跟踪 `origin/main`。
+- 建立开发分支 `dev`（自 `main` 牵出）：后续功能开发在 `dev` 进行，稳定后合回 `main`。
+- README 第 5 节目录树补充 `CHANGELOG.md`、`logs/` 与新增脚本条目。
+
+### 验证
+
+- `git ls-remote origin`：`refs/heads/main` 与本地 `HEAD` 同为 `52daa86`，工作区干净。
+- 入库体积核对：提交树 0.07 MB、仓库对象 144 KiB；3.5 GB 构建产物与 71 MB 飞行日志均未入库。
+
+### 已知问题
+
+- README 5.1 的「全新克隆 → 重建」路径尚未在干净环境完整跑通。
+  `build_dds_ws.sh` 的构建逻辑与已实际执行过的命令一致（`colcon build --packages-select
+  microxrcedds_agent`），但本机 Agent 工作区是既有构建，未做从零重跑验证；
+  首次在新机器使用若报错，请在本文件补充记录。
+
+---
+
 ## [2026-09-14]
 
 ### 新增
