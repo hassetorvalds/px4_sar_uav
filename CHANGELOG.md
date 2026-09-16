@@ -39,6 +39,9 @@
   本地 `main` 已跟踪 `origin/main`。
 - 建立开发分支 `dev`（自 `main` 牵出）：后续功能开发在 `dev` 进行，稳定后合回 `main`。
 - README 第 5 节目录树补充 `CHANGELOG.md`、`logs/` 与新增脚本条目。
+- README 新增「5.2 分支约定」：`main`（稳定基线，只接受合并）/ `dev`（集成）/
+  `feature/*` / `hotfix/*` 的分工，分支命名、提交信息前缀、CHANGELOG 同步要求，
+  以及 submodule 指针变更与禁入库内容的约束。
 
 ### 验证
 

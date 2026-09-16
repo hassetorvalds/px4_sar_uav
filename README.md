@@ -389,6 +389,36 @@ scripts/check_stack.sh         # 终端 4：链路检查
 - 飞行日志不入库，如需留存请从
   `PX4-Autopilot/build/px4_sitl_default/rootfs/log/` 自行取出保存。
 
+## 5.2 分支约定
+
+分支模型（保持简单，够用即可）：
+
+```text
+main        稳定基线，始终可构建、可复现，只接受合并，不直接提交
+ │
+ ├── dev    集成分支，日常开发都在这里提交
+ │    │
+ │    └── feature/<模块>-<简述>   单个功能，从 dev 牵出，完成后合回 dev
+ │
+ └── hotfix/<简述>               紧急修复，从 main 牵出，修完合回 main 并同步到 dev
+```
+
+约定：
+
+1. **`main` 不直接提交**：所有改动经 `dev`（功能分支）合入，保持 `main` 与
+   远程一致、随时可作为可复现基线。
+2. **分支命名**：`feature/<模块>-<简述>`，模块用第 6 节的包名（如 `feature/px4_interface-waypoints`），
+   修复用 `hotfix/<简述>`，纯文档用 `docs/<简述>`。
+3. **提交信息**：使用 `feat:` / `fix:` / `docs:` / `chore:` / `refactor:` / `test:` 前缀 + 中文描述，
+   一次提交只做一件事。
+4. **CHANGELOG 必须同步**：任何提交都要按 `CHANGELOG.md` 顶部「记录规范」补充当天条目，
+   含命令、实测数值或文件路径。
+5. **涉及飞控、接管、failsafe 的改动**：必须附触发条件与结果，只跑通正常流程不算验证。
+6. **submodule 指针变更**：在 CHANGELOG 中记录变更前后的 commit。
+7. **阶段里程碑**打标签，例如 `v0.1-multipoint`、`v0.2-takeover`。
+8. **禁止入库**：`build/`、`install/`、`log/`、`logs/`、`*.ulg`（已由 `.gitignore` 兜底，
+   不要用 `git add -f` 绕过）。
+
 未来建议逐步扩展：
 
 ```text
