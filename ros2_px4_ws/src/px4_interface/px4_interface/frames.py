@@ -46,3 +46,21 @@ def enu_yaw_to_ned_yaw(yaw_enu: float) -> float:
 def distance(a, b) -> float:
     """两个三维点的欧氏距离。"""
     return math.sqrt(sum((float(ai) - float(bi)) ** 2 for ai, bi in zip(a, b)))
+
+
+def body_flu_to_enu(forward: float, left: float, up: float, heading_enu: float):
+    """机体速度（FLU：前/左/上）→ ENU 世界速度。
+
+    ``heading_enu`` 为 ENU 偏航角（自东轴逆时针，弧度）。
+    前向单位向量为 (cosψ, sinψ)，左向为其逆时针旋转 90°，即 (-sinψ, cosψ)。
+    """
+    cos_h = math.cos(heading_enu)
+    sin_h = math.sin(heading_enu)
+    east = forward * cos_h - left * sin_h
+    north = forward * sin_h + left * cos_h
+    return (east, north, up)
+
+
+def flip_yaw_rate_sign(rate: float) -> float:
+    """偏航角速度在 ENU(逆时针为正) 与 NED(顺时针为正) 之间转换。"""
+    return -rate

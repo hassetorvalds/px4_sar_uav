@@ -140,6 +140,12 @@ ros2_px4_ws/src/
 
 验收：“红色建筑后面”“窗户附近”等空间指代能落到地图区域坐标，并在仿真中飞到该区域。
 
+进度（2026-09-19，前置部分提前完成）：已借鉴 See, Point, Fly 的“指向点 + 粗略深度”
+思路实现 `vlm` 包（`pointing.py` / `vlm_client.py` / `vlm_navigator.py`），
+链路“图像 → 指向 → 机体系反投影 → 机体速度 → PX4”已用 mock provider 飞通；
+真实 VLM 与真实相机图像尚未接入。参考实现为 Proprietary 许可，仅借鉴思路
+（见 `docs/reference-see-point-fly.md`）。
+
 ## 8. 阶段 H：人员搜救视觉（3–5 周）
 
 交付物：`perception/`（person_detector、person_tracker、victim_verifier）。

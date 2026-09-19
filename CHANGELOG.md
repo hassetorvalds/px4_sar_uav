@@ -15,6 +15,61 @@
 
 ---
 
+## [2026-09-19] VLM 指向式导航（借鉴 See, Point, Fly）
+
+### 新增
+
+- `ros2_px4_ws/src/vlm`（新包 0.1.0）——图像指向式导航层：
+  - `pointing.py`：VLM 指向结果解析（兼容 `[{"point": [y, x], "depth": d, "label": ...}]`，
+    容忍 markdown 包裹与前后解释文字）、深度等级→米映射、通用针孔反投影、
+    “指向→机体 FLU 速度+偏航角速度”换算（含速度/偏航限幅）。纯标准库实现，可离线单元测试。
+  - `vlm_client.py`：provider 抽象（`mock` / `gemini` / `openai`），仅用标准库 urllib 发 HTTPS，
+    图像编码走 PIL（规避本机 cv2 与 numpy 2.x 的 ABI 冲突），密钥只从环境变量读取。
+  - `vlm_navigator.py`：节点，负责图像→VLM→指向→机体速度→ENU 速度指令；
+    安全边界：仅在 PX4 已解锁、处于 OFFBOARD、未 failsafe 时发布，指令超时即停止发布。
+  - `test/test_pointing.py`：10 个单元测试（解析容错、深度映射、反投影、限幅、偏航符号）。
+  - `test/data/test_scene.jpg`：离线验证用静态图像。
+- `scripts/test_vlm_pipeline.sh`：VLM 管道端到端验证脚本（mock provider + 静态图像）。
+- `docs/reference-see-point-fly.md`：参考实现记录（含许可说明、借鉴清单、有意差异）。
+- `px4_interface` 新增**速度控制模式**：`~/velocity_setpoint`（`geometry_msgs/Twist`，
+  ENU 世界速度 + 偏航角速度）；`frames.py` 新增 `body_flu_to_enu` 与 `flip_yaw_rate_sign`。
+
+### 变更
+
+- `scripts/env.sh`：修复在 `set -u` / `set -e -o pipefail` 调用下必然失败的问题
+  （ROS 2 `setup.bash` 引用未定义变量；沙箱内 `ip route` 返回非零）。此前所有
+  `run_*.sh` / `build_*.sh` 在该场景下都会中断。
+
+### 验证
+
+- 单元测试：`px4_interface` 14 项 + `vlm` 10 项，共 24 passed。
+- 编译：`colcon build --symlink-install --packages-select px4_interface vlm`（1 分 3 秒）。
+- 端到端飞行（AirSim + PX4 SITL + uXRCE-DDS + ROS 2，mock provider + 静态图像，真实发布速度指令）：
+
+```text
+起飞后位置                    x(N)=0.01  y(E)=0.04  z(D)=-2.99
+VLM 指向                      像素 (396,240)，深度 1.00 m
+机体速度                      前 0.97、左 -0.23 m/s，偏航 -0.24 rad/s
+桥接节点                      ENU (0.33, 0.94, 0.00) m/s，模式切换 position → velocity
+VLM 阶段结束后位置             x(N)=-5.34 y(E)=3.83 z(D)=-2.92（实际位移约 6.5 m）
+取证                          logs/2026-09-19/{06_01_50.ulg, bridge_console.log,
+                              vlm_navigator_console.log, vlm_decisions/*.json}
+```
+
+结论：图像 → 指向 → 几何反投影 → 机体速度 → PX4 的整条链路已打通并驱动机体运动。
+
+### 已知问题
+
+- **静态图像下不会收敛**：目标点固定在图像中不动，偏航指令持续存在，机体因此转圈
+  （本次实测位移方向与持续转向一致）。闭环收敛需要真实相机图像，属下一步 `sensor_bridge`。
+- **真实 VLM 未验证**：本机无 API key，`gemini` / `openai` 两个 provider 只做了接口实现与
+  mock 验证，尚未发起过真实请求。
+- **许可风险已规避但需留意**：参考仓库为 Proprietary（保留所有权利），本项目只借鉴思路、
+  自写代码与提示词；若后续要复制其代码或提示词，需先取得作者授权
+  （详见 `docs/reference-see-point-fly.md`）。
+
+---
+
 ## [2026-09-16] 阶段 A：Offboard 桥接与航点任务（dev 分支）
 
 ### 新增

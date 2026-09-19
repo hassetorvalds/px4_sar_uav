@@ -14,7 +14,7 @@
 import time
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from px4_msgs.msg import (
     OffboardControlMode,
     TrajectorySetpoint,
@@ -24,7 +24,7 @@ from px4_msgs.msg import (
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from .frames import distance, enu_to_ned, ned_to_enu
+from .frames import distance, enu_to_ned, flip_yaw_rate_sign, ned_to_enu
 from .qos import px4_qos
 from .state import Px4StateMonitor
 
@@ -62,11 +62,14 @@ class OffboardBridge(Node):
         self.declare_parameter('setpoint_rate_hz', 20.0)
         self.declare_parameter('status_timeout_s', 1.0)
         self.declare_parameter('target_timeout_s', 2.0)
+        self.declare_parameter('velocity_timeout_s', 1.0)
         self.declare_parameter('status_publish_period_s', 1.0)
 
         rate_hz = float(self.get_parameter('setpoint_rate_hz').value)
         status_timeout_s = float(self.get_parameter('status_timeout_s').value)
         self._target_timeout_s = float(self.get_parameter('target_timeout_s').value)
+        self._velocity_timeout_s = float(
+            self.get_parameter('velocity_timeout_s').value)
         self._status_period_s = float(self.get_parameter('status_publish_period_s').value)
 
         qos = px4_qos()
@@ -81,6 +84,8 @@ class OffboardBridge(Node):
             VehicleCommandAck, '/fmu/out/vehicle_command_ack_v1',
             self._on_command_ack, qos)
         self.create_subscription(PoseStamped, '~/target_pose', self._on_target_pose, 10)
+        self.create_subscription(
+            Twist, '~/velocity_setpoint', self._on_velocity_setpoint, 10)
         self.create_subscription(String, '~/command', self._on_command, 10)
         self._status_pub = self.create_publisher(String, '~/status', 10)
 
@@ -88,6 +93,10 @@ class OffboardBridge(Node):
 
         self._target_enu = None
         self._last_target_monotonic = 0.0
+        self._velocity_enu = None
+        self._yaw_rate_enu = 0.0
+        self._last_velocity_monotonic = 0.0
+        self._mode = 'position'
         self._streaming = True
         self._had_status = False
         self._last_status_publish = 0.0
@@ -96,7 +105,8 @@ class OffboardBridge(Node):
         self.create_timer(1.0 / rate_hz, self._on_timer)
         self.get_logger().info(
             f'offboard_bridge 启动：{rate_hz:.1f} Hz 设定点流，'
-            f'状态超时 {status_timeout_s:.1f} s，目标超时 {self._target_timeout_s:.1f} s')
+            f'状态超时 {status_timeout_s:.1f} s，目标超时 {self._target_timeout_s:.1f} s，'
+            f'速度超时 {self._velocity_timeout_s:.1f} s')
         self.get_logger().info(
             'ROS 侧一律使用 ENU 坐标；与 PX4 的 NED 转换只在本节点内发生')
 
@@ -142,6 +152,7 @@ class OffboardBridge(Node):
             self._send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
         elif command == CMD_HOLD:
             self._target_enu = None
+            self._velocity_enu = None
             self.get_logger().info('清空目标点，改为保持当前位置')
         else:
             self.get_logger().warn(
@@ -158,6 +169,28 @@ class OffboardBridge(Node):
             level = 'OK' if msg.result == VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED \
                 else f'失败(result={msg.result})'
             self.get_logger().info(f'指令 ACK：cmd={msg.command} {level}')
+
+    def _on_velocity_setpoint(self, msg: Twist) -> None:
+        """接收 ENU 世界速度（m/s）与 ENU 偏航角速度（rad/s）。
+
+        这是 "See, Point, Fly" 一类“指向即飞行”闭环的落地接口：
+        上层把图像里的目标点翻译成机体速度，再按当前航向旋转到 ENU 世界系后发布到这里。
+        """
+        new_velocity = (float(msg.linear.x), float(msg.linear.y), float(msg.linear.z))
+        new_yaw_rate = float(msg.angular.z)
+        previous = self._velocity_enu
+        changed = (
+            previous is None
+            or distance(new_velocity, previous) > 1e-3
+            or abs(new_yaw_rate - self._yaw_rate_enu) > 1e-3
+        )
+        self._velocity_enu = new_velocity
+        self._yaw_rate_enu = new_yaw_rate
+        self._last_velocity_monotonic = time.monotonic()
+        if changed:
+            self.get_logger().info(
+                f'新速度指令 ENU=({new_velocity[0]:.2f}, {new_velocity[1]:.2f}, '
+                f'{new_velocity[2]:.2f}) m/s，偏航角速度 {new_yaw_rate:.2f} rad/s')
 
     # ------------------------------------------------------------------
     # 定时器：设定点流 + 看门狗
@@ -183,6 +216,7 @@ class OffboardBridge(Node):
             self.get_logger().info('PX4 状态恢复，继续发送设定点')
             self._streaming = True
 
+        self._update_mode()
         self._publish_offboard_control_mode()
         self._publish_trajectory_setpoint()
         self._maybe_publish_status()
@@ -190,8 +224,8 @@ class OffboardBridge(Node):
     def _publish_offboard_control_mode(self) -> None:
         msg = OffboardControlMode()
         msg.timestamp = self._px4_timestamp_us()
-        msg.position = True
-        msg.velocity = False
+        msg.position = self._mode == 'position'
+        msg.velocity = self._mode == 'velocity'
         msg.acceleration = False
         msg.attitude = False
         msg.body_rate = False
@@ -200,6 +234,10 @@ class OffboardBridge(Node):
         self._offboard_mode_pub.publish(msg)
 
     def _publish_trajectory_setpoint(self) -> None:
+        if self._mode == 'velocity':
+            self._publish_velocity_setpoint()
+            return
+
         target_enu = self._effective_target_enu()
         x_ned, y_ned, z_ned = enu_to_ned(*target_enu)
 
@@ -213,6 +251,34 @@ class OffboardBridge(Node):
         msg.yaw = _NAN
         msg.yawspeed = _NAN
         self._setpoint_pub.publish(msg)
+
+    def _publish_velocity_setpoint(self) -> None:
+        """把 ENU 世界速度转换为 PX4 的 NED 速度设定点。"""
+        velocity_enu = self._velocity_enu or (0.0, 0.0, 0.0)
+        x_ned, y_ned, z_ned = enu_to_ned(*velocity_enu)
+
+        msg = TrajectorySetpoint()
+        msg.timestamp = self._px4_timestamp_us()
+        msg.position = [_NAN, _NAN, _NAN]
+        msg.velocity = [float(x_ned), float(y_ned), float(z_ned)]
+        msg.acceleration = [_NAN, _NAN, _NAN]
+        msg.jerk = [_NAN, _NAN, _NAN]
+        msg.yaw = _NAN
+        msg.yawspeed = float(flip_yaw_rate_sign(self._yaw_rate_enu))
+        self._setpoint_pub.publish(msg)
+
+    def _update_mode(self) -> None:
+        """位置控制与速度控制之间切换；速度指令超时即回到位置保持。"""
+        velocity_active = (
+            self._velocity_enu is not None
+            and (time.monotonic() - self._last_velocity_monotonic)
+            <= self._velocity_timeout_s
+        )
+        new_mode = 'velocity' if velocity_active else 'position'
+        if new_mode != self._mode:
+            suffix = '（速度指令超时，回到位置保持）' if new_mode == 'position' else ''
+            self.get_logger().info(f'控制模式切换：{self._mode} → {new_mode}{suffix}')
+            self._mode = new_mode
 
     def _effective_target_enu(self):
         """当前生效的目标点（ENU）。
@@ -248,7 +314,7 @@ class OffboardBridge(Node):
         msg.data = (
             f'armed={state.armed} nav_state={state.nav_state} '
             f'failsafe={state.failsafe} landed={state.landed} '
-            f'target_enu={target_txt} streaming={self._streaming}')
+            f'mode={self._mode} target_enu={target_txt} streaming={self._streaming}')
         self._status_pub.publish(msg)
 
     # ------------------------------------------------------------------

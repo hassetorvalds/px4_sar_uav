@@ -263,6 +263,8 @@ Windows 11（宿主）
 | 5 m 方形航迹 | ✅ | 实测航点误差 0.15 / 0.26 / 0.44 / 0.45 / 0.46 m，均在 0.5 m 判定半径内；起飞高度误差 0.03 m |
 | Offboard 桥接与看门狗 | ✅ | `px4_interface/offboard_bridge.py`：20 Hz 设定点流；目标 2 s 未刷新即保持当前位置；PX4 状态丢失即停止发设定点交还 failsafe |
 | 坐标系转换与单元测试 | ✅ | `px4_interface/frames.py`（NED↔ENU、偏航换算）+ 8 个 pytest 用例 |
+| 速度控制模式 | ✅ | `offboard_bridge` 支持 `~/velocity_setpoint`（ENU 速度 + 偏航角速度），超时自动回位置保持 |
+| VLM 指向式导航 | ✅ | `vlm/`：图像指向解析 → 针孔反投影 → 机体速度；mock provider + 静态图像已飞通 |
 
 完整链路已打通：
 
@@ -295,7 +297,7 @@ ros2_px4_ws/src/
 □ 传感器接入（AirSim RGB / Depth / LiDAR → ROS 2）
 □ 实时避障与局部重规划
 □ 自主探索 / 搜索区域覆盖
-□ VLM 自然语言任务解析
+□ VLM 自然语言任务解析（当前只有“指向式导航”，尚未做任务级结构化输出）
 □ 语义地图与语言—空间定位
 □ 人员检测、跟踪、疑似被困人员确认
 ```
@@ -313,6 +315,11 @@ ros2_px4_ws/src/
 
 航段速度偏慢：5 m 直线航段耗时约 15–19 s（约 0.3 m/s），
 远低于 PX4 默认 MPC_XY_VEL_MAX，需确认限制来自轨迹生成还是 AirSim 锁步时间。
+
+VLM 指向式导航：静态图像下目标点不动、偏航不收敛，机体会持续转圈；
+闭环收敛需要真实相机图像（下一步 sensor_bridge）。真实 VLM API 尚未验证（本机无 key）。
+参考实现 SeePointFly 为 Proprietary 许可，本项目只借鉴思路、自写代码与提示词
+（见 docs/reference-see-point-fly.md）。
 ```
 
 ---
@@ -472,7 +479,8 @@ ros2_px4_ws/src/
 ```text
 ✅ px4_interface     QoS、坐标系转换、状态跟踪、Offboard 桥接（offboard_bridge）
 ✅ mission           航点状态机（phase A 主体已实现，自动降落待修）
-□ sensor_bridge □ mapping □ planner □ vlm □ perception □ safety
+✅ vlm               指向解析、几何反投影、机体速度指令（真实 API 未验证）
+□ sensor_bridge □ mapping □ planner □ perception □ safety
 ```
 
 ## 6.1 `px4_interface`

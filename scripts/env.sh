@@ -12,6 +12,13 @@
 _env_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PX4_SAR_ROOT="$(cd "${_env_dir}/.." && pwd)"
 
+# ROS 2 / colcon 的 setup.bash 会引用未定义变量，若调用方开启了 set -u 会直接报错，
+# 这里在 source 期间临时关闭 -u，结束后恢复，使 env.sh 可被任何脚本安全引用。
+_env_restore_u=0
+case "$-" in
+    *u*) _env_restore_u=1; set +u ;;
+esac
+
 export PX4_SAR_ROOT
 export PX4_DIR="${PX4_SAR_ROOT}/PX4-Autopilot"
 export ROS_WS="${PX4_SAR_ROOT}/ros2_px4_ws"
@@ -45,7 +52,8 @@ fi
 export PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-10016}"   # 10016 = none_iris
 if [ -z "${PX4_SIM_HOST_ADDR:-}" ]; then
     # 优先用默认网关（WSL2 NAT 模式下即 Windows 主机），退回 DNS 配置里的主机地址
-    PX4_SIM_HOST_ADDR="$(ip route show 2>/dev/null | awk '/default/ {print $3; exit}')"
+    # 注意：沙箱/受限环境里 ip 命令可能返回非零，用 || true 保证在 set -e -o pipefail 下不中断
+    PX4_SIM_HOST_ADDR="$({ ip route show 2>/dev/null || true; } | awk '/default/ {print $3; exit}')"
     if [ -z "${PX4_SIM_HOST_ADDR}" ] && [ -r /etc/resolv.conf ]; then
         PX4_SIM_HOST_ADDR="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf 2>/dev/null)"
     fi
@@ -58,3 +66,8 @@ if [ -z "${PX4_SIM_HOST_ADDR}" ]; then
 else
     echo "[env] PX4_SIM_HOST_ADDR=${PX4_SIM_HOST_ADDR}  PX4_SYS_AUTOSTART=${PX4_SYS_AUTOSTART}"
 fi
+
+if [ "${_env_restore_u}" = "1" ]; then
+    set -u
+fi
+unset _env_restore_u

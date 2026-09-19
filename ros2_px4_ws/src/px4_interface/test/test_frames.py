@@ -9,9 +9,11 @@ import math
 import pytest
 
 from px4_interface.frames import (
+    body_flu_to_enu,
     distance,
     enu_to_ned,
     enu_yaw_to_ned_yaw,
+    flip_yaw_rate_sign,
     ned_to_enu,
     ned_yaw_to_enu_yaw,
     normalize_angle,
@@ -55,3 +57,33 @@ def test_normalize_angle_wraps_into_pi_range():
 
 def test_distance():
     assert distance((0.0, 0.0, 0.0), (3.0, 4.0, 0.0)) == pytest.approx(5.0)
+
+
+def test_body_velocity_heading_east():
+    # 机头朝东（ENU 偏航 0）：前进=东，左=北
+    east, north, up = body_flu_to_enu(1.0, 0.0, 0.0, 0.0)
+    assert (east, north, up) == pytest.approx((1.0, 0.0, 0.0))
+    east, north, _ = body_flu_to_enu(0.0, 1.0, 0.0, 0.0)
+    assert (east, north) == pytest.approx((0.0, 1.0))
+
+
+def test_body_velocity_heading_north():
+    # 机头朝北（ENU 偏航 +pi/2）：前进=北，左=西
+    east, north, _ = body_flu_to_enu(1.0, 0.0, 0.0, math.pi / 2.0)
+    assert (east, north) == pytest.approx((0.0, 1.0), abs=1e-9)
+    east, north, _ = body_flu_to_enu(0.0, 1.0, 0.0, math.pi / 2.0)
+    assert (east, north) == pytest.approx((-1.0, 0.0), abs=1e-9)
+
+
+def test_body_velocity_up_and_heading_consistency():
+    # 上方向与偏航无关；且 ENU→NED 偏航互换与 body→enu 的组合保持模长
+    _, _, up = body_flu_to_enu(0.0, 0.0, 2.5, 1.234)
+    assert up == pytest.approx(2.5)
+    speed = 1.7
+    enu = body_flu_to_enu(speed, 0.0, 0.0, 0.7)
+    assert distance((0.0, 0.0, 0.0), enu) == pytest.approx(speed)
+
+
+def test_yaw_rate_sign_flip_is_involution():
+    assert flip_yaw_rate_sign(flip_yaw_rate_sign(0.8)) == pytest.approx(0.8)
+    assert flip_yaw_rate_sign(0.8) == pytest.approx(-0.8)
