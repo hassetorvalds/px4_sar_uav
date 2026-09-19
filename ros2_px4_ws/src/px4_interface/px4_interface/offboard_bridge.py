@@ -34,6 +34,7 @@ CMD_DISARM = 'disarm'
 CMD_DISARM_FORCE = 'disarm_force'
 CMD_OFFBOARD = 'offboard'
 CMD_LAND = 'land'
+CMD_LAND_FAST = 'land_fast'
 CMD_HOLD = 'hold'
 
 SUPPORTED_COMMANDS = (
@@ -42,6 +43,7 @@ SUPPORTED_COMMANDS = (
     CMD_DISARM_FORCE,
     CMD_OFFBOARD,
     CMD_LAND,
+    CMD_LAND_FAST,
     CMD_HOLD,
 )
 
@@ -63,6 +65,8 @@ class OffboardBridge(Node):
         self.declare_parameter('status_timeout_s', 1.0)
         self.declare_parameter('target_timeout_s', 2.0)
         self.declare_parameter('velocity_timeout_s', 1.0)
+        self.declare_parameter('land_descend_speed_mps', 0.5)
+        self.declare_parameter('land_duration_margin_s', 2.0)
         self.declare_parameter('status_publish_period_s', 1.0)
 
         rate_hz = float(self.get_parameter('setpoint_rate_hz').value)
@@ -70,6 +74,10 @@ class OffboardBridge(Node):
         self._target_timeout_s = float(self.get_parameter('target_timeout_s').value)
         self._velocity_timeout_s = float(
             self.get_parameter('velocity_timeout_s').value)
+        self._land_descend_speed = float(
+            self.get_parameter('land_descend_speed_mps').value)
+        self._land_margin_s = float(
+            self.get_parameter('land_duration_margin_s').value)
         self._status_period_s = float(self.get_parameter('status_publish_period_s').value)
 
         qos = px4_qos()
@@ -97,6 +105,8 @@ class OffboardBridge(Node):
         self._yaw_rate_enu = 0.0
         self._last_velocity_monotonic = 0.0
         self._mode = 'position'
+        self._landing_started_at = None
+        self._landing_duration_s = 0.0
         self._streaming = True
         self._had_status = False
         self._last_status_publish = 0.0
@@ -150,6 +160,8 @@ class OffboardBridge(Node):
                 param2=float(_PX4_CUSTOM_MAIN_MODE_OFFBOARD))
         elif command == CMD_LAND:
             self._send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+        elif command == CMD_LAND_FAST:
+            self._start_fast_land()
         elif command == CMD_HOLD:
             self._target_enu = None
             self._velocity_enu = None
@@ -169,6 +181,46 @@ class OffboardBridge(Node):
             level = 'OK' if msg.result == VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED \
                 else f'失败(result={msg.result})'
             self.get_logger().info(f'指令 ACK：cmd={msg.command} {level}')
+
+    def _start_fast_land(self) -> None:
+        """按已知高度用速度模式定时下降，落定后强制上锁。
+
+        背景（2026-09-19 实测）：AirSim + PX4 的 `AUTO_LAND` 在高度估计漂移时会
+        以约 0.04 m/s 龟速下降（3 m 用约 80 s），期间 z 估计在 -2.8 到 +2.0 之间摆动。
+        本通道只依赖“起飞时的高度估计 + 恒定下降速度 + 时间”，因此不受漂移影响。
+        """
+        state = self._monitor.snapshot()
+        altitude = abs(state.z) if state.z_valid else 0.0
+        if altitude < 0.2:
+            # 已经在地面附近，直接上锁
+            self._landing_duration_s = 0.5
+        else:
+            self._landing_duration_s = (altitude / max(self._land_descend_speed, 0.05)
+                                        + self._land_margin_s)
+        self._landing_started_at = time.monotonic()
+        self.get_logger().info(
+            f'快速降落：起始高度 {altitude:.2f} m，'
+            f'下降速度 {self._land_descend_speed:.2f} m/s，'
+            f'预计 {self._landing_duration_s:.1f} s 后上锁')
+
+    def _update_fast_land(self) -> bool:
+        """维护快速降落流程；返回 True 表示正在降落。"""
+        if self._landing_started_at is None:
+            return False
+        elapsed = time.monotonic() - self._landing_started_at
+        if elapsed >= self._landing_duration_s:
+            self.get_logger().info('快速降落完成，强制上锁')
+            self._send_vehicle_command(
+                VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                param1=0.0, param2=_FORCE_DISARM_MAGIC)
+            self._landing_started_at = None
+            self._velocity_enu = None
+            return False
+        # 持续刷新速度指令，使速度模式保持激活
+        self._velocity_enu = (0.0, 0.0, -abs(self._land_descend_speed))
+        self._yaw_rate_enu = 0.0
+        self._last_velocity_monotonic = time.monotonic()
+        return True
 
     def _on_velocity_setpoint(self, msg: Twist) -> None:
         """接收 ENU 世界速度（m/s）与 ENU 偏航角速度（rad/s）。
@@ -212,6 +264,7 @@ class OffboardBridge(Node):
             return
 
         self._had_status = True
+        self._update_fast_land()
         if not self._streaming:
             self.get_logger().info('PX4 状态恢复，继续发送设定点')
             self._streaming = True
