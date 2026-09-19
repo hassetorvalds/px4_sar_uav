@@ -15,6 +15,40 @@
 
 ---
 
+## [2026-09-19] 传感器接入（sensor_bridge，未完成验证）
+
+### 新增
+
+- `ros2_px4_ws/src/sensor_bridge`（新包 0.1.0）：`airsim_camera` 节点，
+  把 AirSim 相机图像发布为 ROS 2 话题（`~/image` bgr8、`~/depth` 32FC1、`~/camera_info`）。
+  默认 `host=127.0.0.1`、`port=45000`（本机 settings.json 的 ApiServerPort）、`vehicle_name=Drone1`。
+- Windows 侧 `C:\Users\steve\Documents\AirSim\settings.json` 新增 `Cameras` 段：
+  Scene 1280×720、DepthPlanar 640×480、DepthVis 640×480（原配置没有相机段，用的是 256×144 默认相机）。
+  备份：`settings.json.bak-20260919`。**需重启 AirSim 生效。**
+
+### 环境（本机一次性配置）
+
+```text
+pip3 install --user msgpack==0.6.2 msgpack-rpc-python==0.4.1 tornado==4.5.3
+pip3 install --user --no-deps airsim        # 得到 airsim 1.8.1 客户端
+```
+
+坑：`msgpack-rpc-python 0.4.1` 仍在使用 `msgpack.Packer(encoding=...)`，而 msgpack ≥ 1.0
+已移除该参数，报错为 `__init__() got an unexpected keyword argument 'encoding'`；
+必须把 msgpack 钉在 0.6.x。另：`pip install airsim` 会先在元数据阶段导入自身而失败，
+需先装好 msgpack/msgpackrpc 再 `--no-deps` 安装。
+
+### 验证（部分）
+
+```text
+colcon build --symlink-install --packages-select sensor_bridge     ✅ 1 分 0 秒
+ros2 topic list                                                     ✅ /airsim_camera/{image,depth,camera_info} 均出现
+端到端抓帧                                                          ⏳ 未完成：探测 172.21.192.1:45000 与 :4560 均不可达，
+                                                                   说明 AirSim 仿真当前未运行，需启动后重测
+```
+
+---
+
 ## [2026-09-19] 降落问题定位与快速降落通道
 
 ### 新增
