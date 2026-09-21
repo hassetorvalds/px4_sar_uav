@@ -15,6 +15,25 @@
 
 ---
 
+## [2026-09-21] 高度真值对比脚本 + AirSim reset 的副作用（需要重启仿真）
+
+### 新增
+
+- `scripts/compare_altitude.py`：同时采样 PX4 高度估计（`vehicle_local_position_v1`）
+  与 AirSim 真值位姿（RPC `simGetVehiclePose`），输出逐点对比表与期间变化量差值，
+  用于核查“指令方向与高度变化不一致”以及 EKF 高度漂移。**尚未跑通验证**（见下）。
+
+### 已知问题
+
+- **AirSim `reset()` 会破坏 PX4 的仿真链路**：本机为 `PX4Multirotor` + `LockStep`，
+  reset 后飞机位姿确实回到原点（实测 (31.56, 30.49) → (0, 0)），
+  但 PX4 连接的 TCP 4560 不再监听，`reset()` 与 `simPause(False)` 均无法恢复，
+  PX4 一直停在 “Waiting for simulator to accept connection on TCP port 4560”。
+  必须重启 UE4 仿真才能恢复。
+  结论：**不要在与 PX4 会话共存时调用 `reset()`**；需要复位位姿就重启仿真。
+
+---
+
 ## [2026-09-21] 测量基础修复 + 接近停止保护
 
 ### 新增
