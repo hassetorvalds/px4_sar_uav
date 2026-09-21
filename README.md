@@ -266,7 +266,9 @@ Windows 11（宿主）
 | 速度控制模式 | ✅ | `offboard_bridge` 支持 `~/velocity_setpoint`（ENU 速度 + 偏航角速度），超时自动回位置保持 |
 | VLM 指向式导航 | ✅ | `vlm/`：图像指向解析 → 针孔反投影 → 机体速度；mock provider + 静态图像已飞通 |
 | 相机接入（AirSim → ROS 2） | ✅ | `sensor_bridge/airsim_camera`：彩色 1280×720 @2.04 Hz（bgr8）、深度 0.4 Hz（32FC1）、camera_info |
-| 实时图像闭环 | ✅ | `vision_stub` 视觉桩驱动：加 10° 偏航死区 + 增益 0.5 后，目标像素稳定在距中心约 10 px，偏航 100% 为零 |
+| 实时图像闭环 | ✅ | `vision_stub` 视觉桩驱动：10° 偏航死区 + 增益 0.5 后目标像素稳定在距中心约 10 px，偏航 100% 为零 |
+| 接近停止保护 | ✅ | `stop_distance_m`（默认 0.35 m）：目标过近即停止平移；单元测试覆盖，飞行中尚未触发 |
+| 状态测量脚本 | ✅ | `scripts/px4_state_snapshot.py` 连续采样，替换会读到无效值的 `topic echo --once` |
 
 完整链路已打通：
 

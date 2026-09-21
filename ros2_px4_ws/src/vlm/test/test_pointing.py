@@ -129,3 +129,32 @@ def test_lower_gain_reduces_yaw_command():
     strong = pointing_to_body_velocity(pointing, geometry, yaw_gain=1.0)
     weak = pointing_to_body_velocity(pointing, geometry, yaw_gain=0.5)
     assert abs(weak.yaw_rate) < abs(strong.yaw_rate)
+
+
+def test_stop_distance_zeroes_translation():
+    geometry = PointingGeometry(640, 480, hfov_deg=90.0)
+    # depth=1 → 0.2 m，小于停止距离 0.35 m：应完全停止平移
+    close = parse_pointing('{"point": [500, 520], "depth": 1}')
+    command = pointing_to_body_velocity(
+        close, geometry, base_velocity=1.0,
+        yaw_deadband_rad=0.17, stop_distance_m=0.35)
+    assert (command.forward, command.left, command.up) == pytest.approx((0.0, 0.0, 0.0))
+    assert command.yaw_rate == 0.0          # 目标在死区内：平移与偏航都为零
+
+
+def test_stop_distance_keeps_yaw_when_target_off_center():
+    geometry = PointingGeometry(640, 480, hfov_deg=90.0)
+    close_but_left = parse_pointing('{"point": [500, 100], "depth": 1}')
+    command = pointing_to_body_velocity(
+        close_but_left, geometry, base_velocity=1.0,
+        stop_distance_m=0.35, yaw_gain=0.5, max_yaw_rate=0.4)
+    assert (command.forward, command.left, command.up) == pytest.approx((0.0, 0.0, 0.0))
+    assert command.yaw_rate > 0.0
+
+
+def test_far_target_still_translates_with_stop_distance():
+    geometry = PointingGeometry(640, 480, hfov_deg=90.0)
+    far = parse_pointing('{"point": [500, 520], "depth": 8}')
+    command = pointing_to_body_velocity(
+        far, geometry, base_velocity=1.0, stop_distance_m=0.35)
+    assert command.forward > 0.5

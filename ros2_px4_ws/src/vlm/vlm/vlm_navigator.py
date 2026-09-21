@@ -70,6 +70,7 @@ class VlmNavigator(Node):
         self.declare_parameter('max_yaw_rate', 0.6)
         self.declare_parameter('yaw_gain', 1.0)
         self.declare_parameter('yaw_deadband_deg', 10.0)
+        self.declare_parameter('stop_distance_m', 0.35)
         self.declare_parameter('min_command_duration_s', 1.0)
         self.declare_parameter('command_timeout_s', 3.0)
         self.declare_parameter('dry_run', False)
@@ -85,6 +86,7 @@ class VlmNavigator(Node):
         self._yaw_gain = float(self.get_parameter('yaw_gain').value)
         self._yaw_deadband_rad = math.radians(
             float(self.get_parameter('yaw_deadband_deg').value))
+        self._stop_distance = float(self.get_parameter('stop_distance_m').value)
         self._min_duration = float(self.get_parameter('min_command_duration_s').value)
         self._command_timeout = float(self.get_parameter('command_timeout_s').value)
         self._record = bool(self.get_parameter('record_decisions').value)
@@ -189,6 +191,7 @@ class VlmNavigator(Node):
                 max_yaw_rate=self._max_yaw_rate,
                 yaw_gain=self._yaw_gain,
                 yaw_deadband_rad=self._yaw_deadband_rad,
+                stop_distance_m=self._stop_distance,
                 min_duration_s=self._min_duration)
         except (VlmError, PointingParseError, ValueError) as exc:
             if str(exc) != self._last_error:

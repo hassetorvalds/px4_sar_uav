@@ -189,6 +189,7 @@ def pointing_to_body_velocity(
     max_yaw_rate: float = 0.6,
     yaw_gain: float = 1.0,
     yaw_deadband_rad: float = 0.0,
+    stop_distance_m: float = 0.0,
     min_duration_s: float = 1.0,
 ) -> BodyVelocity:
     """指向结果 → 机体速度指令（带安全限幅）。
@@ -199,6 +200,16 @@ def pointing_to_body_velocity(
     """
     forward_m, left_m, up_m = geometry.reverse_project(
         pointing.x_norm, pointing.y_norm, pointing.depth_m)
+
+    # 接近到阈值内就停止平移，只保留可能的偏航修正。
+    # 没有这道保护时会一路飞向目标（实测飞到目标 0.2 m 处仍以 1 m/s 前飞，
+    # 位移约 12 m、高度冲到 4.4 m）；SeePointFly 的 adaptive 模式也是这么做的。
+    bearing = math.atan2(left_m, forward_m)
+    if stop_distance_m > 0.0 and pointing.depth_m <= float(stop_distance_m):
+        if abs(bearing) < float(yaw_deadband_rad):
+            return BodyVelocity(0.0, 0.0, 0.0, 0.0, float(min_duration_s))
+        yaw_only = max(-max_yaw_rate, min(max_yaw_rate, float(yaw_gain) * bearing))
+        return BodyVelocity(0.0, 0.0, 0.0, yaw_only, float(min_duration_s))
 
     horizontal = math.hypot(forward_m, left_m)
     speed = min(float(base_velocity), float(max_speed))

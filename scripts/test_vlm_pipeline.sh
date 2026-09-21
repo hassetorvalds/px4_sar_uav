@@ -20,9 +20,9 @@ LOG_DIR="${PX4_SAR_ROOT}/logs/$(date +%F)"
 mkdir -p "${LOG_DIR}"
 
 read_position () {
-    timeout 10 ros2 topic echo --once /fmu/out/vehicle_local_position_v1 2>/dev/null \
-        | awk '/^x:/ {x=$2} /^y:/ {y=$2} /^z:/ {z=$2} \
-               END {printf "x(N)=%.2f y(E)=%.2f z(D)=%.2f", x, y, z}'
+    # 用连续采样脚本取有效样本（--once 曾连续返回 0.00）
+    timeout 25 python3 "${_dir}/px4_state_snapshot.py" 15 2>/dev/null \
+        || echo '位置样本不可用'
 }
 
 echo "== 1) 启动 offboard_bridge =="
@@ -46,6 +46,16 @@ timeout 12 ros2 topic pub -r 5 /offboard_bridge/target_pose geometry_msgs/PoseSt
     "{header: {frame_id: map}, pose: {position: {x: 0.0, y: 0.0, z: 3.0}, orientation: {w: 1.0}}}" \
     >/dev/null 2>&1
 echo "起飞后位置：$(read_position)"
+
+# 可选：先让机体转过一定角度，用于验证“从大偏角起步”的收敛过程
+if [ -n "${PRE_ROTATE_S:-}" ] && [ "${PRE_ROTATE_S}" != "0" ]; then
+    echo "== 3b) 预旋转 ${PRE_ROTATE_S} s（制造初始偏角）=="
+    timeout "${PRE_ROTATE_S}" ros2 topic pub -r 5 /offboard_bridge/velocity_setpoint \
+        geometry_msgs/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {z: 1.0}}" \
+        >/dev/null 2>&1
+    sleep 1
+    echo "预旋转后位置：$(read_position)"
+fi
 
 if [ -n "${IMAGE_TOPIC}" ]; then
     # 注意：不要传 -p image_file:="" —— rcl 会拒绝空值参数并导致节点启动失败
