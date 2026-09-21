@@ -188,6 +188,7 @@ def pointing_to_body_velocity(
     max_speed: float = 1.5,
     max_yaw_rate: float = 0.6,
     yaw_gain: float = 1.0,
+    yaw_deadband_rad: float = 0.0,
     min_duration_s: float = 1.0,
 ) -> BodyVelocity:
     """指向结果 → 机体速度指令（带安全限幅）。
@@ -221,8 +222,13 @@ def pointing_to_body_velocity(
         velocity_left /= scale
         velocity_up /= scale
 
-    yaw_rate = max(-max_yaw_rate, min(max_yaw_rate,
-                                     float(yaw_gain) * math.atan2(left_m, forward_m)))
+    # 偏航：比例控制 + 死区。死区抑制“目标已在中心附近仍来回修正”的震荡
+    # （SeePointFly 用约 10° 阈值决定是否转向，这里做成可配参数）。
+    bearing = math.atan2(left_m, forward_m)
+    if abs(bearing) < float(yaw_deadband_rad):
+        yaw_rate = 0.0
+    else:
+        yaw_rate = max(-max_yaw_rate, min(max_yaw_rate, float(yaw_gain) * bearing))
 
     distance_m = math.sqrt(forward_m ** 2 + left_m ** 2 + up_m ** 2)
     duration = max(distance_m / speed, float(min_duration_s))

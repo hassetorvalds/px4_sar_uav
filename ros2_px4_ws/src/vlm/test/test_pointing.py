@@ -102,3 +102,30 @@ def test_yaw_rate_sign_follows_target_side():
     right_target = parse_pointing('{"point": [500, 800], "depth": 5}')
     assert pointing_to_body_velocity(left_target, geometry).yaw_rate > 0.0
     assert pointing_to_body_velocity(right_target, geometry).yaw_rate < 0.0
+
+
+def test_yaw_deadband_zeros_small_bearing():
+    geometry = PointingGeometry(640, 480, hfov_deg=90.0)
+    centered = parse_pointing('{"point": [500, 505], "depth": 5}')
+    with_deadband = pointing_to_body_velocity(
+        centered, geometry, yaw_gain=1.0, yaw_deadband_rad=0.17)
+    assert with_deadband.yaw_rate == 0.0
+    # 不设死区时同一输入会产生非零偏航，说明死区确实起作用
+    assert pointing_to_body_velocity(centered, geometry, yaw_gain=1.0).yaw_rate != 0.0
+
+
+def test_yaw_deadband_keeps_large_bearing():
+    geometry = PointingGeometry(640, 480, hfov_deg=90.0)
+    far_right = parse_pointing('{"point": [500, 900], "depth": 5}')
+    command = pointing_to_body_velocity(
+        far_right, geometry, yaw_gain=0.5, max_yaw_rate=0.4, yaw_deadband_rad=0.17)
+    assert command.yaw_rate < 0.0
+    assert abs(command.yaw_rate) <= 0.4 + 1e-9
+
+
+def test_lower_gain_reduces_yaw_command():
+    geometry = PointingGeometry(640, 480, hfov_deg=90.0)
+    pointing = parse_pointing('{"point": [500, 600], "depth": 5}')
+    strong = pointing_to_body_velocity(pointing, geometry, yaw_gain=1.0)
+    weak = pointing_to_body_velocity(pointing, geometry, yaw_gain=0.5)
+    assert abs(weak.yaw_rate) < abs(strong.yaw_rate)

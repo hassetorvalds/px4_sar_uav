@@ -15,6 +15,36 @@
 
 ---
 
+## [2026-09-21] 偏航死区整定（闭环收敛）
+
+### 变更
+
+- `vlm/pointing.py` 的 `pointing_to_body_velocity` 新增 `yaw_deadband_rad`：
+  横向偏角小于死区时不转向（借鉴 SeePointFly 约 10° 的阈值做法，做成可配参数）。
+- `vlm_navigator` 新增 `yaw_deadband_deg` 参数（默认 10.0），可叠加上限幅与增益一起整定。
+- `scripts/test_vlm_pipeline.sh` 支持把额外参数透传给 navigator（`"${@:4}"`），便于调参复跑。
+
+### 验证
+
+```text
+整定参数          yaw_gain=0.5、max_yaw_rate=0.4、yaw_deadband_deg=10、base_velocity=0.8
+单元测试          27 passed（新增死区/增益用例 3 个）
+目标像素轨迹      629 → 629 → 629 → 631 → 632 → 631 → 629 → 631 → 631
+相对画面中心      |x-640| 平均 10 px，中心带（±150 px）占比 100%
+偏航指令          9/9 次为零（死区生效，无来回修正）
+接近过程          深度 0.46 → 0.26 m 单调下降（保持目标居中并前飞接近）
+对照（整定前）    像素 x 在 162 ~ 1212 间大幅摆动，偏航在 ±0.50 rad/s 反复饱和
+取证              logs/2026-09-21/{vlm_navigator_console_tuned.log, bridge_console_tuned.log}
+```
+
+### 已知问题
+
+- 本次整定运行的起始朝向已基本对准目标，验证的是“目标居中时不来回修正”；
+  从大偏角起步的收敛过程（先转过去、再稳定）仍需单独跑一轮确认。
+- 位置回读用 `ros2 topic echo --once` 仍返回 0.00，需改为连续采样才能量化高度与位移。
+
+---
+
 ## [2026-09-21] 实时图像闭环验证（vision_stub）
 
 ### 新增

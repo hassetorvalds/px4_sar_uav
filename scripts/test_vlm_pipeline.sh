@@ -63,6 +63,7 @@ timeout 20 ros2 run vlm vlm_navigator --ros-args \
     -p max_speed:=1.5 \
     -p max_yaw_rate:=0.5 \
     -p output_dir:="${LOG_DIR}/vlm_decisions" \
+    "${@:4}" \
     > "${LOG_DIR}/vlm_navigator_console.log" 2>&1
 echo "VLM 阶段结束后位置：$(read_position)"
 
