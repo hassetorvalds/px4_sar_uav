@@ -172,6 +172,10 @@ def create_client(provider: str, model: str = '', api_key_env: str = '',
     name = (provider or 'mock').strip().lower()
     if name == 'mock':
         return MockVlmClient()
+    if name in ('vision_stub', 'vision-stub'):
+        from .vision_stub import VisionStubClient
+
+        return VisionStubClient()
     if name == 'gemini':
         return GeminiVlmClient(
             model=model or 'gemini-2.5-flash',

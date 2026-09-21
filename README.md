@@ -266,6 +266,7 @@ Windows 11（宿主）
 | 速度控制模式 | ✅ | `offboard_bridge` 支持 `~/velocity_setpoint`（ENU 速度 + 偏航角速度），超时自动回位置保持 |
 | VLM 指向式导航 | ✅ | `vlm/`：图像指向解析 → 针孔反投影 → 机体速度；mock provider + 静态图像已飞通 |
 | 相机接入（AirSim → ROS 2） | ✅ | `sensor_bridge/airsim_camera`：彩色 1280×720 @2.04 Hz（bgr8）、深度 0.4 Hz（32FC1）、camera_info |
+| 实时图像闭环 | ✅ | `vision_stub` 视觉桩驱动：指向像素随图像变化、偏航指令随之衰减与反转（闭环成立，偏航仍震荡待调参） |
 
 完整链路已打通：
 
@@ -327,6 +328,10 @@ VLM 指向式导航：静态图像下目标点不动、偏航不收敛，机体�
 闭环收敛需要真实相机图像（下一步 sensor_bridge）。真实 VLM API 尚未验证（本机无 key）。
 参考实现 SeePointFly 为 Proprietary 许可，本项目只借鉴思路、自写代码与提示词
 （见 docs/reference-see-point-fly.md）。
+
+2026-09-21 更新：已接入实时相机（sensor_bridge）并跑通实时图像闭环——
+指向像素随图像移动、偏航指令随之衰减与反转。当前偏航纯比例且无死区，会来回震荡，
+下一步按 SeePointFly 的做法加死区并降增益。真实 VLM API 仍未验证（本机无 key）。
 ```
 
 ---

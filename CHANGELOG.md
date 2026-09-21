@@ -15,6 +15,46 @@
 
 ---
 
+## [2026-09-21] 实时图像闭环验证（vision_stub）
+
+### 新增
+
+- `vlm/vision_stub.py`：确定性视觉桩（provider `vision_stub`），用颜色检测（默认橙色目标）替代 VLM，
+  返回与真实 VLM 完全相同的 JSON 指向格式，用于在没有 API key 时验证**闭环动力学**（测试替身，非感知模块）。
+- `scripts/test_vlm_pipeline.sh` 支持 provider 与实时图像话题：
+  `bash scripts/test_vlm_pipeline.sh "" vision_stub /airsim_camera/image`。
+
+### 修复
+
+- 脚本传 `-p image_file:=""` 会被 rcl 拒绝（`Couldn't parse parameter override rule`），
+  导致 `vlm_navigator` 未启动、日志为空；实时图像模式下改为不传该参数。
+- `vision_stub.locate_color` 原为纯 Python 逐像素扫描，1280×720 耗时约 80 s；改 numpy 向量化后约 0.2 s。
+
+### 验证
+
+```text
+链路             vlm_navigator(vision_stub, /airsim_camera/image) → offboard_bridge → PX4
+指向随图像变化    ✅ 像素 x: 1212 → 802 → 162 → 350 → 1176 → 1187 → 304 → 170 → 1052
+偏航随之变化      ✅ -0.50 → -0.25 → +0.50 → +0.42 → -0.50 …（上限 0.5 rad/s）
+桥接模式切换      ✅ position → velocity，ENU 速度 (0.73, 0.69, 0.06) m/s
+PX4 侧            ✅ Armed by external command、Takeoff detected
+取证              logs/2026-09-21/{vlm_navigator_console.log, bridge_console.log,
+                  vlm_decisions/decision_20260921_*.json}
+```
+
+结论：指向→几何→机体速度→PX4 的**闭环**已跑通，偏航指令随目标在画面中的位置变化而变化，
+不再像静态图像那样单向转圈。
+
+### 已知问题
+
+- **偏航震荡**（1212→802→162→350 反复）：纯比例控制且无死区，叠加机体前飞导致过冲。
+  下一步参照 SeePointFly 加横向偏差死区（约 10°）并降低增益。
+- 测试脚本用 `ros2 topic echo --once` 回读位置，本次两次都取到 0.00（疑似无效样本）；
+  PX4 日志已确认解锁与起飞，精确高度需改用连续采样确认。
+- `vlm_navigator` 被 SIGTERM 结束时会抛 `ExternalShutdownException`，属退出路径噪声。
+
+---
+
 ## [2026-09-21] 相机接入验证通过（sensor_bridge）
 
 ### 变更
