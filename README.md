@@ -265,6 +265,7 @@ Windows 11（宿主）
 | 坐标系转换与单元测试 | ✅ | `px4_interface/frames.py`（NED↔ENU、偏航换算）+ 8 个 pytest 用例 |
 | 速度控制模式 | ✅ | `offboard_bridge` 支持 `~/velocity_setpoint`（ENU 速度 + 偏航角速度），超时自动回位置保持 |
 | VLM 指向式导航 | ✅ | `vlm/`：图像指向解析 → 针孔反投影 → 机体速度；mock provider + 静态图像已飞通 |
+| 相机接入（AirSim → ROS 2） | ✅ | `sensor_bridge/airsim_camera`：彩色 1280×720 @2.04 Hz（bgr8）、深度 0.4 Hz（32FC1）、camera_info |
 
 完整链路已打通：
 
@@ -294,7 +295,7 @@ ros2_px4_ws/src/
 ```text
 □ 自动降落（已尝试，未通过，见 4.5）
 □ 人工接管（RC → PX4 优先通道）与 failsafe 故障注入验证
-□ 传感器接入（AirSim RGB / Depth / LiDAR → ROS 2）
+□ 传感器接入：相机已完成，Depth/LiDAR 高频化与时间同步待做
 □ 实时避障与局部重规划
 □ 自主探索 / 搜索区域覆盖
 □ VLM 自然语言任务解析（当前只有“指向式导航”，尚未做任务级结构化输出）

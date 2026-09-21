@@ -15,6 +15,38 @@
 
 ---
 
+## [2026-09-21] 相机接入验证通过（sensor_bridge）
+
+### 变更
+
+- `airsim_camera` 新增 `depth_interval` 参数（默认 5）：彩色图每帧抓取，深度图按间隔抽取。
+  原因：LockStep 下每帧同时抓 1280×720 彩色 + 640×480 深度会把帧率拖到约 0.3 Hz。
+- `msgpackrpc` 兼容补丁（本机 site-packages，非仓库内容）：
+  `~/.local/lib/python3.10/site-packages/msgpackrpc/transport/tcp.py` 中
+  `msgpack.Packer(encoding=...)` / `msgpack.Unpacker(encoding=...)` 改为
+  `msgpack.Packer(...)` / `msgpack.Unpacker(raw=False)`，以适配 msgpack ≥ 1.0。
+  不改则报 `UnicodeDecodeError: 'utf-8' codec can't decode byte 0x94`（图像二进制被当字符串解码）。
+
+### 验证
+
+```text
+AirSim RPC 连接                   ✅ 172.21.192.1:45000（ApiServerPort 非默认 41451）
+彩色图分辨率                       ✅ 1280×720（新相机配置已生效；原为默认 256×144）
+捕获帧内容                         ✅ logs/2026-09-21/camera_frame.jpg（大块墙体/天空/橙色球，画面正常）
+彩色图频率                         ✅ 39 帧 / 20 s = 2.04 Hz（配置 2 Hz，平均间隔 0.49 s）
+深度图频率                         ✅ 8 帧 / 20 s = 0.4 Hz（depth_interval=5）
+发布话题                           ✅ /airsim_camera/{image(bgr8), depth(32FC1), camera_info}
+```
+
+### 已知问题
+
+- 深度图在 LockStep 下仍较慢（0.4 Hz），做实时避障时需要更快的深度来源
+  （AirSim DepthVis/LiDAR 或降低分辨率），或改为独立节点并放宽间隔。
+- `msgpackrpc` 补丁位于 site-packages，重装该包会被覆盖；若后续报同样的 UnicodeDecodeError，
+  按本节说明重新打补丁即可。
+
+---
+
 ## [2026-09-19] 传感器接入（sensor_bridge，未完成验证）
 
 ### 新增

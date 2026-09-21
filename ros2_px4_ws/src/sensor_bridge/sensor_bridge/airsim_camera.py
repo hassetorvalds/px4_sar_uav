@@ -41,6 +41,7 @@ class AirSimCamera(Node):
         self.declare_parameter('frame_id', 'camera_link')
         self.declare_parameter('rate_hz', 2.0)
         self.declare_parameter('publish_depth', True)
+        self.declare_parameter('depth_interval', 5)
         self.declare_parameter('hfov_deg', 90.0)
 
         self._host = str(self.get_parameter('host').value)
@@ -49,6 +50,7 @@ class AirSimCamera(Node):
         self._camera = str(self.get_parameter('camera_name').value)
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._publish_depth = bool(self.get_parameter('publish_depth').value)
+        self._depth_interval = max(int(self.get_parameter('depth_interval').value), 1)
         self._hfov_deg = float(self.get_parameter('hfov_deg').value)
         rate_hz = max(float(self.get_parameter('rate_hz').value), 0.1)
 
@@ -57,6 +59,7 @@ class AirSimCamera(Node):
         self._info_pub = self.create_publisher(CameraInfo, '~/camera_info', 10)
 
         self._client = None
+        self._frame_index = 0
         self._warned = False
         self._connect()
         self.create_timer(1.0 / rate_hz, self._tick)
@@ -95,11 +98,15 @@ class AirSimCamera(Node):
         try:
             requests = [airsim.ImageRequest(
                 self._camera, airsim.ImageType.Scene, False, False)]
-            if self._publish_depth:
+            # 深度图分辨率低但 RPC 开销大（LockStep 下会拖慢整帧），按间隔抽取
+            want_depth = (self._publish_depth
+                          and self._frame_index % self._depth_interval == 0)
+            if want_depth:
                 requests.append(airsim.ImageRequest(
                     self._camera, airsim.ImageType.DepthPlanar, True, False))
             responses = self._client.simGetImages(
                 requests, vehicle_name=self._vehicle)
+            self._frame_index += 1
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warn(f'抓帧失败：{exc}（将重连）', throttle_duration_sec=5.0)
             self._client = None
@@ -112,7 +119,7 @@ class AirSimCamera(Node):
         stamp = self.get_clock().now().to_msg()
         scene = responses[0]
         self._publish_scene(scene, stamp)
-        if self._publish_depth and len(responses) > 1:
+        if want_depth and len(responses) > 1:
             self._publish_depth_image(responses[1], stamp)
         self._publish_camera_info(scene.width, scene.height, stamp)
 
