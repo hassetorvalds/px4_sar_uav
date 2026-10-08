@@ -67,6 +67,10 @@ class OffboardBridge(Node):
         self.declare_parameter('velocity_timeout_s', 1.0)
         self.declare_parameter('land_descend_speed_mps', 0.5)
         self.declare_parameter('land_duration_margin_s', 2.0)
+        # AUTO_LAND 在本仿真里约 4 s 即实际触地，但 EKF 触地后速度估计失稳、
+        # 落地检测无法置位（见 CHANGELOG 2026-10-08）。因此提供“静置后自动上锁”：
+        # 大于 0 时，下发 land 后等待该秒数即强制上锁，使任务能正常收尾。
+        self.declare_parameter('land_autodisarm_s', 10.0)
         self.declare_parameter('status_publish_period_s', 1.0)
 
         rate_hz = float(self.get_parameter('setpoint_rate_hz').value)
@@ -78,6 +82,8 @@ class OffboardBridge(Node):
             self.get_parameter('land_descend_speed_mps').value)
         self._land_margin_s = float(
             self.get_parameter('land_duration_margin_s').value)
+        self._land_autodisarm_s = float(
+            self.get_parameter('land_autodisarm_s').value)
         self._status_period_s = float(self.get_parameter('status_publish_period_s').value)
 
         qos = px4_qos()
@@ -107,6 +113,7 @@ class OffboardBridge(Node):
         self._mode = 'position'
         self._landing_started_at = None
         self._landing_duration_s = 0.0
+        self._land_disarm_at = None
         self._streaming = True
         self._had_status = False
         self._last_status_publish = 0.0
@@ -160,6 +167,11 @@ class OffboardBridge(Node):
                 param2=float(_PX4_CUSTOM_MAIN_MODE_OFFBOARD))
         elif command == CMD_LAND:
             self._send_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+            if self._land_autodisarm_s > 0.0:
+                self._land_disarm_at = time.monotonic() + self._land_autodisarm_s
+                self.get_logger().info(
+                    f'AUTO_LAND 已下发；若 {self._land_autodisarm_s:.0f} s 内落地检测未置位，'
+                    '将强制上锁（本仿真 EKF 触地后速度估计失稳）')
         elif command == CMD_LAND_FAST:
             self._start_fast_land()
         elif command == CMD_HOLD:
@@ -222,6 +234,21 @@ class OffboardBridge(Node):
         self._last_velocity_monotonic = time.monotonic()
         return True
 
+    def _update_land_autodisarm(self) -> None:
+        """AUTO_LAND 后的兜底上锁：落地检测不可靠时保证任务能收尾。"""
+        if self._land_disarm_at is None:
+            return
+        if not self._monitor.snapshot().armed:
+            self._land_disarm_at = None
+            return
+        if time.monotonic() >= self._land_disarm_at:
+            self.get_logger().warn(
+                '落地检测未在预期时间内置位，强制上锁（见 CHANGELOG 2026-10-08 的估计器分析）')
+            self._send_vehicle_command(
+                VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                param1=0.0, param2=_FORCE_DISARM_MAGIC)
+            self._land_disarm_at = None
+
     def _on_velocity_setpoint(self, msg: Twist) -> None:
         """接收 ENU 世界速度（m/s）与 ENU 偏航角速度（rad/s）。
 
@@ -264,6 +291,7 @@ class OffboardBridge(Node):
             return
 
         self._had_status = True
+        self._update_land_autodisarm()
         self._update_fast_land()
         if not self._streaming:
             self.get_logger().info('PX4 状态恢复，继续发送设定点')

@@ -263,7 +263,78 @@ class VerticalCheck(FlightCheckBase):
         raise SystemExit(0)
 
 
-MODES = {'altitude': AltitudeCheck, 'vertical': VerticalCheck}
+class LandingCheck(FlightCheckBase):
+    """对照 PX4 估计与真值，检查 AUTO_LAND 是否被落地检测正确锁定。"""
+
+    def __init__(self) -> None:
+        super().__init__('flight_check_landing')
+        self.declare_parameter('start_altitude_m', 2.0)
+        self.declare_parameter('land_s', 60.0)
+        self.declare_parameter('sample_period_s', 2.0)
+        self.altitude = float(self.get_parameter('start_altitude_m').value)
+        self.land_s = float(self.get_parameter('land_s').value)
+        self.period = float(self.get_parameter('sample_period_s').value)
+        self.samples = []
+        self.last_sample = 0.0
+        self.flags = {}
+
+        from px4_msgs.msg import VehicleLandDetected
+
+        self.create_subscription(
+            VehicleLandDetected, '/fmu/out/vehicle_land_detected',
+            self._on_land, QOS)
+
+    def _on_land(self, msg) -> None:
+        self.flags = {
+            'landed': msg.landed,
+            'maybe_landed': msg.maybe_landed,
+            'at_rest': msg.at_rest,
+            'ground_contact': msg.ground_contact,
+            'low_thr': msg.has_low_throttle,
+            'in_descend': msg.in_descend,
+        }
+
+    def first_phase(self) -> str:
+        return 'CLIMB'
+
+    def on_phase(self) -> None:
+        if self.phase == 'CLIMB':
+            if self.climb_to(self.altitude):
+                self.send('land')
+                self.get_logger().info('已下发 land（AUTO_LAND）')
+                self.enter('LAND')
+            elif self.elapsed() > self.phase_timeout:
+                self.fail('爬升超时')
+        elif self.phase == 'LAND':
+            now = time.monotonic()
+            if now - self.last_sample >= self.period:
+                self.last_sample = now
+                self.samples.append((self.elapsed(), self.px4_z, self.px4_vz,
+                                     self.sim_z(), dict(self.flags), self.armed))
+            if self.elapsed() > self.land_s or self.flags.get('landed'):
+                self.finish()
+
+    def finish(self) -> None:
+        print('\n============ AUTO_LAND 对照（PX4 估计 vs 真值）============')
+        print(f'{"t(s)":>6} {"PX4 z":>9} {"PX4 vz":>8} {"真值 z":>9} '
+              f'{"armed":>6} {"landed":>7} {"rest":>5} {"gnd":>4} {"lowThr":>7}')
+        for t, z, vz, sim_z, flags, armed in self.samples:
+            print(f'{t:6.1f} {z:9.3f} {vz:8.3f} {sim_z:9.3f} '
+                  f'{str(armed):>6} {str(flags.get("landed")):>7} '
+                  f'{str(flags.get("at_rest")):>5} {str(flags.get("ground_contact")):>4} '
+                  f'{str(flags.get("low_thr")):>7}')
+        if len(self.samples) > 2:
+            px4_span = max(s[1] for s in self.samples) - min(s[1] for s in self.samples)
+            sim_span = max(s[3] for s in self.samples) - min(s[3] for s in self.samples)
+            print(f'\nPX4 z 波动跨度 {px4_span:.3f} m，真值 z 波动跨度 {sim_span:.3f} m')
+            print(f'landed 是否曾置位：{any(s[4].get("landed") for s in self.samples)}')
+            disarmed = [s for s in self.samples if not s[5]]
+            print(f'是否已上锁（任务可收尾）：{bool(disarmed)}'
+                  + (f'，于 t={disarmed[0][0]:.1f} s' if disarmed else ''))
+        raise SystemExit(0)
+
+
+MODES = {'altitude': AltitudeCheck, 'vertical': VerticalCheck, 'landing': LandingCheck}
 
 
 def main() -> None:
