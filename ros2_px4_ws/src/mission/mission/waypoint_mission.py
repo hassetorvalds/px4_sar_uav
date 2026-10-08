@@ -27,6 +27,7 @@ class Phase(Enum):
     OFFBOARD = 'OFFBOARD'
     TAKEOFF = 'TAKEOFF'
     CRUISE = 'CRUISE'
+    PAUSED = 'PAUSED'
     LAND = 'LAND'
     WAIT_DISARM = 'WAIT_DISARM'
     DONE = 'DONE'
@@ -56,6 +57,7 @@ class WaypointMission(Node):
         self.declare_parameter('offboard_timeout_s', 15.0)
         self.declare_parameter('land_timeout_s', 40.0)
         self.declare_parameter('disarm_timeout_s', 15.0)
+        self.declare_parameter('pause_timeout_s', 120.0)
         self.declare_parameter('loop_rate_hz', 5.0)
         self.declare_parameter('auto_land_on_abort', True)
         self.declare_parameter('command_topic', '/offboard_bridge/command')
@@ -74,6 +76,7 @@ class WaypointMission(Node):
             Phase.LAND: float(self.get_parameter('land_timeout_s').value),
             Phase.WAIT_DISARM: float(self.get_parameter('disarm_timeout_s').value),
         }
+        self._pause_timeout = float(self.get_parameter('pause_timeout_s').value)
         self._auto_land_on_abort = bool(
             self.get_parameter('auto_land_on_abort').value)
 
@@ -92,6 +95,7 @@ class WaypointMission(Node):
         self._inside_radius_since = None
         self._abort_reason = ''
         self._waypoint_errors = []
+        self._paused_from = None
 
         rate_hz = float(self.get_parameter('loop_rate_hz').value)
         self.create_timer(1.0 / rate_hz, self._tick)
@@ -133,14 +137,32 @@ class WaypointMission(Node):
 
         state = self._monitor.snapshot()
 
+        # 人工接管中：等待交还，回到 OFFBOARD 后从原阶段/原航点继续
+        if self._phase is Phase.PAUSED:
+            if state.failsafe:
+                self._abort('暂停期间 PX4 进入 failsafe')
+                return
+            if state.offboard:
+                resume_phase = self._paused_from or Phase.CRUISE
+                self.get_logger().info(
+                    f'检测到已交还控制，恢复自主：回到 {resume_phase.value}')
+                self._enter(resume_phase)
+                return
+            if self._phase_elapsed() > self._pause_timeout:
+                self._abort(f'人工接管超过 {self._pause_timeout:.0f} s 未交还')
+            self._publish_status(state)
+            return
+
         # 飞行阶段的安全监控：failsafe 或离开 OFFBOARD（例如人工接管）立即交还控制权
         if self._phase in (Phase.TAKEOFF, Phase.CRUISE):
             if state.failsafe:
                 self._abort('PX4 进入 failsafe')
                 return
             if not state.offboard:
-                self._abort(
-                    f'已离开 OFFBOARD（nav_state={state.nav_state}），可能被人工接管')
+                self.get_logger().warn(
+                    f'检测到离开 OFFBOARD（nav_state={state.nav_state}），判定为人工接管，暂停任务')
+                self._paused_from = self._phase
+                self._enter(Phase.PAUSED)
                 return
 
         # 周期性刷新目标：桥接节点带有目标超时看门狗，只发一次会被判定为过期
