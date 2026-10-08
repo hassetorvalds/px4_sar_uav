@@ -20,6 +20,7 @@ from px4_interface.frames import body_flu_to_enu, ned_yaw_to_enu_yaw
 from px4_interface.state import Px4StateMonitor
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 
 from .pointing import (
     PointingGeometry,
@@ -70,7 +71,9 @@ class VlmNavigator(Node):
         self.declare_parameter('max_yaw_rate', 0.6)
         self.declare_parameter('yaw_gain', 1.0)
         self.declare_parameter('yaw_deadband_deg', 10.0)
-        self.declare_parameter('stop_distance_m', 0.35)
+        # 视觉层的兜底阈值（宽松）：真正的“接近终止”策略在 mission 层决定
+        self.declare_parameter('stop_distance_m', 0.8)
+        self.declare_parameter('decision_topic', '~/decision')
         self.declare_parameter('min_command_duration_s', 1.0)
         self.declare_parameter('command_timeout_s', 3.0)
         self.declare_parameter('dry_run', False)
@@ -102,6 +105,8 @@ class VlmNavigator(Node):
 
         self._velocity_pub = self.create_publisher(
             Twist, str(self.get_parameter('velocity_topic').value), 10)
+        self._decision_pub = self.create_publisher(
+            String, str(self.get_parameter('decision_topic').value), 10)
         self._monitor = Px4StateMonitor(self)
 
         self._lock = threading.Lock()
@@ -202,6 +207,22 @@ class VlmNavigator(Node):
         self._last_error = ''
         with self._lock:
             self._pending_command = (command, pointing, time.monotonic(), response)
+        # 把指向结果与生成的机体速度发布出去，供任务层做“接近终止”等策略决策
+        decision = String()
+        decision.data = json.dumps({
+            'label': pointing.label,
+            'point_x_norm': pointing.x_norm,
+            'point_y_norm': pointing.y_norm,
+            'depth_m': pointing.depth_m,
+            'body_velocity': {
+                'forward': command.forward,
+                'left': command.left,
+                'up': command.up,
+                'yaw_rate': command.yaw_rate,
+            },
+            'stamp': time.time(),
+        }, ensure_ascii=False)
+        self._decision_pub.publish(decision)
         self.get_logger().info(
             f'VLM 指向：像素 {self._geometry.pixel_from_norm(pointing.x_norm, pointing.y_norm)}'
             f' 深度 {pointing.depth_m:.2f} m「{pointing.label}」→ '

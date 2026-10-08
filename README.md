@@ -267,7 +267,7 @@ Windows 11（宿主）
 | VLM 指向式导航 | ✅ | `vlm/`：图像指向解析 → 针孔反投影 → 机体速度；mock provider + 静态图像已飞通 |
 | 相机接入（AirSim → ROS 2） | ✅ | `sensor_bridge/airsim_camera`：彩色 1280×720 @2.04 Hz（bgr8）、深度 0.4 Hz（32FC1）、camera_info |
 | 实时图像闭环 | ✅ | `vision_stub` 视觉桩驱动：10° 偏航死区 + 增益 0.5 后目标像素稳定在距中心约 10 px，偏航 100% 为零 |
-| 接近停止保护 | ⚠️ | `stop_distance_m`（默认 0.35 m）单元测试覆盖；实测最近深度 0.46 m 未触发，阈值需调大 |
+| 接近终止策略 | ✅ | 任务层 `approach_supervisor`（站定距离可配，实测 0.46 m ≤ 1.2 m 时 hold，位移仅 0.25 m）；视觉层 `stop_distance_m` 退为兜底 |
 | 状态测量脚本 | ✅ | `scripts/px4_state_snapshot.py` 连续采样，替换会读到无效值的 `topic echo --once` |
 | 竖直指令与收敛验证 | ✅ | 上/下速度指令符号正确；大偏角起步完整收敛（1207→533 px 后死区锁定，偏航归零） |
 
@@ -493,7 +493,7 @@ ros2_px4_ws/src/
 
 ```text
 ✅ px4_interface     QoS、坐标系转换、状态跟踪、Offboard 桥接（offboard_bridge）
-✅ mission           航点状态机（phase A 主体已实现，自动降落待修）
+✅ mission           航点状态机 + 接近监督（phase A 主体已实现，自动降落待修）
 ✅ vlm               指向解析、几何反投影、机体速度指令（真实 API 未验证）
 □ sensor_bridge □ mapping □ planner □ perception □ safety
 ```

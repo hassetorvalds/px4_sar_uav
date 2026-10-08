@@ -65,6 +65,16 @@ else
     NAV_ARGS=(-p image_file:="${IMAGE}" -p image_topic:="/airsim_camera/image")
     echo "== 4) 运行 vlm_navigator（provider=${PROVIDER}，静态图像 ${IMAGE}）=="
 fi
+# 可选：启动任务层的接近监督（决定何时停止接近）
+if [ "${WITH_SUPERVISOR:-0}" = "1" ]; then
+    echo "== 3c) 启动 approach_supervisor（任务层接近终止策略）=="
+    ros2 run mission approach_supervisor --ros-args \
+        -p standoff_m:="${STANDOFF_M:-0.8}" \
+        > "${LOG_DIR}/approach_supervisor_console.log" 2>&1 &
+    SUPERVISOR_PID=$!
+    sleep 2
+fi
+
 timeout 20 ros2 run vlm vlm_navigator --ros-args \
     -p provider:="${PROVIDER}" \
     "${NAV_ARGS[@]}" \
@@ -76,6 +86,12 @@ timeout 20 ros2 run vlm vlm_navigator --ros-args \
     "${@:4}" \
     > "${LOG_DIR}/vlm_navigator_console.log" 2>&1
 echo "VLM 阶段结束后位置：$(read_position)"
+if [ -n "${SUPERVISOR_PID:-}" ]; then
+    kill "${SUPERVISOR_PID}" 2>/dev/null
+    echo "== 接近监督日志 =="
+    grep -E "接近监督启动|停止接近|接近阶段结束|超时" \
+        "${LOG_DIR}/approach_supervisor_console.log" | head -6
+fi
 
 echo "== 5) 收尾：降落 + 上锁 =="
 ros2 topic pub --once /offboard_bridge/command std_msgs/String "{data: land}" >/dev/null

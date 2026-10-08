@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'waypoint_mission = mission.waypoint_mission:main',
+            'approach_supervisor = mission.approach_supervisor:main',
         ],
     },
 )

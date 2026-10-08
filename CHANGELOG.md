@@ -15,6 +15,46 @@
 
 ---
 
+## [2026-10-08] 接近终止策略移到任务层 + 诊断脚本合并
+
+### 新增
+
+- `mission/approach_policy.py`：接近终止策略（纯函数 `evaluate_approach`），
+  输入目标深度与已用时间，输出 `continue / hold / timeout`。
+- `mission/approach_supervisor.py` 节点：订阅 `/vlm_navigator/decision`，
+  按策略在到达站定距离时向 offboard_bridge 下发 `hold`，并发布 `~/status`。
+  安全边界：仅在 PX4 已解锁且处于 OFFBOARD 时干预，不接触 `/fmu/*`。
+- `vlm_navigator` 新增 `decision_topic`（默认 `~/decision`），把指向结果与生成的机体速度
+  发布出去供任务层决策；`stop_distance_m` 默认从 0.35 m 放宽到 0.8 m，退化为**兜底**。
+- `scripts/flight_check.py`：把 `compare_altitude.py` 与 `test_vertical_command.py`
+  合并为带子命令的诊断入口（`altitude` / `vertical`），原两个脚本删除。
+
+### 变更
+
+- 分层调整：**是否继续接近、何时停下**由任务层决定，视觉层不再承担任务策略。
+- `scripts/test_vlm_pipeline.sh` 支持 `WITH_SUPERVISOR=1`、`STANDOFF_M=<米>`。
+
+### 验证
+
+```text
+单元测试            35 passed（新增接近策略 5 例）；按约定保留 px4_offboard 模板测试
+接近终止飞行        vision_stub 实时图像，站定距离 1.2 m
+  监督节点日志      停止接近并保持位置：已接近到 0.46 m（阈值 1.20 m）
+  深度范围          0.46 ~ 0.72 m（9 次决策）
+  位移              20 s 内仅约 0.25 m（此前无终止策略时约 12 m）
+取证                logs/2026-10-08/{vlm_navigator_approach.log,
+                    approach_supervisor.log, bridge_approach.log, *.ulg}
+```
+
+### 已知问题
+
+- 首次运行时 `vlm_navigator` 启动即崩：决策发布用到的 `std_msgs/String` 未导入
+  （`NameError: name 'String' is not defined`），已修复；说明新增发布通道后需要冒烟启动一次。
+- 视觉层兜底阈值（0.8 m）与任务层站定距离（默认 0.8 m）目前取值相同，
+  若任务层配置更大的站定距离，需注意兜底阈值应小于等于任务层阈值，否则视觉层会先停。
+
+---
+
 ## [2026-09-23] 竖直指令符号验证 + 大偏角收敛验证通过
 
 ### 新增
