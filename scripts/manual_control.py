@@ -244,9 +244,16 @@ class ManualControl:
 
     def _hold(self, seconds: float) -> None:
         end = time.monotonic() + seconds
+        next_report = time.monotonic() + 2.0
         while time.monotonic() < end:
             self.pump()
             time.sleep(self.period)
+            if time.monotonic() >= next_report:
+                next_report = time.monotonic() + 2.0
+                if self.position:
+                    print(f'  [{time.strftime("%H:%M:%S")}] pos(NED)='
+                          f'({self.position[0]:+.2f}, {self.position[1]:+.2f}, '
+                          f'{self.position[2]:+.2f}) mode={self.mode}')
 
 
 NAME_TO_CHANNEL = {

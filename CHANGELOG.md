@@ -15,6 +15,39 @@
 
 ---
 
+## [2026-10-09] 隔离验证通过 + 手动接管链路启动自动化
+
+### 新增
+
+- `scripts/enable_manual_link.sh`：把键盘接管所需的专用 MAVLink 实例注入 PX4 的**构建产物**
+  `etc/init.d-posix/rcS`（幂等）。`scripts/run_px4_sitl.sh` 启动前自动调用，
+  因此**重建 PX4 后也会自动补上**，且不修改 PX4 源码（submodule 保持干净）。
+  实测启动日志出现 `mode: Onboard, data rate: 1000000 B/s on udp port 14700 remote port 14701`。
+- `manual_control.py` 脚本模式新增周期位置打印（每 2 s 输出位置与模式），使证据自包含。
+
+### 验证：隔离测试（方案 A 的核心主张）
+
+```text
+前置          遥控/键盘链路已接管，任务处于 CRUISE（期间任务已记录“判定为人工接管，暂停任务”）
+终止          杀掉 offboard_bridge、waypoint_mission、MicroXRCEAgent（pgrep 确认全部消失）
+结果          手动控制继续生效约 13 s：位置样本 N(北) +0.36 → +8.26 m（约 8 m），
+              模式全程 POSCTL(3)；总位移 Δn=+10.50 Δe=+9.79 m
+结论          ✅ 键盘手动接管**不依赖 ROS 2**，符合 README §12 的安全架构要求
+取证          logs/2026-10-08/{manual_control_isolation_verified.log,
+              mission_takeover_isolation.log, bridge_isolation.log, *.ulg}
+```
+
+### 已知问题
+
+- 交还（切回 OFFBOARD）需要 offboard 数据源在线：桥接被杀后 PX4 拒绝切换并打印
+  `Switching to Offboard is currently not available`。属安全正面行为，但流程上要求
+  **交还前先恢复 offboard_bridge**；下一步在 `manual_control.py` 的交还流程里加提示或前置检查。
+- 电池 failsafe 会持续干扰模式切换实验：本次虽已设 `COM_LOW_BAT_ACT=0`、`SIM_BAT_DRAIN=0`，
+  但本会话电池已耗尽，仍触发 Hold→RTL。**建议做接管类实验前重启 PX4 让电池状态归零**。
+- 交互式键盘（F9/F10 与 WASD/方向键）仍待用户实机敲键验证；脚本化路径已验证。
+
+---
+
 ## [2026-10-08] Phase B 起步：键盘人工接管 + 任务暂停/恢复（已验证）
 
 ### 新增
