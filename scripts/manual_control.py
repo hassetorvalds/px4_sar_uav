@@ -288,6 +288,8 @@ NAME_TO_CHANNEL = {
 
 
 def main() -> int:
+    # 行缓冲：脚本模式下被 SIGTERM 结束时也能保留已打印的日志（否则日志文件会是空的）
+    sys.stdout.reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser(description='键盘手动接管（MAVLink 直连 PX4）')
     parser.add_argument('--script', help='脚本化输入序列（见 run_script 文档）')
     parser.add_argument('--scale', type=float, default=0.5, help='摇杆幅度系数（0.05~1.0）')

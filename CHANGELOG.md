@@ -15,6 +15,41 @@
 
 ---
 
+## [2026-10-09] offboard 丢失行为验证通过（阶段 2「Offboard loss」验收项）
+
+### 验证结果
+
+保持手动源在线（`manual_control.py --script "hover:70"` 只发中位摇杆、不接管），
+飞行中杀掉 offboard_bridge：
+
+```text
+PX4 判据    offboard_control_signal_lost = True，manual_control_signal_lost = False
+PX4 动作    ✅ "Failsafe activated" → navigation mode: Position（位置保持，非返航）
+            即 COM_OBL_RC_ACT=0 的预期行为
+任务层      ✅ 检测到 PX4 failsafe 并中止任务（当前设计：failsafe → ABORT）
+```
+
+对照实验（手动源也丢失时）此前观测到的是 RTL——现在两条路径都解释清楚了：
+
+- **offboard 丢失 + 手动源在线** → Position 保持（本次验证）
+- **手动源丢失**（`NAV_RCL_ACT` 默认返航）→ Hold 5 s → RTL → 落地 → 上锁（本次同时观测到，
+  属安全正面行为：手动源消失后自动返航）
+
+### 修复
+
+- `manual_control.py` 增加 `sys.stdout.reconfigure(line_buffering=True)`：
+  此前脚本模式输出被块缓冲，进程被 SIGTERM 终止时日志文件为空，导致"看不出工具是否在运行"。
+
+### 已知问题 / 待决策
+
+- 任务层目前对**任何** failsafe 都 ABORT。而 offboard 丢失的动作是良性的"位置保持"，
+  更合适的语义是 **PAUSED**（等操作手恢复链路或接管，然后续飞）。
+  建议加参数区分：failsafe 动作是保持类 → PAUSED；返航/降落类 → ABORT。**待确认后实现**。
+- 实验期间为排除干扰禁用了电池阈值（`BAT_LOW/CRIT/EMERGEN_THR=0`，仅内存生效）。
+  **手动飞行前请恢复**：`BAT_LOW_THR 0.15`、`BAT_CRIT_THR 0.07`、`BAT_EMERGEN_THR 0.05`。
+
+---
+
 ## [2026-10-09] offboard 丢失注入：定位到真正的 failsafe 来源
 
 ### 分析结论（本轮的关键发现）
