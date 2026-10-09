@@ -15,7 +15,7 @@
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 
 try:  # 允许在没有安装 airsim 客户端时仍能导入本模块做单元测试
     import airsim
@@ -39,9 +39,15 @@ class AirSimCamera(Node):
         self.declare_parameter('vehicle_name', 'Drone1')
         self.declare_parameter('camera_name', '0')
         self.declare_parameter('frame_id', 'camera_link')
-        self.declare_parameter('rate_hz', 2.0)
+        # AirSim RPC 每次调用的固定开销约 330 ms（LockStep 步进），因此实际上限约 3 Hz；
+        # 实测彩色+深度放在同一次调用里几乎不增加开销（350 ms vs 334 ms），
+        # 所以不再抽取深度，直接每帧都取。
+        self.declare_parameter('rate_hz', 2.5)
         self.declare_parameter('publish_depth', True)
-        self.declare_parameter('depth_interval', 5)
+        self.declare_parameter('depth_interval', 1)
+        self.declare_parameter('publish_pointcloud', True)
+        self.declare_parameter('pointcloud_stride', 4)
+        self.declare_parameter('max_depth_m', 10.0)
         self.declare_parameter('hfov_deg', 90.0)
 
         self._host = str(self.get_parameter('host').value)
@@ -51,11 +57,16 @@ class AirSimCamera(Node):
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._publish_depth = bool(self.get_parameter('publish_depth').value)
         self._depth_interval = max(int(self.get_parameter('depth_interval').value), 1)
+        self._publish_cloud = bool(
+            self.get_parameter('publish_pointcloud').value)
+        self._cloud_stride = max(int(self.get_parameter('pointcloud_stride').value), 1)
+        self._max_depth = float(self.get_parameter('max_depth_m').value)
         self._hfov_deg = float(self.get_parameter('hfov_deg').value)
         rate_hz = max(float(self.get_parameter('rate_hz').value), 0.1)
 
         self._image_pub = self.create_publisher(Image, '~/image', 10)
         self._depth_pub = self.create_publisher(Image, '~/depth', 10)
+        self._cloud_pub = self.create_publisher(PointCloud2, '~/points', 10)
         self._info_pub = self.create_publisher(CameraInfo, '~/camera_info', 10)
 
         self._client = None
@@ -121,6 +132,8 @@ class AirSimCamera(Node):
         self._publish_scene(scene, stamp)
         if want_depth and len(responses) > 1:
             self._publish_depth_image(responses[1], stamp)
+            if self._publish_cloud:
+                self._publish_pointcloud(responses[1], stamp)
         self._publish_camera_info(scene.width, scene.height, stamp)
 
         if not self._warned and scene.width < 640:
@@ -183,6 +196,50 @@ class AirSimCamera(Node):
                   0.0, focal, height / 2.0, 0.0,
                   0.0, 0.0, 1.0, 0.0]
         self._info_pub.publish(info)
+        self._focal = focal
+        self._last_size = (width, height)
+
+    def _publish_pointcloud(self, response, stamp) -> None:
+        """深度图 → 点云（相机光学系 → 机体 FLU 约定：x 前、y 左、z 上）。
+
+        按 stride 抽样以控制点数；超过 max_depth 或无效的像素丢弃。
+        """
+        height, width = int(response.height), int(response.width)
+        depth = np.array(response.image_data_float, dtype=np.float32)[:height * width]
+        if depth.size < height * width:
+            return
+        depth = depth.reshape(height, width)
+
+        focal = getattr(self, '_focal', width / (2.0 * np.tan(np.radians(self._hfov_deg) / 2.0)))
+        cx, cy = width / 2.0, height / 2.0
+        step = self._cloud_stride
+
+        v, u = np.mgrid[0:height:step, 0:width:step]
+        z_cam = depth[0:height:step, 0:width:step]
+        valid = np.isfinite(z_cam) & (z_cam > 0.05) & (z_cam <= self._max_depth)
+        z_cam = z_cam[valid]
+        x_cam = (u[valid] - cx) / focal * z_cam
+        y_cam = (v[valid] - cy) / focal * z_cam
+
+        # 光学系(x右,y下,z前) → 机体 FLU(x前,y左,z上)
+        points = np.stack([z_cam, -x_cam, -y_cam], axis=1).astype(np.float32)
+
+        cloud = PointCloud2()
+        cloud.header.stamp = stamp
+        cloud.header.frame_id = self._frame_id
+        cloud.height = 1
+        cloud.width = int(points.shape[0])
+        cloud.is_bigendian = False
+        cloud.is_dense = False
+        cloud.point_step = 12
+        cloud.row_step = 12 * cloud.width
+        cloud.fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+        ]
+        cloud.data = points.tobytes()
+        self._cloud_pub.publish(cloud)
 
 
 def main(args=None) -> None:

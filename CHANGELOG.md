@@ -15,6 +15,52 @@
 
 ---
 
+## [2026-10-09] 阶段 3：深度提频 5.6 倍 + 点云发布
+
+### 关键测量（修正此前的错误优化）
+
+对 AirSim 取图开销做基准测试：
+
+```text
+仅彩色 1280×720            334 ms → 3.0 Hz
+仅深度 640×480（float）    334 ms → 3.0 Hz
+彩色+深度（同一次调用）     350 ms → 2.9 Hz   ← 几乎不增加开销
+```
+
+**开销由每次 RPC 调用的固定延迟（约 330 ms，LockStep 步进）决定，与数据量无关。**
+因此此前"深度每 5 帧抽一次"的优化是基于误判（当时把测量窗口过短导致的
+`ros2 topic hz` 抖动当成了真实帧率），实际既没必要也代价很大。
+
+### 变更
+
+- `airsim_camera`：`depth_interval` 默认 5 → **1**（每帧都取深度），
+  采样率默认 2.0 → **2.5 Hz**（在 3 Hz 上限内留余量）。
+- 新增 **点云发布**：`~/points`（`sensor_msgs/PointCloud2`），
+  由深度图按针孔模型反投影生成，坐标转换为机体 FLU（x 前、y 左、z 上），
+  参数 `pointcloud_stride`（默认 4）与 `max_depth_m`（默认 10 m）。
+
+### 验证
+
+```text
+image   2.25 Hz（此前 2.04 Hz）
+depth   2.25 Hz（此前 0.4 Hz，提升 5.6 倍）
+points  2.20 Hz，单帧 9440 点（stride=4、10 m 内）
+取证    logs/2026-10-08/airsim_camera_depth_pointcloud.log
+```
+
+### 修复
+
+- 布尔参数属性 `_publish_pointcloud` 与同名方法冲突（`TypeError: 'bool' object is not callable`），
+  属性改名为 `_publish_cloud`。这类命名冲突只有启动冒烟才会暴露，再次印证"新通道必须跑一次"。
+
+### 已知问题
+
+- 深度/点云上限约 3 Hz（受 LockStep 每次 RPC 330 ms 限制）。
+  若避障需要更高频率，需要改 AirSim 侧配置（降低深度分辨率、或启用 LiDAR 并减少点数），
+  且改 settings.json 需重启仿真。
+
+---
+
 ## [2026-10-09] failsafe 动作感知的任务语义（保持类→PAUSED，恢复类→ABORT）已验证
 
 ### 变更

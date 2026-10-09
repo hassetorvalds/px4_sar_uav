@@ -265,7 +265,7 @@ Windows 11（宿主）
 | 坐标系转换与单元测试 | ✅ | `px4_interface/frames.py`（NED↔ENU、偏航换算）+ 8 个 pytest 用例 |
 | 速度控制模式 | ✅ | `offboard_bridge` 支持 `~/velocity_setpoint`（ENU 速度 + 偏航角速度），超时自动回位置保持 |
 | VLM 指向式导航 | ✅ | `vlm/`：图像指向解析 → 针孔反投影 → 机体速度；mock provider + 静态图像已飞通 |
-| 相机接入（AirSim → ROS 2） | ✅ | `sensor_bridge/airsim_camera`：彩色 1280×720 @2.04 Hz（bgr8）、深度 0.4 Hz（32FC1）、camera_info |
+| 相机与深度接入 | ✅ | `airsim_camera`：彩色 1280×720 @2.25 Hz、深度 2.25 Hz（32FC1）、点云 2.20 Hz（9440 点）、camera_info |
 | 实时图像闭环 | ✅ | `vision_stub` 视觉桩驱动：10° 偏航死区 + 增益 0.5 后目标像素稳定在距中心约 10 px，偏航 100% 为零 |
 | 接近终止策略 | ✅ | 任务层 `approach_supervisor`（站定距离可配，实测 0.46 m ≤ 1.2 m 时 hold，位移仅 0.25 m）；视觉层 `stop_distance_m` 退为兜底 |
 | 状态测量脚本 | ✅ | `scripts/px4_state_snapshot.py` 连续采样，替换会读到无效值的 `topic echo --once` |
@@ -300,7 +300,7 @@ ros2_px4_ws/src/
 ```text
 □ 自动降落（根因已定位：EKF 触地发散；已加静置上锁兜底，见 4.5）
 □ 人工接管与安全：键盘接管、任务暂停/恢复、隔离验证、offboard 丢失行为、failsafe 动作感知语义（保持类→暂停续飞，恢复类→中止）均已通过
-□ 传感器接入：相机已完成，Depth/LiDAR 高频化与时间同步待做
+□ 传感器接入：相机/深度/点云已完成（深度 2.25 Hz，受 LockStep 每次 RPC 330 ms 限制）；LiDAR 与时间同步待做
 □ 实时避障与局部重规划
 □ 自主探索 / 搜索区域覆盖
 □ VLM 自然语言任务解析（当前只有“指向式导航”，尚未做任务级结构化输出）
