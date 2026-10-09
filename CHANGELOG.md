@@ -15,6 +15,39 @@
 
 ---
 
+## [2026-10-09] offboard 丢失注入：定位到真正的 failsafe 来源
+
+### 分析结论（本轮的关键发现）
+
+用 `listener failsafe_flags` 直接读 PX4 的 failsafe 判据，修正了此前的误判：
+
+```text
+offboard_control_signal_lost : True    ← offboard 丢失确实被检测到
+manual_control_signal_lost   : True    ← 但同时没有任何手动输入源
+battery_warning              : 0       ← 电池不是原因（阈值已禁用）
+remote_id_unhealthy          : True    ← 与本实验无关的噪声项
+```
+
+因此观察到的 RTL 来自**数传/手动控制丢失 failsafe**（`NAV_RCL_ACT` 默认返航），
+它**掩盖**了 offboard 丢失动作（`COM_OBL_RC_ACT=0` 应为位置保持）。
+根因：本环境没有真实遥控器，实验时键盘工具也未在发送摇杆流，
+PX4 同时判定"offboard 丢失 + 手动源丢失"→ 升级为返航。
+
+### 环境结论
+
+- `SIM_BAT_*` 等仿真参数**不会被 `param save` 持久化**，每次 PX4 启动后需重新设置；
+  本轮改为实时设置 `BAT_LOW_THR=0`、`BAT_CRIT_THR=0`、`BAT_EMERGEN_THR=0` 后，
+  `battery_warning` 归零，电池 failsafe 不再干扰。
+- 禁用电池阈值后，`offboard_control_signal_lost` 可被干净观测，实验可重复。
+
+### 下一步（已明确）
+
+飞行中先用 `manual_control.py` 持续发送**中位摇杆**（不接管）保持"手动源在线"，
+再杀掉 offboard_bridge，即可单独观测 `COM_OBL_RC_ACT` 的动作（预期位置保持），
+同时验证任务层"离开 OFFBOARD → PAUSED"与键盘随时接管。
+
+---
+
 ## [2026-10-09] 交还前置检查 + offboard 丢失故障注入（部分完成）
 
 ### 新增
