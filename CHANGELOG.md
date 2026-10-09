@@ -15,6 +15,40 @@
 
 ---
 
+## [2026-10-09] failsafe 动作感知的任务语义（保持类→PAUSED，恢复类→ABORT）已验证
+
+### 变更
+
+- `waypoint_mission` 不再对任何 failsafe 一律中止，改为按 PX4 的**动作类型**处理：
+  - `RECOVERY_NAV_STATES = {AUTO_RTL(5), AUTO_LAND(18)}` → 飞控已自主返航/降落，
+    任务中止（交还飞控）。
+  - 其余离开 OFFBOARD 的情形（人工接管、failsafe 保持类如 POSCTL）→ **PAUSED**，
+    保留当前航点，等待交还后续飞。
+  - PAUSED 期间同样按动作类型判断，避免"暂停后立刻又中止"。
+
+### 验证（飞行实测）
+
+```text
+CRUISE 中杀掉 offboard 桥接
+  PX4            → 位置保持（failsafe 保持类）
+  任务层         ✅ “检测到离开 OFFBOARD（nav_state=2，failsafe 保持类动作），暂停任务”
+                    （修复前会立即 ABORT）
+恢复桥接 + 请求 OFFBOARD
+  任务层         ✅ “检测到已交还控制，恢复自主：回到 CRUISE” → “飞往航点 1”
+  后续           ✅ “到达航点 1，位置误差 0.46 m” → “飞往航点 2”（任务继续推进）
+取证            logs/2026-10-08/{fs7_mission,fs7_bridge,fs7_manual}_failsafe_pause.log
+```
+
+### 修复
+
+- 首次实现时只在飞行阶段加了动作类型判断，**PAUSED 分支仍保留旧的“任何 failsafe 都中止”**，
+  导致暂停 0.2 s 后立刻中止（日志：`任务中止：暂停期间 PX4 进入 failsafe`）。
+  已在两处统一为同一判断。教训：改语义时要搜索全部同类判断点。
+- 早前一轮 `RECOVERY_NAV_STATES` 使用了未导入的 `VehicleStatus`，导致任务节点启动即崩；
+  已补 `from px4_msgs.msg import VehicleStatus`（说明新增模块级常量后需冒烟启动一次）。
+
+---
+
 ## [2026-10-09] offboard 丢失行为验证通过（阶段 2「Offboard loss」验收项）
 
 ### 验证结果

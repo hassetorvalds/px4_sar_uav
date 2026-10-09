@@ -17,6 +17,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from px4_interface.frames import distance, ned_to_enu
 from px4_interface.state import Px4StateMonitor
+from px4_msgs.msg import VehicleStatus
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -32,6 +33,14 @@ class Phase(Enum):
     WAIT_DISARM = 'WAIT_DISARM'
     DONE = 'DONE'
     ABORT = 'ABORT'
+
+
+#: PX4 的“恢复类”导航状态：进入这些状态说明飞控正在自主返航/降落，
+#: 任务应中止而不是暂停。保持类（POSCTL/ALTCTL/MANUAL）则允许暂停后续飞。
+RECOVERY_NAV_STATES = frozenset({
+    VehicleStatus.NAVIGATION_STATE_AUTO_RTL,
+    VehicleStatus.NAVIGATION_STATE_AUTO_LAND,
+})
 
 
 class WaypointMission(Node):
@@ -96,6 +105,7 @@ class WaypointMission(Node):
         self._abort_reason = ''
         self._waypoint_errors = []
         self._paused_from = None
+        self._paused_reason = ''
 
         rate_hz = float(self.get_parameter('loop_rate_hz').value)
         self.create_timer(1.0 / rate_hz, self._tick)
@@ -139,7 +149,8 @@ class WaypointMission(Node):
 
         # 人工接管中：等待交还，回到 OFFBOARD 后从原阶段/原航点继续
         if self._phase is Phase.PAUSED:
-            if state.failsafe:
+            # 暂停期间同样按动作类型判断：飞控自主返航/降落才中止，保持类继续等待
+            if state.failsafe and state.nav_state in RECOVERY_NAV_STATES:
                 self._abort('暂停期间 PX4 进入 failsafe')
                 return
             if state.offboard:
@@ -149,19 +160,24 @@ class WaypointMission(Node):
                 self._enter(resume_phase)
                 return
             if self._phase_elapsed() > self._pause_timeout:
-                self._abort(f'人工接管超过 {self._pause_timeout:.0f} s 未交还')
+                self._abort(f'暂停超过 {self._pause_timeout:.0f} s 未交还'
+                            f'（原因：{self._paused_reason}）')
             self._publish_status(state)
             return
 
-        # 飞行阶段的安全监控：failsafe 或离开 OFFBOARD（例如人工接管）立即交还控制权
+        # 飞行阶段的安全监控：按 failsafe 的动作类型区分处理
         if self._phase in (Phase.TAKEOFF, Phase.CRUISE):
-            if state.failsafe:
-                self._abort('PX4 进入 failsafe')
+            if state.failsafe and state.nav_state in RECOVERY_NAV_STATES:
+                self._abort(
+                    f'PX4 failsafe 且已进入恢复动作（nav_state={state.nav_state}），'
+                    '任务交还飞控处理')
                 return
             if not state.offboard:
+                reason = ('failsafe 保持类动作' if state.failsafe else '人工接管')
                 self.get_logger().warn(
-                    f'检测到离开 OFFBOARD（nav_state={state.nav_state}），判定为人工接管，暂停任务')
+                    f'检测到离开 OFFBOARD（nav_state={state.nav_state}，{reason}），暂停任务')
                 self._paused_from = self._phase
+                self._paused_reason = reason
                 self._enter(Phase.PAUSED)
                 return
 
