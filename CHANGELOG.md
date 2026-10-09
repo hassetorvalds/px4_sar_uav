@@ -15,6 +15,36 @@
 
 ---
 
+## [2026-10-09] 交还前置检查 + offboard 丢失故障注入（部分完成）
+
+### 新增
+
+- `manual_control.py` 交还前置检查：切换 OFFBOARD 前扫描 `/proc` 确认 `offboard_bridge` 进程在线
+  （**不依赖 ROS 2**）；若不在线则拒绝交还、保持人工模式并给出提示。
+  局限：进程存在 ≠ 链路健康（agent 挂掉时进程仍在），因此仍以"模式是否真正切换成功"为准。
+
+### 验证：offboard 丢失注入（飞行中）
+
+```text
+注入方式        任务处于 CRUISE 时杀掉 uXRCE-DDS Agent
+ROS 2 侧        ✅ offboard_bridge 检测到 PX4 状态超时（>1 s）并**主动停止发送设定点**
+                ✅ waypoint_mission 进入“等待 PX4 状态”，不再下发指令
+PX4 侧          ✅ 触发 failsafe 并安全收尾：Failsafe activated → RTL → Landing detected
+                   → Disarmed by landing（未失控、未飞远）
+取证            logs/2026-10-08/{bridge_offboard_loss_injection.log,
+                mission_offboard_loss_injection.log}
+```
+
+### 已知问题
+
+- **本轮触发的其实是电池 failsafe，不是 offboard 丢失 failsafe**，因此 `COM_OBL_RC_ACT=0`
+  （offboard 丢失 → 位置保持）的行为**尚未验证**。虽然安全收尾成立，但结论不能混用。
+- 电池 failsafe 反复干扰实验：`COM_LOW_BAT_ACT=0` 只关掉低电量告警动作，危急阈值仍会 RTL。
+  已设置 `SIM_BAT_MIN_PCT=100`、`SIM_BAT_DRAIN=0` 并保存，**需重启 PX4 后生效**；
+  下一轮实验前务必确认电池状态，否则同样会污染结果。
+
+---
+
 ## [2026-10-09] 隔离验证通过 + 手动接管链路启动自动化
 
 ### 新增

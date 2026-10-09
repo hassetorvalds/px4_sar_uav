@@ -35,6 +35,8 @@ MAVLINK_LISTEN_PORT = 14701
 MAVLINK_TARGET = ('127.0.0.1', 14700)
 SYSTEM_ID = 245
 COMPONENT_ID = 190
+#: 交还前需要确认 offboard 数据源在线，否则 PX4 会拒绝切回 OFFBOARD
+BRIDGE_PATTERN = 'offboard_bridge'
 
 #: PX4 custom_mode 编码：(主模式 << 16) | (子模式 << 24)
 MODE_POSCTL = 3
@@ -142,9 +144,30 @@ class ManualControl:
         print('→ 交还控制（OFFBOARD）')
         self.manual_active = False
         self.release_all()
+        if not self._offboard_source_alive():
+            print(f'  警告：未发现 {BRIDGE_PATTERN} 进程，PX4 会拒绝切回 OFFBOARD')
+            print('  请先启动 scripts/run_offboard.sh（或 offboard_bridge），再按 F10 交还')
+            print('  本次改为保持人工模式（POSCTL），摇杆回中悬停')
+            self.manual_active = True
+            return False
         ok = self.set_mode(MODE_OFFBOARD)
         print('  交还' + ('成功' if ok else '未确认'))
         return ok
+
+    @staticmethod
+    def _offboard_source_alive() -> bool:
+        """不依赖 ROS 2 地检查 offboard 数据源进程是否在运行（扫描 /proc）。"""
+        for entry in os.listdir('/proc'):
+            if not entry.isdigit() or int(entry) == os.getpid():
+                continue
+            try:
+                with open(f'/proc/{entry}/cmdline', 'rb') as handle:
+                    cmdline = handle.read().decode('utf-8', errors='ignore')
+            except OSError:
+                continue
+            if BRIDGE_PATTERN in cmdline:
+                return True
+        return False
 
     def release_all(self) -> None:
         for key in self.sticks:
