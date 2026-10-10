@@ -52,3 +52,36 @@ def test_altitude_correction_is_proportional_and_clamped():
 def test_goal_distance_reported():
     cmd = plan_velocity((3.0, 4.0, 3.0), (0.0, 0.0, 3.0), clearance_m=9.0)
     assert math.isclose(cmd.distance_to_goal, 5.0, rel_tol=1e-9)
+
+
+def test_avoid_prefers_freer_side():
+    # 目标在正东；左侧 3 m、右侧 0.5 m → 应向左（正北）
+    cmd = plan_velocity((5.0, 0.0, 3.0), (0.0, 0.0, 3.0), clearance_m=0.5,
+                        left_clearance=3.0, right_clearance=0.5)
+    assert cmd.mode == 'avoid' and cmd.avoid_side_used == 1
+    assert cmd.velocity_enu[1] > 0.0
+    # 右侧更宽 → 向右（正南）
+    cmd = plan_velocity((5.0, 0.0, 3.0), (0.0, 0.0, 3.0), clearance_m=0.5,
+                        left_clearance=0.4, right_clearance=2.5)
+    assert cmd.avoid_side_used == -1 and cmd.velocity_enu[1] < 0.0
+
+
+def test_avoid_side_hysteresis_avoids_flip_flop():
+    # 两侧接近（差 0.2 m < 迟滞 0.5 m）→ 沿用上次方向，避免左右摇摆
+    cmd = plan_velocity((5.0, 0.0, 3.0), (0.0, 0.0, 3.0), clearance_m=0.5,
+                        left_clearance=2.0, right_clearance=2.2,
+                        previous_avoid_side=1, side_switch_margin=0.5)
+    assert cmd.avoid_side_used == 1
+
+
+def test_avoid_switches_when_other_side_clearly_better():
+    cmd = plan_velocity((5.0, 0.0, 3.0), (0.0, 0.0, 3.0), clearance_m=0.5,
+                        left_clearance=1.0, right_clearance=4.0,
+                        previous_avoid_side=1, side_switch_margin=0.5)
+    assert cmd.avoid_side_used == -1
+
+
+def test_avoid_uses_default_without_side_info():
+    cmd = plan_velocity((5.0, 0.0, 3.0), (0.0, 0.0, 3.0), clearance_m=0.5,
+                        avoid_side=-1)
+    assert cmd.avoid_side_used == -1

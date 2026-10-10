@@ -125,3 +125,22 @@ class VoxelGrid:
         if not np.any(in_cone):
             return float('inf')
         return float(distance[in_cone].min())
+
+    def clearance_profile(self, origin_enu, heading_enu: float,
+                          half_angle_deg: float = 30.0,
+                          max_distance: float = 6.0,
+                          vertical_tolerance_m: float = 0.6):
+        """返回 (前方, 左方, 右方) 最近障碍距离；左右按航向 ±90° 锥统计。
+
+        用于决定绕障往哪一侧：更宽的一侧更安全。
+        """
+        forward = self.nearest_in_cone(
+            origin_enu, heading_enu, half_angle_deg, max_distance,
+            vertical_tolerance_m)
+        left = self.nearest_in_cone(
+            origin_enu, heading_enu + math.pi / 2, half_angle_deg,
+            max_distance, vertical_tolerance_m)
+        right = self.nearest_in_cone(
+            origin_enu, heading_enu - math.pi / 2, half_angle_deg,
+            max_distance, vertical_tolerance_m)
+        return forward, left, right

@@ -53,7 +53,10 @@ class LocalPlanner(Node):
 
         self._goal = None
         self._clearance = float('inf')
+        self._left_clearance = float('inf')
+        self._right_clearance = float('inf')
         self._clearance_at = 0.0
+        self._last_avoid_side = 0
 
         self.create_subscription(PoseStamped, str(self.get_parameter('goal_topic').value),
                                  self._on_goal, 10)
@@ -80,11 +83,17 @@ class LocalPlanner(Node):
         self.get_logger().info(f'新目标 ENU=({p.x:.2f}, {p.y:.2f}, {p.z:.2f})')
 
     def _on_map_status(self, msg: String) -> None:
-        match = re.search(r'nearest_forward_m=([0-9.]+|inf)', msg.data)
-        if match:
-            value = match.group(1)
-            self._clearance = float('inf') if value == 'inf' else float(value)
-            self._clearance_at = time.monotonic()
+        def parse(name: str) -> float:
+            found = re.search(rf'{name}=([0-9.]+|inf)', msg.data)
+            if not found:
+                return float('inf')
+            value = found.group(1)
+            return float('inf') if value == 'inf' else float(value)
+
+        self._clearance = parse('nearest_forward_m')
+        self._left_clearance = parse('left_m')
+        self._right_clearance = parse('right_m')
+        self._clearance_at = time.monotonic()
 
     # ------------------------------------------------------------------ 主循环
 
@@ -109,7 +118,12 @@ class LocalPlanner(Node):
 
         command = plan_velocity(
             self._goal, ned_to_enu(*position_ned), clearance_m=clearance,
+            left_clearance=self._left_clearance,
+            right_clearance=self._right_clearance,
+            previous_avoid_side=self._last_avoid_side,
             **self._params)
+        if command.mode == 'avoid':
+            self._last_avoid_side = command.avoid_side_used
 
         twist = Twist()
         twist.linear.x, twist.linear.y, twist.linear.z = command.velocity_enu

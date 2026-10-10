@@ -114,15 +114,16 @@ class LocalMap(Node):
         state = self._monitor.snapshot()
         position_ned = state.position_ned
         if position_ned is None:
-            nearest = float('inf')
+            forward = left = right = float('inf')
         else:
-            nearest = self._grid.nearest_in_cone(
+            forward, left, right = self._grid.clearance_profile(
                 ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
                 half_angle_deg=self._cone_deg, max_distance=self._cone_max,
                 vertical_tolerance_m=self._cone_vertical)
         status = String()
         status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
-                       f'nearest_forward_m={nearest:.2f}')
+                       f'nearest_forward_m={forward:.2f} '
+                       f'left_m={left:.2f} right_m={right:.2f}')
         self._status_pub.publish(status)
 
 
