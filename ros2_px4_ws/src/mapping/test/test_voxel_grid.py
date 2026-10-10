@@ -62,3 +62,16 @@ def test_nearest_in_cone_respects_max_distance():
     grid.insert(np.array([[9.0, 0.0, 0.0]]), origin_enu=(0, 0, 0), now=0.0)
     assert math.isinf(grid.nearest_in_cone(
         (0, 0, 0), heading_enu=0.0, half_angle_deg=30.0, max_distance=5.0))
+
+
+def test_ground_below_is_not_treated_as_forward_obstacle():
+    """低空飞行时下方地面不应被判为前方障碍（历史 bug 的回归测试）。"""
+    grid = VoxelGrid(resolution=0.15, extent=10.0)
+    ground = np.array([[1.0, 0.0, -0.8], [2.0, 0.0, -0.8]])   # 机体在 z=0，地面在下方
+    grid.insert(ground, origin_enu=(0, 0, 0), now=0.0)
+    assert math.isinf(grid.nearest_in_cone(
+        (0, 0, 0), heading_enu=0.0, half_angle_deg=30.0, vertical_tolerance_m=0.6))
+    # 同高度的真实障碍仍能被检出
+    grid.insert(np.array([[2.5, 0.0, 0.1]]), origin_enu=(0, 0, 0), now=0.0)
+    assert 2.0 <= grid.nearest_in_cone(
+        (0, 0, 0), heading_enu=0.0, half_angle_deg=30.0, vertical_tolerance_m=0.6) <= 3.0

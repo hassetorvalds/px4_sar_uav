@@ -33,10 +33,13 @@ class LocalMap(Node):
         self.declare_parameter('publish_rate_hz', 1.0)
         self.declare_parameter('cone_deg', 30.0)
         self.declare_parameter('cone_max_distance', 6.0)
+        self.declare_parameter('cone_vertical_tolerance_m', 0.6)
 
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._cone_deg = float(self.get_parameter('cone_deg').value)
         self._cone_max = float(self.get_parameter('cone_max_distance').value)
+        self._cone_vertical = float(
+            self.get_parameter('cone_vertical_tolerance_m').value)
 
         self._grid = VoxelGrid(
             resolution=float(self.get_parameter('resolution').value),
@@ -115,7 +118,8 @@ class LocalMap(Node):
         else:
             nearest = self._grid.nearest_in_cone(
                 ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
-                half_angle_deg=self._cone_deg, max_distance=self._cone_max)
+                half_angle_deg=self._cone_deg, max_distance=self._cone_max,
+                vertical_tolerance_m=self._cone_vertical)
         status = String()
         status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
                        f'nearest_forward_m={nearest:.2f}')

@@ -96,8 +96,14 @@ class VoxelGrid:
 
     def nearest_in_cone(self, origin_enu, heading_enu: float,
                         half_angle_deg: float = 30.0,
-                        max_distance: float = 6.0) -> float:
-        """前方锥形区域内最近障碍距离；无遮挡时返回 ``inf``。"""
+                        max_distance: float = 6.0,
+                        vertical_tolerance_m: float = 0.6) -> float:
+        """前方锥形区域内最近障碍距离；无遮挡时返回 ``inf``。
+
+        ``vertical_tolerance_m`` 限制只统计与机体**同高度薄层**内的点：
+        否则低空飞行时下方地面会一直被判为"正前方障碍"（实测 0.8 m 高度时
+        地面恒定贡献约 0.9 m 的净空读数，导致飞机无法正常前进）。
+        """
         centers = self.centers()
         if centers.shape[0] == 0:
             return float('inf')
@@ -114,8 +120,7 @@ class VoxelGrid:
         cos_angle = np.divide(delta[:, :2] @ forward[:2], horizontal_norm,
                               out=np.zeros_like(horizontal_norm),
                               where=horizontal_norm > 1e-6)
-        vertical_ok = np.abs(delta[:, 2]) <= np.maximum(horizontal_norm, 1e-6) * math.tan(
-            math.radians(half_angle_deg))
+        vertical_ok = np.abs(delta[:, 2]) <= float(vertical_tolerance_m)
         in_cone = (cos_angle >= cos_limit) & vertical_ok
         if not np.any(in_cone):
             return float('inf')
