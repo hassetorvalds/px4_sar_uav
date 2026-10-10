@@ -504,7 +504,9 @@ ros2_px4_ws/src/
 ✅ px4_interface     QoS、坐标系转换、状态跟踪、Offboard 桥接（offboard_bridge）
 ✅ mission           航点状态机 + 接近监督（phase A 主体已实现，自动降落待修）
 ✅ vlm               指向解析、几何反投影、机体速度指令（真实 API 未验证）
-□ sensor_bridge □ mapping □ planner □ perception □ safety
+✅ sensor_bridge     相机/深度/点云（2.25 Hz）
+✅ mapping           局部体素障碍地图 + 前方最近障碍距离（v1：无 TF 外参）
+□ planner □ perception □ safety
 ```
 
 ## 6.1 `px4_interface`

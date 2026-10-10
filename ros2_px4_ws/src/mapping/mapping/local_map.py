@@ -1,0 +1,139 @@
+"""局部障碍地图节点：深度点云（机体 FLU）→ ENU 体素地图 + 前方最近障碍。
+
+输入：`/airsim_camera/points`（sensor_msgs/PointCloud2，机体 FLU）
+      PX4 状态（位置/航向，来自 px4_interface 的 Px4StateMonitor）
+输出：`~/occupied`（PointCloud2，占据体素中心，ENU/map 系）
+      `~/status`（String：体素数、前方最近障碍距离）
+
+注意（v1 简化）：假设相机与机体同向、无安装偏移；地图为机体附近的局部地图，
+超出 extent 的点直接丢弃。
+"""
+
+import numpy as np
+import rclpy
+from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
+from px4_interface.state import Px4StateMonitor
+from rclpy.node import Node
+from sensor_msgs.msg import PointCloud2, PointField
+from std_msgs.msg import String
+
+from .voxel_grid import VoxelGrid, yaw_rotate_flu_to_enu
+
+
+class LocalMap(Node):
+    def __init__(self) -> None:
+        super().__init__('local_map')
+        self.declare_parameter('points_topic', '/airsim_camera/points')
+        self.declare_parameter('frame_id', 'map')
+        self.declare_parameter('resolution', 0.15)
+        self.declare_parameter('extent', 8.0)
+        self.declare_parameter('height_min', -2.0)
+        self.declare_parameter('height_max', 6.0)
+        self.declare_parameter('decay_s', 5.0)
+        self.declare_parameter('publish_rate_hz', 1.0)
+        self.declare_parameter('cone_deg', 30.0)
+        self.declare_parameter('cone_max_distance', 6.0)
+
+        self._frame_id = str(self.get_parameter('frame_id').value)
+        self._cone_deg = float(self.get_parameter('cone_deg').value)
+        self._cone_max = float(self.get_parameter('cone_max_distance').value)
+
+        self._grid = VoxelGrid(
+            resolution=float(self.get_parameter('resolution').value),
+            extent=float(self.get_parameter('extent').value),
+            height_min=float(self.get_parameter('height_min').value),
+            height_max=float(self.get_parameter('height_max').value),
+            decay_s=float(self.get_parameter('decay_s').value))
+
+        self._monitor = Px4StateMonitor(self)
+        self.create_subscription(
+            PointCloud2, str(self.get_parameter('points_topic').value),
+            self._on_points, 5)
+        self._cloud_pub = self.create_publisher(PointCloud2, '~/occupied', 5)
+        self._status_pub = self.create_publisher(String, '~/status', 5)
+
+        rate = max(float(self.get_parameter('publish_rate_hz').value), 0.2)
+        self.create_timer(1.0 / rate, self._tick)
+        self._frames = 0
+        self.get_logger().info(
+            f'局部地图启动：分辨率 {self._grid.resolution:.2f} m，'
+            f'范围 ±{self._grid.extent:.1f} m，衰减 {self._grid.decay_s:.0f} s，'
+            f'前方锥 {self._cone_deg:.0f}° / {self._cone_max:.0f} m')
+
+    # ------------------------------------------------------------------ 输入
+
+    def _on_points(self, msg: PointCloud2) -> None:
+        """把点云（机体 FLU）转换到 ENU 世界并插入体素地图。"""
+        if msg.width == 0:
+            return
+        state = self._monitor.snapshot()
+        position_ned = state.position_ned
+        if position_ned is None:
+            return
+        # 本项目自产点云固定为 3×float32（x,y,z），据此直接解析
+        if msg.point_step != 12:
+            self.get_logger().warn('点云格式非 3×float32，已忽略', throttle_duration_sec=10.0)
+            return
+        body = np.frombuffer(msg.data, dtype=np.float32).reshape(-1, 3)
+        if body.size == 0:
+            return
+        heading_enu = ned_yaw_to_enu_yaw(state.heading)
+        origin_enu = ned_to_enu(*position_ned)
+        world_local = yaw_rotate_flu_to_enu(body, heading_enu) + np.asarray(origin_enu)
+        now = self.get_clock().now().nanoseconds / 1e9
+        self._grid.insert(world_local, origin_enu=origin_enu, now=now)
+        self._frames += 1
+
+    # ------------------------------------------------------------------ 输出
+
+    def _tick(self) -> None:
+        now = self.get_clock().now().nanoseconds / 1e9
+        self._grid.decay(now)
+        centers = self._grid.centers()
+
+        cloud = PointCloud2()
+        cloud.header.stamp = self.get_clock().now().to_msg()
+        cloud.header.frame_id = self._frame_id
+        cloud.height = 1
+        cloud.width = int(centers.shape[0])
+        cloud.is_bigendian = False
+        cloud.is_dense = False
+        cloud.point_step = 12
+        cloud.row_step = 12 * cloud.width
+        cloud.fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+        ]
+        cloud.data = centers.astype(np.float32).tobytes()
+        self._cloud_pub.publish(cloud)
+
+        state = self._monitor.snapshot()
+        position_ned = state.position_ned
+        if position_ned is None:
+            nearest = float('inf')
+        else:
+            nearest = self._grid.nearest_in_cone(
+                ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
+                half_angle_deg=self._cone_deg, max_distance=self._cone_max)
+        status = String()
+        status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
+                       f'nearest_forward_m={nearest:.2f}')
+        self._status_pub.publish(status)
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = LocalMap()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
