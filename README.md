@@ -506,7 +506,8 @@ ros2_px4_ws/src/
 ✅ vlm               指向解析、几何反投影、机体速度指令（真实 API 未验证）
 ✅ sensor_bridge     相机/深度/点云（2.25 Hz）
 ✅ mapping           局部体素障碍地图 + 前方最近障碍距离（v1：无 TF 外参）
-□ planner □ perception □ safety
+□ planner 局部规划器已实现（目标跟踪✅、避让分支触发✅），但**速度指令坐标系待查**（实测运动与指令垂直）
+□ perception □ safety
 ```
 
 ## 6.1 `px4_interface`
