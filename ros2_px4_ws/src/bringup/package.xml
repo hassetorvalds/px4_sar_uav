@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>bringup</name>
+  <version>0.1.0</version>
+  <description>统一启动：一条命令拉起接口/传感器/地图/规划/任务各层节点</description>
+  <maintainer email="hassetorvalds@users.noreply.github.com">hassetorvalds</maintainer>
+  <license>TODO: License declaration</license>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>px4_interface</exec_depend>
+  <exec_depend>sensor_bridge</exec_depend>
+  <exec_depend>mapping</exec_depend>
+  <exec_depend>planner</exec_depend>
+  <exec_depend>mission</exec_depend>
+  <exec_depend>vlm</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

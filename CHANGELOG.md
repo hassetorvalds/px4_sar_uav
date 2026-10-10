@@ -15,6 +15,49 @@
 
 ---
 
+## [2026-10-10] 统一 bringup + 阶段 5 自主探索（frontier）
+
+### 新增
+
+- `ros2_px4_ws/src/bringup`（新包）+ `launch/sim_stack.launch.py`：
+  **一条命令拉起全栈**（offboard_bridge + airsim_camera + local_map + local_planner），
+  用 launch 参数追加任务层/VLM/探索器：`with_mission:=true` / `with_vlm:=true` /
+  `with_explorer:=true`，以及 `airsim_host`、`camera_rate_hz` 等。
+- `scripts/bringup.sh`：统一启动入口（自动 source 环境）。
+- `planner/frontier.py`：frontier 探索纯逻辑——2D 占据/已知栅格、frontier 检测与连通聚类、
+  视线遮挡检查、候选选择。
+- `planner/frontier_explorer.py`：周期选择 frontier 作为目标发布给局部规划器；
+  连续无 frontier 判定探索完成。
+- 6 个 frontier 单元测试（planner 11 → 17，全项目 61 个）。
+
+### 验证
+
+```text
+统一 bringup   ✅ 一条命令拉起 5 个节点并协同工作
+自主探索       ✅ launch 日志：
+                 [frontier_explorer] 新探索目标 ENU=(+1.25,+3.75,+2.00)，候选区域数 2
+                 [local_planner]    新目标 ENU=(1.25,3.75,2.00)
+                 模式切换 → avoid → slow → cruise → arrived（0.43 m）→ 继续下一个目标
+```
+
+### 修复
+
+- frontier 目标点选择错误：原实现取**簇质心**，对环形 frontier 会落到圆心
+  （实测距机体仅 0.35 m，语义错误）。改为取**簇内离机体最近的 frontier 格子**，并加回归测试。
+
+### 日志整理
+
+- `logs/` 从 701 MB 精简到 188 MB：保留 6 个里程碑 `.ulg` 与全部 46 个文本证据文件。
+- 说明：2026-10-08 的 `.ulg` 在清理中被误删（保留列表匹配写错），该日证据仍完整保留在文本日志中。
+
+### 已知问题
+
+- 探索选点只按"距离 + 区域规模"，无信息增益/优先级队列（v1）。
+- 探索完成判定（连续 12 s 无 frontier）尚未实测——本次飞行未跑满。
+- 探索期间场景较空，规划器多在 cruise 状态。
+
+---
+
 ## [2026-10-10] 绕障方向由左右净空决定（含迟滞），替代固定方向
 
 ### 新增

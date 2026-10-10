@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'local_planner = planner.local_planner:main',
+            'frontier_explorer = planner.frontier_explorer:main',
         ],
     },
 )

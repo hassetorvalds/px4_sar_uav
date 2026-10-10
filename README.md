@@ -507,6 +507,7 @@ ros2_px4_ws/src/
 ✅ sensor_bridge     相机/深度/点云（2.25 Hz）
 ✅ mapping           局部体素障碍地图 + 前方最近障碍距离（v1：无 TF 外参）
 ✅ planner 局部规划器：目标跟踪✅、速度坐标系确认✅、完整避障序列✅、**绕障方向由左右净空决定（含迟滞）**✅；局限：狭小空间仍会贴边滑动
+✅ planner 自主探索：frontier 检测 + 选点发布（已飞行验证链路）；✅ bringup 统一启动（一条命令拉起全栈）
 □ perception □ safety
 ```
 
