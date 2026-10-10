@@ -63,3 +63,12 @@ def test_blocked_frontier_is_skipped():
 def test_max_distance_filter():
     grid = _map_with_free_around(origin=(0.0, 0.0), free_radius=3.0)
     assert grid.best_frontier((0.0, 0.0, 0.0), max_distance=1.0) is None
+
+
+def test_visited_goals_are_not_reselected():
+    grid = _map_with_free_around(origin=(0.0, 0.0), free_radius=3.0)
+    first = grid.best_frontier((0.0, 0.0, 0.0), max_distance=10.0)
+    assert first is not None
+    second = grid.best_frontier((0.0, 0.0, 0.0), max_distance=10.0,
+                                visited=[first], visited_radius=1.0)
+    assert second is None or math_dist(second, first) > 1.0

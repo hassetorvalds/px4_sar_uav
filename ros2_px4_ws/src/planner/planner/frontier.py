@@ -105,8 +105,18 @@ class FrontierMap:
             result.append(((float(np.mean(xs)), float(np.mean(ys)), 0.0), len(group)))
         return result
 
-    def best_frontier(self, position_enu, max_distance: float = 15.0):
-        """选最近且视线未被阻断的 frontier 代表点（簇内离机体最近的格子）。"""
+    def best_frontier(self, position_enu, max_distance: float = 15.0,
+                      visited=(), visited_radius: float = 1.5,
+                      size_weight: float = 1.0, distance_weight: float = 0.5):
+        """按**信息增益**选择 frontier，而不是只看最近。
+
+        评分 = ``size_weight × 簇规模 / (1 + distance_weight × 距离)``：
+        簇规模 ≈ 未知边界长度（越大越可能通向未探索区域），距离做惩罚；
+        ``visited`` 中已访问目标周围 ``visited_radius`` 内的候选直接跳过，
+        避免反复挑同一处 frontier 卡住。
+
+        目标点取**簇内离机体最近的格子**——质心对环形 frontier 会落在圆心，不可用。
+        """
         candidates = []
         for group in self.cluster_cells():
             representative = min(
@@ -116,12 +126,16 @@ class FrontierMap:
             point = self.center(representative)
             distance = math.hypot(point[0] - position_enu[0],
                                   point[1] - position_enu[1])
-            if distance <= max_distance and not self._blocked(position_enu, point):
-                candidates.append((distance, -len(group), point))
+            if distance > max_distance or self._blocked(position_enu, point):
+                continue
+            if any(math.hypot(point[0] - v[0], point[1] - v[1]) <= visited_radius
+                   for v in visited):
+                continue
+            score = size_weight * len(group) / (1.0 + distance_weight * distance)
+            candidates.append((score, point))
         if not candidates:
             return None
-        # 距离为主、规模为辅（大 frontier 通常通向更开阔区域）
-        return min(candidates)[2]
+        return max(candidates, key=lambda item: item[0])[1]
 
     def _blocked(self, start_enu, end_enu) -> bool:
         """栅格直线检查：起点到终点的连线上是否有 occupied 格子。"""

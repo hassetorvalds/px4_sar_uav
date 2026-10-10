@@ -37,6 +37,7 @@ class FrontierExplorer(Node):
         self.declare_parameter('max_goal_distance', 12.0)
         self.declare_parameter('goal_timeout_s', 40.0)
         self.declare_parameter('complete_after_s', 12.0)
+        self.declare_parameter('visited_radius_m', 1.5)
         self.declare_parameter('plan_rate_hz', 1.0)
         self.declare_parameter('explore_altitude_m', 2.0)
 
@@ -52,6 +53,8 @@ class FrontierExplorer(Node):
         self._goal_set_at = 0.0
         self._no_frontier_since = None
         self._complete = False
+        self._visited = []          # 已选过的探索目标（避免反复挑同一处）
+        self._visited_limit = 20
 
         self.create_subscription(
             PointCloud2, str(self.get_parameter('occupied_topic').value),
@@ -103,7 +106,9 @@ class FrontierExplorer(Node):
             need_new_goal = True
 
         if need_new_goal:
-            candidate = self._grid.best_frontier(position_enu, self._max_goal)
+            candidate = self._grid.best_frontier(
+                position_enu, self._max_goal, visited=self._visited,
+                visited_radius=float(self.get_parameter('visited_radius_m').value))
             if candidate is None:
                 if self._no_frontier_since is None:
                     self._no_frontier_since = now
@@ -118,9 +123,13 @@ class FrontierExplorer(Node):
             self._no_frontier_since = None
             self._goal = candidate
             self._goal_set_at = now
+            self._visited.append(candidate)
+            if len(self._visited) > self._visited_limit:
+                self._visited.pop(0)
             self.get_logger().info(
                 f'新探索目标 ENU=({candidate[0]:+.2f}, {candidate[1]:+.2f}, '
-                f'{self._altitude:+.2f})，候选区域数 {len(self._grid.clusters())}')
+                f'{self._altitude:+.2f})，候选区域数 {len(self._grid.clusters())}，'
+                f'已访问目标 {len(self._visited)} 处')
 
         self._publish_goal()
         self._publish_status('exploring')
