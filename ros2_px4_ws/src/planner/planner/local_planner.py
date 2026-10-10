@@ -127,9 +127,12 @@ class LocalPlanner(Node):
                        f'distance_m={command.distance_to_goal:.2f} stale={stale} '
                        f'reason={command.reason}')
         self._status_pub.publish(status)
-        if command.mode in ('avoid', 'arrived'):
-            self.get_logger().info(f'{command.mode}：{command.reason}',
-                                   throttle_duration_sec=2.0)
+        # 记录模式切换序列（而非仅打印某个模式），便于回放避让→巡航的完整过程
+        if command.mode != getattr(self, '_last_mode', None):
+            self.get_logger().warn(
+                f'模式切换 → {command.mode}（净空 {clearance:.2f} m，'
+                f'距目标 {command.distance_to_goal:.2f} m）{command.reason}')
+            self._last_mode = command.mode
 
 
 def main(args=None) -> None:
