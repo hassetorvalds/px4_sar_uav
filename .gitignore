@@ -11,6 +11,7 @@ log/
 
 # ---------- 飞行 / 仿真日志与数据 ----------
 logs/
+vlm_decisions*/
 *.ulg
 *.bag
 *.db3

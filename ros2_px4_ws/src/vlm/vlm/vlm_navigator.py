@@ -290,12 +290,17 @@ class VlmNavigator(Node):
                 throttle_duration_sec=5.0)
             return
 
-        self._last_error = ''
-        with self._lock:
-            self._pending_command = (command, pointing, time.monotonic(), response)
-        # 把指向结果与生成的机体速度发布出去，供任务层做“接近终止”等策略决策
-        decision = String()
-        decision.data = json.dumps({
+        # 下面这段（发布 + 日志 + 落盘）**必须**也在 try 里：
+        # 状态动作（rot_left/rot_right/stop/not_visible）没有像素坐标，x_norm/y_norm 是 NaN，
+        # 之前在这里做 pixel_from_norm 会抛 ValueError 并把工作线程整条打死
+        # （2026-10-11 Step B 重跑时踩到：首帧必是 rot_left，于是永远 0 条记录）。
+        try:
+            self._last_error = ''
+            with self._lock:
+                self._pending_command = (command, pointing, time.monotonic(), response)
+            # 把指向结果与生成的机体速度发布出去，供任务层做“接近终止”等策略决策
+            decision = String()
+            decision.data = json.dumps({
             'frame_seq': self._frame_seq,
             'label': pointing.label,
             'point_x_norm': pointing.x_norm,
@@ -310,16 +315,28 @@ class VlmNavigator(Node):
                 'yaw_rate': command.yaw_rate,
             },
             'stamp': time.time(),
-        }, ensure_ascii=False)
-        self._decision_pub.publish(decision)
-        self.get_logger().info(
-            f'VLM 指向：像素 {self._geometry.pixel_from_norm(pointing.x_norm, pointing.y_norm)}'
-            f' 深度 {pointing.depth_m:.2f} m「{pointing.label}」→ '
-            f'机体速度 (前 {command.forward:.2f}, 左 {command.left:.2f}, '
-            f'上 {command.up:.2f}) m/s，偏航 {command.yaw_rate:.2f} rad/s，'
-            f'时长 {command.duration_s:.1f} s')
-        if self._record:
-            self._record_decision(pointing, command, response, jpeg)
+            }, ensure_ascii=False, allow_nan=True)
+            self._decision_pub.publish(decision)
+            if pointing.has_position:
+                self.get_logger().info(
+                    f'VLM 指向：像素 '
+                    f'{self._geometry.pixel_from_norm(pointing.x_norm, pointing.y_norm)}'
+                    f' 深度 {pointing.depth_m:.2f} m「{pointing.label}」→ '
+                    f'机体速度 (前 {command.forward:.2f}, 左 {command.left:.2f}, '
+                    f'上 {command.up:.2f}) m/s，偏航 {command.yaw_rate:.2f} rad/s，'
+                    f'时长 {command.duration_s:.1f} s')
+            else:
+                self.get_logger().info(
+                    f'VLM 状态动作：{pointing.apos_state or "-"}（无像素坐标）→ '
+                    f'机体速度 (前 {command.forward:.2f}, 左 {command.left:.2f}, '
+                    f'上 {command.up:.2f}) m/s，偏航 {command.yaw_rate:.2f} rad/s，'
+                    f'时长 {command.duration_s:.1f} s')
+            if self._record:
+                self._record_decision(pointing, command, response, jpeg)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(
+                f'发布/记录阶段异常（已跳过，线程继续）：{type(exc).__name__}: {exc}',
+                throttle_duration_sec=5.0)
 
     def _link_meta(self) -> dict:
         """接口 v2 的 ``meta``：帧序号 + 高度 + 航向（拿不到就省略该字段）。"""
@@ -390,9 +407,10 @@ class VlmNavigator(Node):
             'latency_ms': getattr(self._client, 'last_latency_ms', None),
             'frame_file': None,
             'image_size': [self._geometry.image_width, self._geometry.image_height],
-            'point_pixel': list(self._geometry.pixel_from_norm(
-                pointing.x_norm, pointing.y_norm)),
-            'point_norm': [pointing.x_norm, pointing.y_norm],
+            'point_pixel': (list(self._geometry.pixel_from_norm(
+                pointing.x_norm, pointing.y_norm)) if pointing.has_position else None),
+            'point_norm': ([pointing.x_norm, pointing.y_norm]
+                           if pointing.has_position else None),
             'depth_m': pointing.depth_m,
             'depth_score': pointing.depth_raw,
             'apos_state': pointing.apos_state,

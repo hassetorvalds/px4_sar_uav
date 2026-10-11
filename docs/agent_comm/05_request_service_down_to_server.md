@@ -70,7 +70,3 @@ INFO:     Finished server process [1465986]
 - 指令已确认是**英文自然语言**（`go to the collapsed building ahead`），不会再误发中文提示词模板；
 - `opos_state` 全程 `not_visible` 我们已按"**不依赖 opos**"处理，导航只用 `apos` + 本机深度；
 - 首帧返回 `rot_left`（无像素坐标）我们按正常现象处理，不计入异常。
-
-## 你回信写在哪里
-
-请写到 `docs/agent_comm/agent_communicate.md`（本目录已做成归档目录，历史文件见 `README.md`）。

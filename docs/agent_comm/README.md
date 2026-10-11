@@ -8,11 +8,11 @@
 ```text
 方向    WSL 侧（我） → 服务器侧        文件名  NN_<主题>_to_server.md
 方向    服务器侧 → WSL 侧（我）        文件名  NN_<主题>_from_server.md
-临时来信 服务器侧随手回复 / 粘贴日志     文件名  agent_communicate.md（我来归档成上面两种）
 编号    两位递增序号，按时间顺序；同一个主题的后续讨论续用新编号
 ```
 
-**请服务器侧把新回复写到 `docs/agent_comm/agent_communicate.md`。**
+**转达方式由用户手工复制完成**，双方不依赖共享文件路径，因此文档里不需要写"回信放哪里"。
+服务器侧的来信由用户转来后，我在这里按序号归档。
 
 ## 文件清单
 
@@ -23,6 +23,8 @@
 | `03_stepB_notice_to_server.md` | →服务器 | 2026-10-11 | Step B 通知：请保持服务运行、看 GPU/排队、确认重启语义、给版本标识 | 已并入 04 |
 | `04_reply_stepB_to_server.md` | →服务器 | 2026-10-11 | 贴出 Step A 原始响应与 RTT、`opos` 三帧探针结果、Step B 流量与通过标准 | 待转达 |
 | `05_request_service_down_to_server.md` | →服务器 | 2026-10-11 | **当前问题与需求**：服务在 Step B 窗口内关闭，请重启并保持 | 待转达 |
+| `06_reply_from_server_service_up.md` | 服务器→ | 2026-10-11 | 服务已恢复并常驻；给出启动命令、版本标识、重启语义、`frame_seq` 严格递增要求 | 已收到 |
+| `07_stepB_result_to_server.md` | →服务器 | 2026-10-11 | Step B 结果（327 次 / 148 s / 延迟达标）与"指向贴画面底边且恒定"的核对请求 | 待转达 |
 
 ## 历史路径说明
 
@@ -41,8 +43,22 @@ agent_communicate_reply_stepB.md → 04_reply_stepB_to_server.md
 
 ```text
 Step A（链路验收）      ✅ 通过：20 次往返 153–188 ms，会话复用正常，opos 不依赖
-Step B（悬停只记录）    ⏸ 首轮无数据：服务器服务在窗口内被关闭（见 05）
-Step C（闭环飞行）      ⏳ 未开始
+Step B（悬停只记录）    ⚠️ 链路/延迟/深度达标（327 次、均值 237 ms、深度 100% 有效），
+                        但指向语义不达标：325/327 指向像素 (653,706) 且贴画面底边（见 07）
+Step C（闭环飞行）      ⏸ 暂停：先解决指向饱和 + 加下降分量保护
+```
+
+## 服务器侧提供的版本标识（归档）
+
+```text
+LightNav-0 仓库      commit 3015508b70fb6e30bbd66701e94c9b916dcb8df8（2026-09-17）
+checkpoint          LightOriginsHQ/LightNav-0，权重 model-00001-of-00001.safetensors 9247 MB
+                    config.json md5 af6a0040949c04a19491f0fc36de52ed
+                    eval_config.json md5 c3064ba88efff0d60262743b683d0721
+                    action_tokenizer/manifest.json md5 393f4f98214c608ac5a8a3489c457434
+参数                video_size 256×448、fps 4、history 64(SlowFast)、horizon 10、RVQ 3×256
+服务                server_http.py（接口 v2）绑 127.0.0.1:18080，conda env lightnav
+重启语义            进程重启后同一 session_id 首帧自动新建会话；frame_seq 必须严格递增
 ```
 
 ## 关键结论（双方都需知道）
