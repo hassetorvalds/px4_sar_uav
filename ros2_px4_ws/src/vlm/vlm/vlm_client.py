@@ -9,11 +9,13 @@ import base64
 import io
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
 GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
 DEFAULT_OPENAI_BASE_URL = 'https://openrouter.ai/api/v1'
+DEFAULT_REMOTE_URL = 'http://127.0.0.1:18080/navigate'
 
 
 class VlmError(RuntimeError):
@@ -176,6 +178,8 @@ def create_client(provider: str, model: str = '', api_key_env: str = '',
         from .vision_stub import VisionStubClient
 
         return VisionStubClient()
+    if name in ('remote_http', 'remote-http', 'lightnav'):
+        return RemoteHttpVlmClient(timeout_s=timeout_s)
     if name == 'gemini':
         return GeminiVlmClient(
             model=model or 'gemini-2.5-flash',
@@ -187,3 +191,39 @@ def create_client(provider: str, model: str = '', api_key_env: str = '',
             api_key_env=api_key_env or 'OPENAI_API_KEY',
             timeout_s=timeout_s)
     raise VlmError(f'不支持的 provider：{provider}')
+class RemoteHttpVlmClient(BaseVlmClient):
+    """把推理放在远端服务器（LightNav-0）的客户端：本地只发图像与指令。
+
+    链路：本机 → SSH 隧道（127.0.0.1:18080）→ 服务器 HTTP 服务；
+    请求/响应格式见 agent_communicate_reply.md 的“接口定稿 v2”。
+    """
+
+    def __init__(self, url: str = DEFAULT_REMOTE_URL, session_id: str = 'drone1',
+                 instruction: str = '', timeout_s: float = 5.0):
+        self.url = url
+        self.session_id = session_id
+        self.instruction = instruction
+        self.timeout_s = timeout_s
+        self.last_latency_ms = None
+
+    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+        payload = {
+            'session_id': self.session_id,
+            'instruction': self.instruction or prompt,
+            'image_b64': base64.b64encode(jpeg_bytes).decode('ascii'),
+        }
+        body = json.dumps(payload).encode('utf-8')
+        request = urllib.request.Request(
+            self.url, data=body, method='POST',
+            headers={'Content-Type': 'application/json'})
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+                text = response.read().decode('utf-8')
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode('utf-8', errors='replace')[:200]
+            raise VlmError(f'远端服务 HTTP {exc.code}：{detail}') from exc
+        except urllib.error.URLError as exc:
+            raise VlmError(f'远端服务不可达（隧道是否已建立？）：{exc.reason}') from exc
+        self.last_latency_ms = (time.monotonic() - started) * 1000.0
+        return text

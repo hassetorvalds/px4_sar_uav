@@ -15,6 +15,70 @@
 
 ---
 
+## [2026-10-11] 远端 VLM 分工确立（LightNav-0）+ 本机客户端就绪
+
+### 背景
+
+用户计划把 VLM 部署在一台 Ubuntu 服务器（ThinLinc 可达），本机负责飞行与实时回路。
+与服务器侧 agent 交换意见后（见 `agent_communicate.md` 与 `agent_communicate_reply.md`）确定方案。
+
+### 事实核查
+
+```text
+10.255.248.205:22         ✅ SSH 可达（拿到主机密钥指纹
+                             ED25519 SHA256:smXunYpCGohmYLRaWJgMjHe7WX4dtOD1uqHeAG2oQlU）
+10.255.248.205:80/443     ❌ 未开放
+192.168.31.21:22          ❌ 本机路由不可达（服务器 agent 报告的本机网段地址）
+结论：10.255.248.205 是同一台服务器在 VPN/ThinLinc 侧的入口，通信走 SSH 隧道
+```
+
+### 通信方案（定稿）
+
+```text
+服务器：LightNav-0 包装为 HTTP 服务，绑 127.0.0.1:18080（不暴露端口、不改防火墙）
+本机：  ssh -N -L 18080:127.0.0.1:18080 <user>@10.255.248.205
+        → 本机 http://127.0.0.1:18080 即服务器服务
+```
+
+不采用 ROS 2/DDS 跨机（WSL2 NAT + VPN 下多播发现不可靠，且需开放大量端口）。
+
+### 采纳的服务器侧修正（三点，都很关键）
+
+1. **LightNav 是时序策略**（训练时 ~4 Hz、数十帧历史），单帧低频输入是分布外；
+   故 Step A **只做"指向"**（单帧感知），本机按 2.25 Hz 持续喂帧并维护 `session_id`。
+   注意：本机相机受 AirSim LockStep 限制只有 2.25 Hz，与训练 4 Hz 存在域差异，已记为风险。
+2. **指向不含深度** → `depth_m` 由**本机 32FC1 深度图**在指向像素处采样提供。
+3. **必须处理 `apos_state`/`opos_state`**（rot_left/rot_right/stop/not_visible 不是坐标）。
+   另：联调阶段统一用**英文指令**（模型在英文导航语料上训练）。
+
+### 新增（本机侧）
+
+- `vlm_client.py` 新增 `RemoteHttpVlmClient` 与 provider `remote_http` / `lightnav`：
+  POST `{session_id, instruction, image_b64, meta}` → 解析远端 pointing。
+- `pointing.py` 支持远端格式（`{"pointing": {x_norm, y_norm, apos_state, opos_state}}`），
+  `Pointing` 增加 `apos_state` / `opos_state` 字段。
+- `scripts/vlm_remote_check.py`：Step A 验收脚本（/health + 连续 N 次 /navigate + 往返耗时）。
+- `scripts/vlm_remote_stub.py`：本地桩服务（实现同一接口，用于服务器就绪前验证客户端）。
+- `agent_communicate_reply.md`：给出接口定稿 v2、SSH 公钥与分工。
+
+### 验证（本机侧，用桩服务）
+
+```text
+[health] 200 {"ready": true, ...}
+4 次 /navigate：往返均 151 ms（桩内模拟推理 150 ms）
+解析正确：x_norm/y_norm/apos_state/opos_state 全部按预期读出
+请求回显：session=drone1、instruction 正确、image_bytes=8453（8 KB JPEG）
+```
+
+### 下一步（等服务器）
+
+1. 服务器侧核对主机密钥指纹、把我的公钥写入 `authorized_keys`；
+2. 服务器侧按接口 v2 实现 `server_http.py`（FastAPI，绑 127.0.0.1:18080）；
+3. 我建隧道后跑 `scripts/vlm_remote_check.py` 对真实服务做 Step A 验收
+   （标准：健康检查通过、指向合法、往返 <500 ms、连续 20 次稳定）。
+
+---
+
 ## [2026-10-10] 探索器信息增益评分 + 已访问记忆 + 完成判定验证
 
 ### 变更

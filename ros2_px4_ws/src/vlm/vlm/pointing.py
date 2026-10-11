@@ -38,6 +38,9 @@ class Pointing:
     depth_m: float         # 由深度评分换算出的距离，单位米
     depth_raw: float = 0.0  # 原始深度评分（1-10）
     label: str = ''
+    #: 远端 LightNav-0 风格的状态字段（不是坐标，必须单独处理）
+    apos_state: str = ''    # 例如 rot_left / rot_right / stop / not_visible
+    opos_state: str = ''
 
 
 @dataclass
@@ -116,6 +119,26 @@ def parse_pointing(text: str, depth_far_m: float = DEPTH_FAR_M) -> Pointing:
     if not isinstance(payload, dict):
         raise PointingParseError('顶层 JSON 既不是对象也不是对象数组')
 
+    # 远端服务格式（LightNav-0 风格）：
+    # {"pointing": {"x_norm":.., "y_norm":.., "apos_state":.., "opos_state":..}}
+    if 'pointing' in payload and isinstance(payload['pointing'], dict):
+        remote = payload['pointing']
+        try:
+            x_value = float(remote.get('x_norm'))
+            y_value = float(remote.get('y_norm'))
+        except (TypeError, ValueError) as exc:
+            raise PointingParseError(
+                f'远端 pointing 缺少合法 x_norm/y_norm：{remote}') from exc
+        return Pointing(
+            x_norm=min(max(x_value, 0.0), 1.0),
+            y_norm=min(max(y_value, 0.0), 1.0),
+            depth_m=depth_score_to_meters(5.0, depth_far_m),   # 占位；深度由本机补
+            depth_raw=0.0,
+            label=str(remote.get('label', 'lightnav remote pointing')),
+            apos_state=str(remote.get('apos_state', '')),
+            opos_state=str(remote.get('opos_state', '')),
+        )
+
     if 'point' in payload:
         point = payload['point']
         if not isinstance(point, (list, tuple)) or len(point) < 2:
@@ -140,6 +163,8 @@ def parse_pointing(text: str, depth_far_m: float = DEPTH_FAR_M) -> Pointing:
         depth_m=depth_score_to_meters(depth_value, depth_far_m),
         depth_raw=depth_value,
         label=str(payload.get('label', '')),
+        apos_state=str(payload.get('apos_state', '')),
+        opos_state=str(payload.get('opos_state', '')),
     )
 
 
