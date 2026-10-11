@@ -58,7 +58,7 @@ class VisionStubClient(BaseVlmClient):
         self.color = color
         self.last_area_ratio = 0.0
 
-    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+    def complete(self, prompt: str, jpeg_bytes: bytes, meta=None) -> str:
         found = locate_color(jpeg_bytes, self.color)
         if found is None:
             # 与真实 VLM 的约定一致：看不到目标就返回空数组

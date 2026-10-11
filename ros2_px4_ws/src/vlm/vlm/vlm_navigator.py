@@ -83,6 +83,7 @@ class VlmNavigator(Node):
         self.declare_parameter('depth_topic', '/airsim_camera/depth')
         self.declare_parameter('use_local_depth', True)
         self.declare_parameter('depth_window_px', 3)
+        self.declare_parameter('record_frames', True)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -99,6 +100,7 @@ class VlmNavigator(Node):
         self._record = bool(self.get_parameter('record_decisions').value)
         self._use_local_depth = bool(self.get_parameter('use_local_depth').value)
         self._depth_window = int(self.get_parameter('depth_window_px').value)
+        self._record_frames = bool(self.get_parameter('record_frames').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -122,6 +124,7 @@ class VlmNavigator(Node):
         self._pending_command = None      # (BodyVelocity, Pointing, timestamp)
         self._vlm_busy = False
         self._last_error = ''
+        self._frame_seq = 0               # 已发给远端的帧序号（服务端用它检测重启）
         self._running = True
 
         if self._record:
@@ -234,8 +237,10 @@ class VlmNavigator(Node):
                 size[0], size[1], self._geometry.hfov_deg)
 
         prompt = PROMPT_TEMPLATE.format(instruction=self._instruction)
+        self._frame_seq += 1
+        meta = self._link_meta()
         try:
-            response = self._client.complete(prompt, jpeg)
+            response = self._client.complete(prompt, jpeg, meta=meta)
             pointing = parse_pointing(response)
             # 状态类动作（没有像素坐标）单独处理：旋转 / 停止 / 目标不可见
             state_action = (pointing.apos_state or '').strip().lower()
@@ -276,10 +281,13 @@ class VlmNavigator(Node):
         # 把指向结果与生成的机体速度发布出去，供任务层做“接近终止”等策略决策
         decision = String()
         decision.data = json.dumps({
+            'frame_seq': self._frame_seq,
             'label': pointing.label,
             'point_x_norm': pointing.x_norm,
             'point_y_norm': pointing.y_norm,
             'depth_m': pointing.depth_m,
+            'apos_state': pointing.apos_state,
+            'opos_state': pointing.opos_state,
             'body_velocity': {
                 'forward': command.forward,
                 'left': command.left,
@@ -296,7 +304,17 @@ class VlmNavigator(Node):
             f'上 {command.up:.2f}) m/s，偏航 {command.yaw_rate:.2f} rad/s，'
             f'时长 {command.duration_s:.1f} s')
         if self._record:
-            self._record_decision(pointing, command, response)
+            self._record_decision(pointing, command, response, jpeg)
+
+    def _link_meta(self) -> dict:
+        """接口 v2 的 ``meta``：帧序号 + 高度 + 航向（拿不到就省略该字段）。"""
+        meta = {'frame_seq': self._frame_seq}
+        state = self._monitor.snapshot()
+        if self._monitor.position_fresh() and math.isfinite(state.z):
+            meta['altitude_m'] = round(-float(state.z), 2)
+        if math.isfinite(state.heading):
+            meta['heading_deg'] = round(math.degrees(float(state.heading)) % 360.0, 1)
+        return meta
 
     # ------------------------------------------------------------------
     # 指令发布
@@ -347,18 +365,23 @@ class VlmNavigator(Node):
     # 决策记录
     # ------------------------------------------------------------------
 
-    def _record_decision(self, pointing, command, response: str) -> None:
-        stamp = time.strftime('%Y%m%d_%H%M%S')
+    def _record_decision(self, pointing, command, response: str, jpeg: bytes) -> None:
+        stamp = time.strftime('%Y%m%d_%H%M%S') + f'_{int(time.time() * 1000) % 1000:03d}'
         record = {
             'timestamp': stamp,
+            'frame_seq': self._frame_seq,
             'instruction': self._instruction,
             'provider': self._client.__class__.__name__,
+            'latency_ms': getattr(self._client, 'last_latency_ms', None),
+            'frame_file': None,
             'image_size': [self._geometry.image_width, self._geometry.image_height],
             'point_pixel': list(self._geometry.pixel_from_norm(
                 pointing.x_norm, pointing.y_norm)),
             'point_norm': [pointing.x_norm, pointing.y_norm],
             'depth_m': pointing.depth_m,
             'depth_score': pointing.depth_raw,
+            'apos_state': pointing.apos_state,
+            'opos_state': pointing.opos_state,
             'label': pointing.label,
             'body_velocity': {
                 'forward': command.forward,
@@ -369,7 +392,19 @@ class VlmNavigator(Node):
             },
             'raw_response': response,
         }
-        path = os.path.join(self._output_dir, f'decision_{stamp}.json')
+        path = os.path.join(
+            self._output_dir, f'decision_{stamp}_seq{self._frame_seq:05d}.json')
+        if self._record_frames:
+            frames_dir = os.path.join(self._output_dir, 'frames')
+            os.makedirs(frames_dir, exist_ok=True)
+            frame_path = os.path.join(
+                frames_dir, f'frame_{stamp}_seq{self._frame_seq:05d}.jpg')
+            try:
+                with open(frame_path, 'wb') as handle:
+                    handle.write(jpeg)
+                record['frame_file'] = os.path.relpath(frame_path, self._output_dir)
+            except OSError as exc:
+                self.get_logger().warn(f'帧图像写入失败：{exc}')
         try:
             with open(path, 'w', encoding='utf-8') as handle:
                 json.dump(record, handle, ensure_ascii=False, indent=2)

@@ -15,6 +15,47 @@
 
 ---
 
+## [2026-10-11] Step B 前置补全：接口 v2 的 `meta`（frame_seq/高度/航向）贯通 + 决策取证
+
+### 变更
+
+- 客户端贯通接口 v2 的 `meta`：`BaseVlmClient.complete(prompt, jpeg, meta=None)`（各 provider 统一签名），
+  `RemoteHttpVlmClient` 把 `meta` 放进请求体；`vlm_navigator` 每发一帧自增 `frame_seq`，
+  并从 `Px4StateMonitor` 取 `z/heading` 填 `altitude_m`（= `-z`）与 `heading_deg`。
+  服务端据此检测客户端重启（`frame_seq` 回退 → 新建会话）。
+- 决策取证改进：`_record_decision()` 文件名由"按秒"改为"毫秒 + `seq` 后缀"
+  （原命名在 2.25 Hz 下同一秒内会互相覆盖，Step B 要跑 ≥100 次请求会丢数据）；
+  记录新增 `frame_seq / latency_ms / apos_state / opos_state`；
+  新增参数 `record_frames`（默认 true）把当帧 JPEG 存入 `vlm_decisions/frames/`，
+  便于"帧图片 ↔ 响应"一一对照（正是服务器侧想要的 `apos_px`/`opos` 核查材料）。
+  文件：`ros2_px4_ws/src/vlm/vlm/vlm_client.py`、`ros2_px4_ws/src/vlm/vlm/vlm_navigator.py`
+
+### 验证
+
+```text
+colcon build --packages-select vlm   ✅ 成功（1 min 1 s）
+python3 -m pytest test -q            ✅ 18 passed
+真实服务 3 次 POST（会话 probe_meta_v2，带 meta）✅ 无 HTTP 错误，RTT 123 / 149 / 159 ms
+```
+
+### 观察：`opos_state` 是否可用（回答服务器侧的提醒）
+
+用两张 2026-09-21 实拍帧（`logs/2026-09-21/camera_frame.jpg`、`camera_close_to_target.jpg`）
+与 `test_scene.jpg` 各发一次，结果：
+
+```text
+camera_frame.jpg           149 ms  apos=rot_left  opos=not_visible
+camera_close_to_target.jpg 123 ms  apos=rot_left  opos=not_visible
+test_scene.jpg             159 ms  apos=point     opos=not_visible  x=0.5104 y=0.9815
+```
+
+`apos` 随画面正常变化（`rot_left`/`point`），`opos` 三帧全为 `not_visible`。
+**结论：现阶段不依赖 `opos`**——导航只用 `apos`（指向/可通行方向）+ 本机 32FC1 深度做反投影；
+若服务器侧希望启用 `opos`，需要先确认该 checkpoint 的推理入口是否有对象定位输出。
+前两张实拍帧返回 `rot_left`（无坐标），与"首帧先转向建立运动线索"的现象一致，属预期。
+
+---
+
 ## [2026-10-11] Step B 代码就绪：本机深度替换 + 远端状态动作映射（飞行验证待做）
 
 ### 新增

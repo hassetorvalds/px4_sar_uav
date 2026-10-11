@@ -68,7 +68,7 @@ def image_file_to_jpeg(path: str) -> bytes:
 
 
 class BaseVlmClient:
-    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+    def complete(self, prompt: str, jpeg_bytes: bytes, meta=None) -> str:
         raise NotImplementedError
 
 
@@ -80,7 +80,7 @@ class MockVlmClient(BaseVlmClient):
             '[{"point": [500, 620], "depth": 5, "label": "mock target"}]')
         self.calls = 0
 
-    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+    def complete(self, prompt: str, jpeg_bytes: bytes, meta=None) -> str:
         self.calls += 1
         return self.response_text
 
@@ -92,7 +92,7 @@ class GeminiVlmClient(BaseVlmClient):
         self.api_key_env = api_key_env
         self.timeout_s = timeout_s
 
-    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+    def complete(self, prompt: str, jpeg_bytes: bytes, meta=None) -> str:
         api_key = os.getenv(self.api_key_env)
         if not api_key:
             raise VlmError(f'环境变量 {self.api_key_env} 未设置')
@@ -126,7 +126,7 @@ class OpenAiVlmClient(BaseVlmClient):
                          or DEFAULT_OPENAI_BASE_URL).rstrip('/')
         self.timeout_s = timeout_s
 
-    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+    def complete(self, prompt: str, jpeg_bytes: bytes, meta=None) -> str:
         api_key = os.getenv(self.api_key_env)
         if not api_key:
             raise VlmError(f'环境变量 {self.api_key_env} 未设置')
@@ -206,12 +206,19 @@ class RemoteHttpVlmClient(BaseVlmClient):
         self.timeout_s = timeout_s
         self.last_latency_ms = None
 
-    def complete(self, prompt: str, jpeg_bytes: bytes) -> str:
+    def complete(self, prompt: str, jpeg_bytes: bytes, meta=None) -> str:
+        """发送单帧 + 指令。
+
+        ``meta`` 按接口 v2 约定携带 ``{"altitude_m", "heading_deg", "frame_seq"}``：
+        服务端用 ``frame_seq`` 检测客户端重启（序号回退即新建会话）。
+        """
         payload = {
             'session_id': self.session_id,
             'instruction': self.instruction or prompt,
             'image_b64': base64.b64encode(jpeg_bytes).decode('ascii'),
         }
+        if meta:
+            payload['meta'] = meta
         body = json.dumps(payload).encode('utf-8')
         request = urllib.request.Request(
             self.url, data=body, method='POST',
