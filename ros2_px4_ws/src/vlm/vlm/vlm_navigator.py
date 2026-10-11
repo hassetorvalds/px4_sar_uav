@@ -84,6 +84,9 @@ class VlmNavigator(Node):
         self.declare_parameter('use_local_depth', True)
         self.declare_parameter('depth_window_px', 3)
         self.declare_parameter('record_frames', True)
+        self.declare_parameter('remote_url', 'http://127.0.0.1:18080/navigate')
+        self.declare_parameter('session_id', 'drone1')
+        self.declare_parameter('remote_timeout_s', 3.0)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -109,7 +112,12 @@ class VlmNavigator(Node):
         self._client = create_client(
             str(self.get_parameter('provider').value),
             str(self.get_parameter('model').value),
-            str(self.get_parameter('api_key_env').value))
+            str(self.get_parameter('api_key_env').value),
+            timeout_s=float(self.get_parameter('remote_timeout_s').value),
+            instruction=self._instruction,
+            session_id=str(self.get_parameter('session_id').value))
+        if hasattr(self._client, 'url'):
+            self._client.url = str(self.get_parameter('remote_url').value)
 
         self._velocity_pub = self.create_publisher(
             Twist, str(self.get_parameter('velocity_topic').value), 10)
@@ -273,6 +281,13 @@ class VlmNavigator(Node):
             if str(exc) != self._last_error:
                 self.get_logger().warn(f'本周期未产生有效指令：{exc}')
                 self._last_error = str(exc)
+            return
+        except Exception as exc:  # noqa: BLE001
+            # 兜底：任何未预期异常都只丢弃本周期，绝不让工作线程退出
+            # （否则节点看起来还在跑，实际再也不会产生决策——2026-10-11 联调时踩过）。
+            self.get_logger().error(
+                f'本周期发生未预期异常（已跳过，线程继续）：{type(exc).__name__}: {exc}',
+                throttle_duration_sec=5.0)
             return
 
         self._last_error = ''

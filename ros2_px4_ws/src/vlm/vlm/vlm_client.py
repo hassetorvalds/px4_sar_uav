@@ -6,6 +6,7 @@
 """
 
 import base64
+import http.client
 import io
 import json
 import os
@@ -169,8 +170,13 @@ def _post_json(url: str, payload: dict, timeout_s: float, headers: dict) -> dict
 
 
 def create_client(provider: str, model: str = '', api_key_env: str = '',
-                  timeout_s: float = 30.0) -> BaseVlmClient:
-    """按 provider 创建客户端：``mock`` / ``gemini`` / ``openai``。"""
+                  timeout_s: float = 30.0, instruction: str = '',
+                  session_id: str = 'drone1') -> BaseVlmClient:
+    """按 provider 创建客户端：``mock`` / ``gemini`` / ``openai`` / ``remote_http``。
+
+    ``instruction`` 与 ``session_id`` 只被 ``remote_http`` 使用：远端只接受英文自然语言
+    指令（不用本机的中文提示词模板），会话历史按 ``session_id`` 在服务端维护。
+    """
     name = (provider or 'mock').strip().lower()
     if name == 'mock':
         return MockVlmClient()
@@ -179,7 +185,8 @@ def create_client(provider: str, model: str = '', api_key_env: str = '',
 
         return VisionStubClient()
     if name in ('remote_http', 'remote-http', 'lightnav'):
-        return RemoteHttpVlmClient(timeout_s=timeout_s)
+        return RemoteHttpVlmClient(
+            timeout_s=timeout_s, instruction=instruction, session_id=session_id)
     if name == 'gemini':
         return GeminiVlmClient(
             model=model or 'gemini-2.5-flash',
@@ -232,5 +239,9 @@ class RemoteHttpVlmClient(BaseVlmClient):
             raise VlmError(f'远端服务 HTTP {exc.code}：{detail}') from exc
         except urllib.error.URLError as exc:
             raise VlmError(f'远端服务不可达（隧道是否已建立？）：{exc.reason}') from exc
+        except (http.client.HTTPException, OSError) as exc:
+            # 服务重启 / 隧道抖动会以 ConnectionResetError、超时、BrokenPipe 等形式抛出；
+            # 统一转成 VlmError，让上层"跳过本周期、下周期重试"，而不是抛穿整个工作线程。
+            raise VlmError(f'远端服务通信中断（稍后重试）：{type(exc).__name__} {exc}') from exc
         self.last_latency_ms = (time.monotonic() - started) * 1000.0
         return text

@@ -15,6 +15,51 @@
 
 ---
 
+## [2026-10-11] Step B 首轮：悬停链路通过，远端服务中途关闭 → 决策数据为空（待重跑）
+
+### 变更（本轮联调暴露的问题，已修）
+
+- **远端抖动会杀死工作线程**：服务器/隧道抖动时 `urllib` 抛 `ConnectionResetError`，
+  它不属于原先捕获的 `VlmError/PointingParseError/ValueError`，直接抛穿 `_vlm_loop` 线程——
+  节点看起来还在运行，实际**再也不会产生任何决策**（本轮就是这样：240 s 悬停、0 条记录）。
+  现在 `RemoteHttpVlmClient.complete()` 把 `http.client.HTTPException / OSError`
+  （含连接重置、超时、BrokenPipe）统一转成 `VlmError`；`_run_single_decision()` 再加兜底
+  `except Exception`，任何未预期异常只丢弃本周期。
+- 新增参数 `remote_timeout_s`（默认 3.0 s）——原先 `create_client` 默认 30 s，一次故障会卡满半个周期。
+- 新增参数 `remote_url` / `session_id`；并修正 `create_client()` 不透传指令的问题：
+  此前 `provider:=remote_http` 会把**中文提示词模板**当指令发给远端（接口约定是英文自然语言），
+  现已按 `instruction` 参数传英文指令。
+- 决策记录文件名加毫秒与 `seq`（原按秒命名在 2.25 Hz 下会互相覆盖）；新增 `record_frames`
+  把当帧 JPEG 存到 `vlm_decisions*/frames/`，便于"帧图 ↔ 响应"核对。
+- `scripts/bringup.sh` 补可执行位（原为 644，`./scripts/bringup.sh` 报 Permission denied）。
+
+### 验证（本轮实测）
+
+```text
+PX4 SITL + AirSim      ✅ 连接 TCP 4560、uxrce_dds_client 同步、Ready for takeoff
+电池阈值                ✅ 运行中置 BAT_LOW_THR/BAT_CRIT_THR/BAT_EMERGEN_THR=0（param show 确认）
+ROS 栈                  ✅ offboard_bridge / airsim_camera / local_map / local_planner 全部在线
+相机速率（20 s 窗口）    ⚠ color 1.33 Hz、depth 1.78 Hz（低于早先记录的 2.25 Hz，后续以实测为准）
+起飞悬停                ✅ 解锁 → OFFBOARD（nav_state=14）→ 悬停 2 m 共 240 s
+                          AirSim 真值 Δz=+0.015 m；PX4 估计在 -2.00 附近 ±0.02 m 振荡（Δ=-0.244 m）
+降落                    ✅ land_fast → landed=true，arming_state=1（已上锁）
+远端 VLM 决策            ❌ 0 条：服务器侧 server_http.py(pid 1465986) 在窗口内**正常关闭**
+                          （日志 "Shutting down / Finished server process [1465986]"），
+                          隧道 127.0.0.1:18080 随后不再响应
+```
+
+取证日志：`logs/2026-10-11/stepB_hover_attempt1.log`（240 s 悬停高度对比）、
+`logs/2026-10-11/stepB_vlm_attempt1.log`（线程被连接重置打断的原始 traceback）。
+
+### 结论与下一步
+
+- 本机侧链路（相机 → VLM 节点 → 隧道）与飞行侧（起飞/悬停/降落）都通过；
+  唯一缺口是**服务器服务在联调窗口内不在线**，与模型质量无关。
+- 服务恢复后重跑 Step B（约 4 分钟：起飞 + 2–3 分钟记录 + 降落），验收标准仍是
+  ≥60 s / ≥100 次请求、往返稳定、本机深度有效。
+
+---
+
 ## [2026-10-11] Step B 前置补全：接口 v2 的 `meta`（frame_seq/高度/航向）贯通 + 决策取证
 
 ### 变更
