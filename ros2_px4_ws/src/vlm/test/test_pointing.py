@@ -9,7 +9,9 @@ from vlm.pointing import (
     PointingParseError,
     depth_score_to_meters,
     parse_pointing,
+    parse_waypoints,
     pointing_to_body_velocity,
+    waypoint_to_body_velocity,
 )
 
 
@@ -158,3 +160,65 @@ def test_far_target_still_translates_with_stop_distance():
     command = pointing_to_body_velocity(
         far, geometry, base_velocity=1.0, stop_distance_m=0.35)
     assert command.forward > 0.5
+
+
+# --- 2026-10-11 与服务器侧确认后新增：竖直分量默认不交给视觉 ---
+
+def _remote_pointing(x_norm: float, y_norm: float, depth_m: float):
+    """构造一条"远端 LightNav-0 风格"的指向（深度由本机补，这里直接给实际距离）。"""
+    pointing = parse_pointing(
+        '{"pointing": {"x_norm": %r, "y_norm": %r, "apos_state": "point",'
+        ' "opos_state": "not_visible"}}' % (x_norm, y_norm))
+    pointing.depth_m = depth_m       # 本机深度采样结果
+    return pointing
+
+
+def test_vertical_mode_hold_zeroes_descent_for_bottom_edge_apos():
+    """LightNav-0 的 apos 在画面底边（y_norm≈0.98）代表"向前"的落点，
+    反投影会得到朝下的射线；默认 vertical_mode='hold' 必须把竖直分量压成 0，
+    否则无人机会一边前飞一边下降（Step B 实测 −0.51 m/s）。"""
+    geometry = PointingGeometry(1280, 720, hfov_deg=90.0)
+    bottom = _remote_pointing(0.5104, 0.9815, depth_m=3.0)
+
+    holding = pointing_to_body_velocity(
+        bottom, geometry, base_velocity=1.0, vertical_mode='hold')
+    assert holding.forward > 0.5
+    assert holding.up == pytest.approx(0.0)
+
+    legacy = pointing_to_body_velocity(
+        bottom, geometry, base_velocity=1.0, vertical_mode='ray')
+    assert legacy.up <= -0.3           # 旧行为：明显下降，正是要避免的
+
+
+def test_vertical_mode_ray_respects_clamp():
+    geometry = PointingGeometry(1280, 720, hfov_deg=90.0)
+    bottom = _remote_pointing(0.5, 1.0, depth_m=3.0)
+    command = pointing_to_body_velocity(
+        bottom, geometry, base_velocity=1.5, max_speed=1.5,
+        vertical_mode='ray', max_vertical_mps=0.2)
+    assert command.up >= -0.2
+
+
+def test_parse_waypoints_accepts_list_and_dict_and_null():
+    assert parse_waypoints('{"pointing": {}, "waypoints": null}') == []
+    lists = parse_waypoints('{"waypoints": [[1.2, -0.3, 0.25]]}')
+    assert len(lists) == 1
+    assert lists[0].forward_m == pytest.approx(1.2)
+    assert lists[0].lateral_m == pytest.approx(-0.3)
+    assert lists[0].yaw_rad == pytest.approx(0.25)
+    dicts = parse_waypoints('{"waypoints": [{"forward_m": 0.8, "lateral_m": 0.1, "yaw_rad": -0.4}]}')
+    assert dicts[0].yaw_rad == pytest.approx(-0.4)
+    degrees = parse_waypoints('{"waypoints": [[1.0, 0.0, 30.0]]}')
+    assert degrees[0].yaw_rad == pytest.approx(math.radians(30.0))
+
+
+def test_waypoint_to_body_velocity_keeps_altitude_and_maps_yaw():
+    waypoint = parse_waypoints('{"waypoints": [[0.4, -0.2, 0.5]]}')[0]
+    command = waypoint_to_body_velocity(
+        waypoint, base_velocity=1.0, max_speed=1.5, max_yaw_rate=0.6,
+        yaw_gain=1.0, min_duration_s=1.0, full_speed_distance_m=0.5,
+        max_lateral_speed=1.0)
+    assert command.forward == pytest.approx(0.8)     # 0.4/0.5 → 80% 速度
+    assert command.left == pytest.approx(-0.2)
+    assert command.up == pytest.approx(0.0)          # 高度交飞控
+    assert command.yaw_rate == pytest.approx(0.5)

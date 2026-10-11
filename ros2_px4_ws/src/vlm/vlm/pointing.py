@@ -59,6 +59,24 @@ class BodyVelocity:
     duration_s: float
 
 
+@dataclass
+class Waypoint:
+    """远端 LightNav-0 的 ``waypoints`` 元素：机体坐标系位移（米）与偏航（弧度）。
+
+    服务器侧说明：``apos`` 是**可通行落点**（"往哪走"），``waypoints`` 才是动作，
+    其中 ``yaw`` 是给无人机用的**转向信号**——比把画面底边的落点做三维反投影稳健得多。
+    """
+
+    forward_m: float
+    lateral_m: float
+    yaw_rad: float
+
+    @property
+    def has_motion(self) -> bool:
+        return any(abs(value) > 1e-6
+                   for value in (self.forward_m, self.lateral_m, self.yaw_rad))
+
+
 def _extract_json_payload(text: str):
     """从模型输出里取出第一段可解析的 JSON（容忍 ``` 包裹与前后解释文字）。"""
     if text is None:
@@ -227,15 +245,24 @@ def pointing_to_body_velocity(
     yaw_deadband_rad: float = 0.0,
     stop_distance_m: float = 0.0,
     min_duration_s: float = 1.0,
+    vertical_mode: str = 'hold',
+    max_vertical_mps: float = 0.4,
 ) -> BodyVelocity:
     """指向结果 → 机体速度指令（带安全限幅）。
 
     - 水平方向：沿指向点的水平投影方向飞行，速度取 ``base_velocity``；
-    - 竖直方向：保持指向点的俯仰比例，因此“指高处”会同时上升；
+    - 竖直方向：``vertical_mode='hold'``（默认）**恒为 0**，高度交给飞控保持；
+      ``'ray'`` 才按指向俯仰比例给竖直速度（**对无人机不安全**，仅作对照）；
     - 偏航：按指向点的横向偏角做比例控制，使机头转向目标（同时飞，见模块说明）。
+
+    为什么默认 ``hold``（2026-10-11 与服务器侧确认后改）：
+    LightNav-0 的 ``apos`` 是**可通行落点**而非目标物体，户外场景里它就落在画面底边中心
+    （"向前走"）。把它按像素反投影会得到一条朝下的射线，于是算出 −0.5 m/s 的下降速度——
+    地面机器人这么算等于"前进"，无人机这么算等于"往下扎"。所以水平分量照用，竖直分量归零。
     """
     forward_m, left_m, up_m = geometry.reverse_project(
         pointing.x_norm, pointing.y_norm, pointing.depth_m)
+    use_vertical = str(vertical_mode).lower() != 'hold'
 
     # 接近到阈值内就停止平移，只保留可能的偏航修正。
     # 没有这道保护时会一路飞向目标（实测飞到目标 0.2 m 处仍以 1 m/s 前飞，
@@ -253,15 +280,21 @@ def pointing_to_body_velocity(
         raise ValueError('base_velocity 必须为正')
 
     if horizontal < 1e-6:
-        # 目标在正上/正下方：只做竖直运动，不偏航
-        vertical = math.copysign(speed, up_m)
+        # 目标在正上/正下方
+        if not use_vertical:
+            return BodyVelocity(0.0, 0.0, 0.0, 0.0, float(min_duration_s))
+        vertical = math.copysign(min(speed, max_vertical_mps), up_m)
         return BodyVelocity(0.0, 0.0, vertical, 0.0, float(min_duration_s))
 
     unit_forward = forward_m / horizontal
     unit_left = left_m / horizontal
     velocity_forward = unit_forward * speed
     velocity_left = unit_left * speed
-    velocity_up = (up_m / horizontal) * speed
+    if use_vertical:
+        velocity_up = (up_m / horizontal) * speed
+        velocity_up = max(-max_vertical_mps, min(max_vertical_mps, velocity_up))
+    else:
+        velocity_up = 0.0
 
     scale = math.hypot(velocity_forward, velocity_left, velocity_up) / max_speed
     if scale > 1.0:
@@ -280,3 +313,95 @@ def pointing_to_body_velocity(
     distance_m = math.sqrt(forward_m ** 2 + left_m ** 2 + up_m ** 2)
     duration = max(distance_m / speed, float(min_duration_s))
     return BodyVelocity(velocity_forward, velocity_left, velocity_up, yaw_rate, duration)
+
+
+def parse_waypoints(text: str) -> list:
+    """从远端响应里取出 ``waypoints``（没有或为 null 时返回空列表）。
+
+    兼容三种写法（服务器侧接口 v2 的 ``waypoints`` 字段）：
+
+    ```text
+    "waypoints": null                                  → []
+    "waypoints": [[1.2, 0.0, 0.3], ...]                → 依次 [forward_m, lateral_m, yaw_rad]
+    "waypoints": [{"forward_m":1.2,"lateral_m":0,"yaw_rad":0.3}, ...]
+    ```
+
+    ``yaw`` 单位约定为**弧度**；若某元素 ``|yaw| > 4π``（≈12.6），按角度处理并换算，
+    以免服务器侧误用度数时把飞机甩出去。
+    """
+    try:
+        payload = _extract_json_payload(text)
+    except PointingParseError:
+        return []
+
+    raw = payload.get('waypoints') if isinstance(payload, dict) else payload
+    if not raw:
+        return []
+    if isinstance(raw, (dict, str, int, float)):
+        raw = [raw]
+
+    waypoints = []
+    for item in raw:
+        try:
+            if isinstance(item, dict):
+                forward = item.get('forward_m', item.get('forward', item.get('x')))
+                lateral = item.get('lateral_m', item.get('lateral', item.get('y')))
+                yaw = item.get('yaw_rad', item.get('yaw', item.get('yaw_rate', 0.0)))
+                if forward is None or lateral is None:
+                    continue
+            elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                forward, lateral, yaw = item[0], item[1], item[2]
+            else:
+                continue
+            forward = float(forward)
+            lateral = float(lateral)
+            yaw = float(yaw)
+            if abs(yaw) > 4.0 * math.pi:
+                yaw = math.radians(yaw)
+            if not all(math.isfinite(value) for value in (forward, lateral, yaw)):
+                continue
+        except (TypeError, ValueError):
+            continue
+        waypoints.append(Waypoint(forward, lateral, yaw))
+    return waypoints
+
+
+def waypoint_to_body_velocity(
+    waypoint: Waypoint,
+    base_velocity: float = 1.0,
+    max_speed: float = 1.5,
+    max_yaw_rate: float = 0.6,
+    yaw_gain: float = 1.0,
+    yaw_deadband_rad: float = 0.0,
+    min_duration_s: float = 1.0,
+    full_speed_distance_m: float = 0.5,
+    max_lateral_speed: float = 1.0,
+) -> BodyVelocity:
+    """路点 → 机体速度指令：**水平速度 + 偏航角速度，竖直恒为 0**（高度交给飞控）。
+
+    - ``forward_m`` 只当作"还有多远/往哪个纵向走"：达到 ``full_speed_distance_m`` 即取
+      ``base_velocity``，更近则按比例减速；
+    - ``lateral_m`` 限幅到 ``max_lateral_speed``；
+    - ``yaw_rad`` 经增益与限幅变成偏航角速度，是无人机转向的主要信号。
+    """
+    speed = min(float(base_velocity), float(max_speed))
+    if speed <= 0.0:
+        raise ValueError('base_velocity 必须为正')
+
+    full = max(float(full_speed_distance_m), 1e-3)
+    if abs(waypoint.forward_m) > 1e-3:
+        forward = math.copysign(speed * min(1.0, abs(waypoint.forward_m) / full),
+                                waypoint.forward_m)
+    else:
+        forward = 0.0
+
+    lateral = max(-float(max_lateral_speed),
+                  min(float(max_lateral_speed), waypoint.lateral_m))
+
+    if abs(waypoint.yaw_rad) < float(yaw_deadband_rad):
+        yaw_rate = 0.0
+    else:
+        yaw_rate = max(-float(max_yaw_rate),
+                       min(float(max_yaw_rate), float(yaw_gain) * waypoint.yaw_rad))
+
+    return BodyVelocity(forward, lateral, 0.0, yaw_rate, float(min_duration_s))

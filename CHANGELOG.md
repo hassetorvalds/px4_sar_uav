@@ -15,6 +15,55 @@
 
 ---
 
+## [2026-10-11] 按服务器侧结论改控制映射：竖直不再交给视觉 + 启用 waypoints + 偏航扫场脚本
+
+### 背景（服务器侧的关键澄清）
+
+与服务器侧确认后明确了 `apos` 的语义：它是**可通行落点**（"往哪走"的自由空间点），
+**不是目标物体**；户外场景里它落在画面底边中心（x_norm 0.5104 / y_norm 0.9815、
+`apos_clamped=true`）就是"向前走"，属**预期行为**。他们用另一张 480×270 合成帧复现了同一坐标，
+证明这是模型的默认"向前"单元，不是我们场景的伪影。
+
+因此我们 Step B 看到的"下降 −0.51 m/s"**是我们自己的反投影产物**：把画面底边的地面点做三维
+反投影，自然得到朝下的分量——地面机器人这么算等于"前进"，无人机这么算等于"往下扎"。
+
+### 变更
+
+- `pointing_to_body_velocity()` 新增 `vertical_mode`（默认 `'hold'`）与 `max_vertical_mps`：
+  `'hold'` 时**竖直分量恒为 0**，高度交飞控保持；`'ray'` 保留旧行为并加限幅，仅作对照。
+  同一份 Step B 数据：`up` 由 `-0.54 m/s` 变为 `0.00 m/s`。
+- 新增 `Waypoint` / `parse_waypoints()` / `waypoint_to_body_velocity()`：
+  解析远端 `waypoints`（`[[forward_m, lateral_m, yaw_rad], ...]` 或同义字典，`null` → 空），
+  `yaw` 为弧度（`|yaw|>4π` 时按角度兜底）；映射为"水平速度 + 偏航角速度"，**竖直恒为 0**。
+- `vlm_navigator` 指令来源优先级改为：
+  `stop/not_visible` → 保持 | `waypoints` 非空 → 路点 | `rot_left/rot_right` → 原地偏航 | 其余 → 指向；
+  新增参数 `vertical_mode` / `max_vertical_mps` / `use_waypoints` / `waypoint_full_speed_m` /
+  `max_lateral_speed`；决策 JSON 新增 `command_source` 与 `waypoints`（便于事后归因）。
+- 新增 `scripts/vlm_yaw_sweep.py`（**实验 B**）：悬停中匀速偏航 ±15 °/s × 24 s、中间停 5 s，
+  逐帧记录 `apos.x/y`、`apos_state`、`waypoint`、本机航向与我方指令，输出 CSV 与
+  `corr(航向, apos_x)`；判据是"扫一圈后 `apos.x`/`waypoint yaw` 是否随航向变化"。
+- 文档：`docs/agent_comm/08_reply_waypoints_and_sweep_spec.md`（同意开 `waypoints`、
+  给出实验 B 的具体参数与判据、请其确认 `lateral` 正方向与 `yaw` 单位）；
+  `docs/agent_comm/README.md` 补上"`apos` 语义"等双方共识。
+
+### 验证
+
+```text
+单元测试          ✅ 22 passed（新增 4 项：竖直归零、竖直限幅、路点解析、路点映射）
+colcon build vlm  ✅ 成功
+离线对照          ✅ 同一条远程响应：
+                    apos → forward 1.00 / left −0.02 / up 0.00 / yaw −0.02
+                    waypoint[1.0,0,0.3] → forward 1.00 / left 0.00 / up 0.00 / yaw +0.30
+```
+
+### 下一步
+
+待服务器侧开启 `waypoints` 并重启后，跑实验 B（两轮指令，共约 4 分钟）：
+若指向/路点随航向变化 → 属控制映射问题，可直接进 Step C 的"固定高度 + 前向/偏航"小范围闭环；
+若扫完一圈仍恒定 → 再回头查 checkpoint 与输入格式。
+
+---
+
 ## [2026-10-11] Step B 验收：链路/延迟/深度达标，**指向语义不达标**（画面底边饱和）
 
 ### 结果（`vlm_decisions_stepB/`，327 条记录 + 327 张帧图）

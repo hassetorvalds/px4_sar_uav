@@ -27,7 +27,9 @@ from .pointing import (
     PointingGeometry,
     PointingParseError,
     parse_pointing,
+    parse_waypoints,
     pointing_to_body_velocity,
+    waypoint_to_body_velocity,
 )
 from .vlm_client import VlmError, create_client, image_file_to_jpeg, image_message_to_jpeg
 
@@ -87,6 +89,12 @@ class VlmNavigator(Node):
         self.declare_parameter('remote_url', 'http://127.0.0.1:18080/navigate')
         self.declare_parameter('session_id', 'drone1')
         self.declare_parameter('remote_timeout_s', 3.0)
+        # 竖直分量默认不交给视觉：apos 是"可通行落点"，反投影会算出下降速度（见 pointing 文档）
+        self.declare_parameter('vertical_mode', 'hold')
+        self.declare_parameter('max_vertical_mps', 0.4)
+        self.declare_parameter('use_waypoints', True)
+        self.declare_parameter('waypoint_full_speed_m', 0.5)
+        self.declare_parameter('max_lateral_speed', 1.0)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -104,6 +112,11 @@ class VlmNavigator(Node):
         self._use_local_depth = bool(self.get_parameter('use_local_depth').value)
         self._depth_window = int(self.get_parameter('depth_window_px').value)
         self._record_frames = bool(self.get_parameter('record_frames').value)
+        self._vertical_mode = str(self.get_parameter('vertical_mode').value)
+        self._max_vertical_mps = float(self.get_parameter('max_vertical_mps').value)
+        self._use_waypoints = bool(self.get_parameter('use_waypoints').value)
+        self._waypoint_full_speed_m = float(self.get_parameter('waypoint_full_speed_m').value)
+        self._max_lateral_speed = float(self.get_parameter('max_lateral_speed').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -133,6 +146,8 @@ class VlmNavigator(Node):
         self._vlm_busy = False
         self._last_error = ''
         self._frame_seq = 0               # 已发给远端的帧序号（服务端用它检测重启）
+        self._last_command_source = ''    # 本周期指令来自哪一路（指向/路点/状态动作）
+        self._last_waypoints = []
         self._running = True
 
         if self._record:
@@ -250,15 +265,45 @@ class VlmNavigator(Node):
         try:
             response = self._client.complete(prompt, jpeg, meta=meta)
             pointing = parse_pointing(response)
-            # 状态类动作（没有像素坐标）单独处理：旋转 / 停止 / 目标不可见
+            waypoints = parse_waypoints(response) if self._use_waypoints else []
+            self._last_waypoints = [
+                {'forward_m': w.forward_m, 'lateral_m': w.lateral_m, 'yaw_rad': w.yaw_rad}
+                for w in waypoints]
+            # 指令来源优先级（2026-10-11 与服务器侧确认后定）：
+            #   ① stop/not_visible → 保持（显式停止最优先）
+            #   ② waypoints 非空 → 用路点：水平速度 + 偏航角速度，**竖直恒为 0**
+            #   ③ rot_left/rot_right → 原地偏航
+            #   ④ 其余 → 指向反投影（竖直是否交给视觉由 vertical_mode 决定）
             state_action = (pointing.apos_state or '').strip().lower()
-            if state_action in ('rot_left', 'rot_right'):
+            self._last_command_source = ''
+            if state_action in ('stop', 'not_visible'):
+                command = BodyVelocity(0.0, 0.0, 0.0, 0.0, self._min_duration)
+                self._last_command_source = f'state:{state_action}'
+                self.get_logger().info(f'远端状态动作 {state_action} → 保持位置')
+            elif waypoints:
+                target = waypoints[0]
+                command = waypoint_to_body_velocity(
+                    target,
+                    base_velocity=self._base_velocity,
+                    max_speed=self._max_speed,
+                    max_yaw_rate=self._max_yaw_rate,
+                    yaw_gain=self._yaw_gain,
+                    yaw_deadband_rad=self._yaw_deadband_rad,
+                    min_duration_s=self._min_duration,
+                    full_speed_distance_m=self._waypoint_full_speed_m,
+                    max_lateral_speed=self._max_lateral_speed)
+                self._last_command_source = f'waypoint[{len(waypoints)}]'
+                self.get_logger().info(
+                    f'远端路点 前 {target.forward_m:+.2f} m / 横 {target.lateral_m:+.2f} m / '
+                    f'偏航 {math.degrees(target.yaw_rad):+.1f}° → '
+                    f'前 {command.forward:+.2f} 左 {command.left:+.2f} m/s、'
+                    f'偏航 {command.yaw_rate:+.2f} rad/s（竖直 0，高度交飞控）',
+                    throttle_duration_sec=1.0)
+            elif state_action in ('rot_left', 'rot_right'):
                 yaw = self._max_yaw_rate if state_action == 'rot_left' else -self._max_yaw_rate
                 command = BodyVelocity(0.0, 0.0, 0.0, yaw, self._min_duration)
+                self._last_command_source = f'state:{state_action}'
                 self.get_logger().info(f'远端状态动作 {state_action} → 原地旋转 {yaw:+.2f} rad/s')
-            elif state_action in ('stop', 'not_visible'):
-                command = BodyVelocity(0.0, 0.0, 0.0, 0.0, self._min_duration)
-                self.get_logger().info(f'远端状态动作 {state_action} → 保持位置')
             else:
                 # 用本机深度替换远端占位深度，再做几何反投影
                 if self._use_local_depth and pointing.has_position:
@@ -268,6 +313,7 @@ class VlmNavigator(Node):
                             f'深度：远端占位 {pointing.depth_m:.2f} m → 本机采样 {measured:.2f} m',
                             throttle_duration_sec=2.0)
                         pointing.depth_m = measured
+                self._last_command_source = 'pointing'
                 command = pointing_to_body_velocity(
                     pointing, self._geometry,
                     base_velocity=self._base_velocity,
@@ -276,7 +322,9 @@ class VlmNavigator(Node):
                     yaw_gain=self._yaw_gain,
                     yaw_deadband_rad=self._yaw_deadband_rad,
                     stop_distance_m=self._stop_distance,
-                    min_duration_s=self._min_duration)
+                    min_duration_s=self._min_duration,
+                    vertical_mode=self._vertical_mode,
+                    max_vertical_mps=self._max_vertical_mps)
         except (VlmError, PointingParseError, ValueError) as exc:
             if str(exc) != self._last_error:
                 self.get_logger().warn(f'本周期未产生有效指令：{exc}')
@@ -302,12 +350,14 @@ class VlmNavigator(Node):
             decision = String()
             decision.data = json.dumps({
             'frame_seq': self._frame_seq,
+            'command_source': self._last_command_source,
             'label': pointing.label,
             'point_x_norm': pointing.x_norm,
             'point_y_norm': pointing.y_norm,
             'depth_m': pointing.depth_m,
             'apos_state': pointing.apos_state,
             'opos_state': pointing.opos_state,
+            'waypoints': self._last_waypoints,
             'body_velocity': {
                 'forward': command.forward,
                 'left': command.left,
@@ -415,6 +465,8 @@ class VlmNavigator(Node):
             'depth_score': pointing.depth_raw,
             'apos_state': pointing.apos_state,
             'opos_state': pointing.opos_state,
+            'command_source': self._last_command_source,
+            'waypoints': self._last_waypoints,
             'label': pointing.label,
             'body_velocity': {
                 'forward': command.forward,

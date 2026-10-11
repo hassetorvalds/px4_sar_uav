@@ -25,6 +25,7 @@
 | `05_request_service_down_to_server.md` | →服务器 | 2026-10-11 | **当前问题与需求**：服务在 Step B 窗口内关闭，请重启并保持 | 待转达 |
 | `06_reply_from_server_service_up.md` | 服务器→ | 2026-10-11 | 服务已恢复并常驻；给出启动命令、版本标识、重启语义、`frame_seq` 严格递增要求 | 已收到 |
 | `07_stepB_result_to_server.md` | →服务器 | 2026-10-11 | Step B 结果（327 次 / 148 s / 延迟达标）与"指向贴画面底边且恒定"的核对请求 | 待转达 |
+| `08_reply_waypoints_and_sweep_spec.md` | →服务器 | 2026-10-11 | 同意开 `waypoints`；**实验 B 的具体参数**（±15°/s、24 s、两条指令、判据） | 待转达 |
 
 ## 历史路径说明
 
@@ -64,7 +65,10 @@ checkpoint          LightOriginsHQ/LightNav-0，权重 model-00001-of-00001.safe
 ## 关键结论（双方都需知道）
 
 - 相机实际速率 **color 1.33 Hz / depth 1.78 Hz**（不是早先记的 2.25 Hz）；
-- LightNav-0 的 `opos_state` 在 4 个真实帧上始终 `not_visible`，**导航链路不依赖它**，
-  只用 `apos` + 本机 AirSim 32FC1 深度；
-- 远端不返回 `depth_m`，深度一律由本机在指向像素处采样补上；
+- **`apos` 是"可通行落点"（往哪走），不是目标物体**：户外它落在画面底边中心即"向前走"，
+  `apos_clamped=true` 与恒定值是**预期行为**（服务器侧用 480×270 合成帧复现了同一坐标）；
+  由此反投影会算出"下降"，**无人机竖直分量必须归零、高度交飞控**（已实现 `vertical_mode='hold'`）；
+- `opos` 通道存在但本场景无输出（恒 `not_visible`），对象锁定暂不使用；
+- 转向优先用 `waypoints` 的 `yaw`（动作头输出），`apos.x` 只作水平方位与兜底；
+- 远端不返回 `depth_m`，深度一律由**本机** AirSim 32FC1 深度在指向像素处采样补上；
 - 首帧返回 `rot_left` 是正常现象，评估时不计入异常。
