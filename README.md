@@ -380,7 +380,8 @@ VLM 指向式导航：静态图像下目标点不动、偏航不收敛，机体�
     │   ├── build_ros_ws.sh         重建 ROS 2 工作区
     │   └── build_px4_sitl.sh       重建 PX4 SITL
     │
-    ├── docs/                       迁移记录与开发路线图
+    ├── docs/                       迁移记录、开发路线图、与服务器端 agent 的通信归档
+    │   └── agent_comm/             文件式通信记录（接口约定、Step A/B 往来、当前请求）
     │
     └── logs/                       飞行日志（不入库）
 ```

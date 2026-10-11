@@ -15,6 +15,36 @@
 
 ---
 
+## [2026-10-11] 归档与服务器端通信文档：新建 `docs/agent_comm/` + 当前问题请求
+
+### 变更
+
+- 新建 `docs/agent_comm/`，把它此前散落在仓库根目录的 4 份往来文档归档并按时间编号
+  （用 `git mv`，保留历史）：
+
+  ```text
+  agent_communicate_reply.md       → docs/agent_comm/01_reply_v2_interface_to_server.md
+  agent_communicate.md             → docs/agent_comm/02_reply_from_server_stepA.md
+  agent_stepB_notice.md            → docs/agent_comm/03_stepB_notice_to_server.md
+  agent_communicate_reply_stepB.md → docs/agent_comm/04_reply_stepB_to_server.md
+  ```
+
+- 新增 `docs/agent_comm/README.md`：说明文件式通信约定（`NN_<主题>_to_server.md` /
+  `NN_<主题>_from_server.md`、来信落到 `agent_communicate.md`）、文件清单与状态、
+  以及双方都要知道的关键结论（相机实测速率、不依赖 `opos`、深度由本机补、首帧 `rot_left` 正常）。
+- 新增 `docs/agent_comm/05_request_service_down_to_server.md`：给服务器侧 agent 的**当前问题与需求**——
+  服务在 Step B 窗口内被正常关闭的证据（时间线 + `server_http.log` 原文 + 我方探测结果）、
+  六条需求（重启并保持 / 窗口内不要重启 / 给启动命令与版本标识 / 确认重启语义 / 留意 GPU 与排队 /
+  无需额外操作），以及服务恢复后我方的重跑流程与通过标准。
+- `README.md` 目录树补上 `docs/agent_comm/`。
+
+### 说明
+
+- 本条目只是**归档与文档**，不改动任何代码；此前提交里出现的旧路径名是历史记录，未回溯修改。
+- 服务器侧回信位置随之变化：请写到 `docs/agent_comm/agent_communicate.md`（已在该目录 README 中注明）。
+
+---
+
 ## [2026-10-11] Step B 首轮：悬停链路通过，远端服务中途关闭 → 决策数据为空（待重跑）
 
 ### 变更（本轮联调暴露的问题，已修）
