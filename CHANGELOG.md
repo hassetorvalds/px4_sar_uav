@@ -15,6 +15,34 @@
 
 ---
 
+## [2026-10-11] Step B 代码就绪：本机深度替换 + 远端状态动作映射（飞行验证待做）
+
+### 新增
+
+- `vlm_navigator` 支持**在指向像素处采样本机深度**，替换远端返回里的占位深度：
+  订阅 `/airsim_camera/depth`（32FC1，1280×720），在 `(x_norm, y_norm)` 处取
+  `depth_window_px=3`（7×7）窗口中位数，仅统计 `isfinite 且 > 0.05 m` 的有效像素；
+  参数 `depth_topic` / `use_local_depth`（默认 true）/ `depth_window_px`。
+  文件：`ros2_px4_ws/src/vlm/vlm/vlm_navigator.py`
+- 远端**状态动作映射**：`apos_state` 为 `rot_left/rot_right` → 原地偏航 ±`max_yaw_rate`；
+  `stop/not_visible`（无像素坐标）→ 原地保持（零速度）。此前这类响应只会被记成解析异常。
+- `agent_stepB_notice.md`：给服务器侧 agent 的 Step B 通知函，需其确认四件事——
+  ①期间不重启服务 ②留意 GPU 占用与请求排队 ③重启后同 `session_id` 的会话重建语义
+  ④当前服务的模型/代码版本标识。
+
+### 验证
+
+```text
+colcon build --packages-select vlm     ✅ 成功（1 min 30 s）
+python3 -m pytest test -q（vlm 包）    ✅ 18 passed（仅覆盖 pointing 解析）
+import vlm.vlm_navigator               ✅ 通过（新代码可加载）
+```
+
+- **飞行验证尚未执行**：Step B 的"起飞悬停 + `dry_run` 记录"待启动，
+  本条目在飞行后补实测数值（≥60 s / ≥100 次请求、往返耗时分布、本机深度采样有效率）。
+
+---
+
 ## [2026-10-11] Step A 验收通过：真实远端 VLM（LightNav-0）联调成功
 
 ### 连接与环境（实测）

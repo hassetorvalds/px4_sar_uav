@@ -23,6 +23,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
 from .pointing import (
+    BodyVelocity,
     PointingGeometry,
     PointingParseError,
     parse_pointing,
@@ -79,6 +80,9 @@ class VlmNavigator(Node):
         self.declare_parameter('dry_run', False)
         self.declare_parameter('output_dir', 'vlm_decisions')
         self.declare_parameter('record_decisions', True)
+        self.declare_parameter('depth_topic', '/airsim_camera/depth')
+        self.declare_parameter('use_local_depth', True)
+        self.declare_parameter('depth_window_px', 3)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -93,6 +97,8 @@ class VlmNavigator(Node):
         self._min_duration = float(self.get_parameter('min_command_duration_s').value)
         self._command_timeout = float(self.get_parameter('command_timeout_s').value)
         self._record = bool(self.get_parameter('record_decisions').value)
+        self._use_local_depth = bool(self.get_parameter('use_local_depth').value)
+        self._depth_window = int(self.get_parameter('depth_window_px').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -112,6 +118,7 @@ class VlmNavigator(Node):
         self._lock = threading.Lock()
         self._latest_jpeg = None
         self._latest_image_size = None
+        self._latest_depth = None       # (depth 数组, 宽, 高)
         self._pending_command = None      # (BodyVelocity, Pointing, timestamp)
         self._vlm_busy = False
         self._last_error = ''
@@ -126,6 +133,11 @@ class VlmNavigator(Node):
             topic = str(self.get_parameter('image_topic').value)
             self.create_subscription(Image, topic, self._on_image, 1)
             self.get_logger().info(f'等待图像话题：{topic}')
+            if self._use_local_depth:
+                depth_topic = str(self.get_parameter('depth_topic').value)
+                self.create_subscription(Image, depth_topic, self._on_depth, 1)
+                self.get_logger().info(
+                    f'使用本机深度（{depth_topic}）在指向像素处采样，替代远端占位深度')
 
         self._worker = threading.Thread(target=self._vlm_loop, daemon=True)
         self._worker.start()
@@ -164,6 +176,42 @@ class VlmNavigator(Node):
             self._latest_jpeg = jpeg
             self._latest_image_size = (int(msg.width), int(msg.height))
 
+    def _on_depth(self, msg: Image) -> None:
+        """缓存最新的 32FC1 深度图，用于在指向像素处采样本机深度。"""
+        if msg.encoding != '32FC1':
+            return
+        import numpy as np
+
+        depth = np.frombuffer(msg.data, dtype=np.float32)
+        if depth.size < int(msg.width) * int(msg.height):
+            return
+        with self._lock:
+            self._latest_depth = (depth.reshape(int(msg.height), int(msg.width)),
+                                  int(msg.width), int(msg.height))
+
+    def _depth_at(self, x_norm: float, y_norm: float):
+        """在归一化像素处取本机深度（小窗口中位数，抗噪）。"""
+        import math as _math
+
+        import numpy as np
+
+        if _math.isnan(x_norm) or _math.isnan(y_norm):
+            return None
+        with self._lock:
+            entry = self._latest_depth
+        if entry is None:
+            return None
+        depth, width, height = entry
+        px = int(round(x_norm * (width - 1)))
+        py = int(round(y_norm * (height - 1)))
+        window = max(self._depth_window, 0)
+        patch = depth[max(py - window, 0):py + window + 1,
+                      max(px - window, 0):px + window + 1]
+        valid = patch[np.isfinite(patch) & (patch > 0.05)]
+        if valid.size == 0:
+            return None
+        return float(np.median(valid))
+
     # ------------------------------------------------------------------
     # VLM 工作线程
     # ------------------------------------------------------------------
@@ -189,15 +237,33 @@ class VlmNavigator(Node):
         try:
             response = self._client.complete(prompt, jpeg)
             pointing = parse_pointing(response)
-            command = pointing_to_body_velocity(
-                pointing, self._geometry,
-                base_velocity=self._base_velocity,
-                max_speed=self._max_speed,
-                max_yaw_rate=self._max_yaw_rate,
-                yaw_gain=self._yaw_gain,
-                yaw_deadband_rad=self._yaw_deadband_rad,
-                stop_distance_m=self._stop_distance,
-                min_duration_s=self._min_duration)
+            # 状态类动作（没有像素坐标）单独处理：旋转 / 停止 / 目标不可见
+            state_action = (pointing.apos_state or '').strip().lower()
+            if state_action in ('rot_left', 'rot_right'):
+                yaw = self._max_yaw_rate if state_action == 'rot_left' else -self._max_yaw_rate
+                command = BodyVelocity(0.0, 0.0, 0.0, yaw, self._min_duration)
+                self.get_logger().info(f'远端状态动作 {state_action} → 原地旋转 {yaw:+.2f} rad/s')
+            elif state_action in ('stop', 'not_visible'):
+                command = BodyVelocity(0.0, 0.0, 0.0, 0.0, self._min_duration)
+                self.get_logger().info(f'远端状态动作 {state_action} → 保持位置')
+            else:
+                # 用本机深度替换远端占位深度，再做几何反投影
+                if self._use_local_depth and pointing.has_position:
+                    measured = self._depth_at(pointing.x_norm, pointing.y_norm)
+                    if measured is not None:
+                        self.get_logger().info(
+                            f'深度：远端占位 {pointing.depth_m:.2f} m → 本机采样 {measured:.2f} m',
+                            throttle_duration_sec=2.0)
+                        pointing.depth_m = measured
+                command = pointing_to_body_velocity(
+                    pointing, self._geometry,
+                    base_velocity=self._base_velocity,
+                    max_speed=self._max_speed,
+                    max_yaw_rate=self._max_yaw_rate,
+                    yaw_gain=self._yaw_gain,
+                    yaw_deadband_rad=self._yaw_deadband_rad,
+                    stop_distance_m=self._stop_distance,
+                    min_duration_s=self._min_duration)
         except (VlmError, PointingParseError, ValueError) as exc:
             if str(exc) != self._last_error:
                 self.get_logger().warn(f'本周期未产生有效指令：{exc}')
