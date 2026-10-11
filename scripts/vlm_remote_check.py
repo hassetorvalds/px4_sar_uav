@@ -83,8 +83,12 @@ class RemoteCheck(Node):
             latencies.append(elapsed_ms)
             try:
                 pointing = parse_pointing(text)
-                summary = (f'x_norm={pointing.x_norm:.3f} y_norm={pointing.y_norm:.3f} '
-                           f'apos={pointing.apos_state or "-"} opos={pointing.opos_state or "-"}')
+                if pointing.has_position:
+                    coords = f'x_norm={pointing.x_norm:.3f} y_norm={pointing.y_norm:.3f}'
+                else:
+                    coords = '无坐标（状态动作）'
+                summary = (f'{coords} apos={pointing.apos_state or "-"} '
+                           f'opos={pointing.opos_state or "-"}')
             except PointingParseError as exc:
                 summary = f'解析失败：{exc}'
             print(f'  第 {index} 次：往返 {elapsed_ms:.0f} ms | {summary}')

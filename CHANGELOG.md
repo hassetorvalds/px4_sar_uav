@@ -15,6 +15,61 @@
 
 ---
 
+## [2026-10-11] Step A 验收通过：真实远端 VLM（LightNav-0）联调成功
+
+### 连接与环境（实测）
+
+```text
+SSH          sol@10.255.248.205 密钥登录成功（主机名 ing-server，内网 192.168.31.21）
+             → 证实 10.255.248.205 与 192.168.31.21 是同一台机器的不同接口
+系统         Ubuntu 22.04.5，系统 Python 3.10.12（服务侧用 venv）
+GPU          2 × RTX 4090 D（各 49 GB）
+LightNav-0   部署在 /home/sol/lightnav-workspace
+服务         127.0.0.1:18080 已在监听（服务侧已就绪）
+隧道         ssh -N -L 18080:127.0.0.1:18080 sol@10.255.248.205
+```
+
+### 验收结果（按 `agent_communicate_reply.md` 的四条标准）
+
+```text
+① GET /health                ✅ {"ready":true,"model":"LightNav-0","rate_hz":4.0,"sessions":1}
+② 指向合法（含 state）        ✅ {"pointing":{"x_norm":0.510,"y_norm":0.982,
+                                "apos_state":"point","opos_state":"not_visible",
+                                "frame_size":[1280,720]}, "latency_ms":152.7}
+③ 端到端往返 < 500 ms        ✅ 20 次：最小 153 / 平均 165 / 最大 188 ms
+④ 连续 20 次稳定             ✅ 无异常、无丢包；服务端 sessions=1（会话复用正常）
+取证                        scripts/vlm_remote_check.py 输出（本轮对话）
+```
+
+输入为真实 AirSim 帧（1280×720，45 KB JPEG）+ 英文指令
+`"go to the collapsed building ahead"`。
+
+### 修复
+
+- `pointing.parse_pointing()` 对远端格式过于严格：`apos_state` 为
+  `rot_left/rot_right/stop/not_visible` 时 `x_norm/y_norm` 为 `null`（这是**预期行为**，
+  状态动作本来就没有像素坐标）。改为保留该结果并置坐标为空，
+  新增 `Pointing.has_position` 供调用方区分"有坐标的指向"与"状态类动作"。
+  修正后同一响应不再报解析错误。
+
+### 观察（供后续判断，不作结论）
+
+- **时序收敛**：连续发送同一帧时，前两次返回 `rot_left`（状态动作、无坐标），
+  之后稳定收敛为 `point(0.510, 0.982)`——与服务器侧"模型是时序策略"的说明一致，
+  也说明 `session_id` 历史缓冲在起作用。
+- **指向偏低**：`y_norm=0.982` 接近画面底部（当前样本是"墙体+地面"的帧），
+  语义合理性需要换更有代表性的场景再评估，本次只验证链路。
+- 往返 165 ms 远快于本机相机周期（2.25 Hz ≈ 445 ms），**可以做到每帧都决策**，
+  原先担心的 0.2–0.5 Hz 低频问题不存在。
+
+### 下一步（Step B）
+
+悬停 + `dry_run` 记录决策：飞机在 OFFBOARD 悬停，把真实相机帧按 2.25 Hz 持续发送、
+每次返回的指向与 state 只记录不执行，核对指向语义与延迟稳定性；
+同时实现"指向像素处采样本机深度"替换占位深度。通过后再进 Step C 闭环飞行。
+
+---
+
 ## [2026-10-11] 远端 VLM 分工确立（LightNav-0）+ 本机客户端就绪
 
 ### 背景

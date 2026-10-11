@@ -42,6 +42,11 @@ class Pointing:
     apos_state: str = ''    # 例如 rot_left / rot_right / stop / not_visible
     opos_state: str = ''
 
+    @property
+    def has_position(self) -> bool:
+        """是否存在有效像素坐标（rot_* / not_visible 等状态动作没有坐标）。"""
+        return not (math.isnan(self.x_norm) or math.isnan(self.y_norm))
+
 
 @dataclass
 class BodyVelocity:
@@ -123,15 +128,21 @@ def parse_pointing(text: str, depth_far_m: float = DEPTH_FAR_M) -> Pointing:
     # {"pointing": {"x_norm":.., "y_norm":.., "apos_state":.., "opos_state":..}}
     if 'pointing' in payload and isinstance(payload['pointing'], dict):
         remote = payload['pointing']
-        try:
-            x_value = float(remote.get('x_norm'))
-            y_value = float(remote.get('y_norm'))
-        except (TypeError, ValueError) as exc:
-            raise PointingParseError(
-                f'远端 pointing 缺少合法 x_norm/y_norm：{remote}') from exc
+        raw_x, raw_y = remote.get('x_norm'), remote.get('y_norm')
+        # 状态类动作（rot_left / rot_right / stop / not_visible）没有坐标，
+        # 此时 x_norm/y_norm 为 null——必须保留该项而不是报错，由调用方按状态处理。
+        if raw_x is None or raw_y is None:
+            x_value = y_value = float('nan')
+        else:
+            try:
+                x_value = float(raw_x)
+                y_value = float(raw_y)
+            except (TypeError, ValueError) as exc:
+                raise PointingParseError(
+                    f'远端 pointing 的 x_norm/y_norm 非法：{remote}') from exc
         return Pointing(
-            x_norm=min(max(x_value, 0.0), 1.0),
-            y_norm=min(max(y_value, 0.0), 1.0),
+            x_norm=min(max(x_value, 0.0), 1.0) if not math.isnan(x_value) else x_value,
+            y_norm=min(max(y_value, 0.0), 1.0) if not math.isnan(y_value) else y_value,
             depth_m=depth_score_to_meters(5.0, depth_far_m),   # 占位；深度由本机补
             depth_raw=0.0,
             label=str(remote.get('label', 'lightnav remote pointing')),
