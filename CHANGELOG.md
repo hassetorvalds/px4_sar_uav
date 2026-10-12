@@ -15,6 +15,62 @@
 
 ---
 
+## [2026-10-12] Step C3 地图安全层 + 注入式验证通过（四态逐段触发，绕行方向两个方向都对）
+
+### 新增
+
+- `vlm/safety.py`：地图安全层（纯函数，可离线单测）
+
+  ```text
+  parse_clearance_status()   解析 /local_map/status 的 nearest_forward_m/left_m/right_m
+  apply_map_safety()         fail-safe 陈旧处理 + 压速 + 障碍保持（含迟滞）+ 偏航覆盖
+  ```
+
+  阈值（全部可参数化）：陈旧 0.5 s → 前向压到 0.1 m/s；净空 <1.2 m 起线性压速、<0.6 m 归零保持、
+  >0.9 m 才释放；保持时朝较宽一侧偏航 0.3 rad/s 并**覆盖** VLM 的 yaw。
+- `vlm_navigator` 接入：订阅 `map_status_topic`（默认 `/local_map/status`），
+  每帧记录 `guard / guard_detail / clearance / pre_filter / post_filter`；
+  参数 `avoidance_enabled`、`map_stale_s`、`stale_forward_limit_mps`、
+  `obstacle_slow_start_m`、`obstacle_stop_m`、`obstacle_release_m`、`obstacle_avoid_yaw_rate`。
+- `scripts/inject_clearance.py`：C3 确定性注入场景（独立话题，避免被真实 `local_map` 覆盖）：
+  不发布 → `ok` → 压速 → 左绕 → 右绕 → 不发布。
+
+### 实飞验证（悬停 2 m，125 s 观察窗，`session_id=c3b`）
+
+```text
+注入时段                 期望            实测（帧数 / 下发）
+0–8 s   不发布           stale           ✅ stale（前向压到 0.1 m/s）
+8–18 s  f=3.0 l=3 r=3    ok              ✅ ok（22 帧）
+18–26 s f=0.9 l=2 r=2    obstacle_slow   ✅ obstacle_slow（17 帧，scale=0.5）
+26–36 s f=0.4 l=3 r=1    obstacle+左转    ✅ avoid_side=left（23 帧，yaw +0.30 → 航向 −169.9°）
+36–46 s f=0.4 l=1 r=3    obstacle+右转    ✅ avoid_side=right（23 帧，yaw −0.30 → 航向 +167.2°）
+46–52 s 停止发布          stale           ✅ stale
+
+驱动 CSV guard 分布：stale 97 / obstacle 46 / ok 22 / obstacle_slow 17（与场景逐段吻合）
+取证：logs/2026-10-12/c3_injection2.csv、c3_driver2.log、c3_vlm2.log、c3_injector2.log
+```
+
+**绕行方向两个方向都做了物理验证**（左更宽→左转、右更宽→右转），
+即 `local_map` 的 `left_m/right_m` 与 LightNav `lateral(+ = 左)` 同一套符号。
+
+### 修复
+
+- 逐帧 JSON 记录漏了 `pre_filter/post_filter`（此前只写进发布的话题消息）→ 已补；
+- 第一次注入测试的观察窗太短（VLM 节点启动约 25 s + 注入 52 s 超出 95 s 观察窗，
+  只跑到第 2 段就降落）→ 重跑用 125 s 窗口，五段全部覆盖；
+- 已知调参项：避让偏航 0.3 rad/s 在 10 s 内转了约 170°，对"擦肩而过"过猛，
+  真实避障拟降到 0.15 rad/s 并加"净空恢复即停转"（待服务器侧确认）。
+
+### 验证
+
+```text
+单元测试          ✅ 32 passed（新增 9 项 safety 测试：fail-safe/方向/迟滞/压速/关闭开关）
+colcon build vlm  ✅ 成功
+实飞              ✅ 注入场景五段逐段触发，方向正确
+```
+
+---
+
 ## [2026-10-12] Step C2（加前进分量）通过：全程受控，30 s 包络到点强制归零
 
 ### 结果（`session_id=c2`，观察窗 50 s）

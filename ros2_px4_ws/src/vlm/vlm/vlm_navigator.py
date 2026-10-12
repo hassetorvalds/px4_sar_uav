@@ -31,6 +31,7 @@ from .pointing import (
     pointing_to_body_velocity,
     waypoint_to_body_velocity,
 )
+from .safety import MapSafetyLimits, apply_map_safety, parse_clearance_status
 from .vlm_client import VlmError, create_client, image_file_to_jpeg, image_message_to_jpeg
 
 # 提示词为本项目自写（接口约定与本地参考实现 SeePointFly 一致，但文字不复制其原文；
@@ -109,6 +110,15 @@ class VlmNavigator(Node):
         # 机载看门狗（服务器侧 2026-10-12 明确：实时安全只能由机载负责，服务端不可当急停）
         self.declare_parameter('max_consecutive_errors', 3)     # 连续失败到这数就停止下发运动
         self.declare_parameter('hold_on_slow_response_ms', 800.0)  # 0 = 不判慢
+        # C3 地图安全层（详见 vlm/safety.py 的说明）
+        self.declare_parameter('map_status_topic', '/local_map/status')
+        self.declare_parameter('avoidance_enabled', True)
+        self.declare_parameter('map_stale_s', 0.5)
+        self.declare_parameter('stale_forward_limit_mps', 0.1)
+        self.declare_parameter('obstacle_slow_start_m', 1.2)
+        self.declare_parameter('obstacle_stop_m', 0.6)
+        self.declare_parameter('obstacle_release_m', 0.9)
+        self.declare_parameter('obstacle_avoid_yaw_rate', 0.3)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -143,6 +153,15 @@ class VlmNavigator(Node):
         self._geofence = float(self.get_parameter('geofence_max_distance_m').value)
         self._max_errors = int(self.get_parameter('max_consecutive_errors').value)
         self._slow_ms = float(self.get_parameter('hold_on_slow_response_ms').value)
+        self._map_limits = MapSafetyLimits(
+            enabled=bool(self.get_parameter('avoidance_enabled').value),
+            stale_s=float(self.get_parameter('map_stale_s').value),
+            stale_forward_limit_mps=float(
+                self.get_parameter('stale_forward_limit_mps').value),
+            slow_start_m=float(self.get_parameter('obstacle_slow_start_m').value),
+            stop_m=float(self.get_parameter('obstacle_stop_m').value),
+            release_m=float(self.get_parameter('obstacle_release_m').value),
+            avoid_yaw_rate=float(self.get_parameter('obstacle_avoid_yaw_rate').value))
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -180,6 +199,12 @@ class VlmNavigator(Node):
         self._last_guard = 'idle'
         self._error_streak = 0
         self._slow_warned = False
+        self._clearance = None          # (前, 左, 右) 米
+        self._clearance_stamp = None    # 收到时刻（monotonic）
+        self._map_holding = False       # 障碍保持的迟滞状态
+        self._obstacle_warned = False
+        self._last_guard_detail = {}
+        self._pre_filter_command = None
         self._running = True
 
         if self._record:
@@ -202,6 +227,10 @@ class VlmNavigator(Node):
         self.create_subscription(
             String, str(self.get_parameter('instruction_topic').value),
             self._on_instruction, 10)
+        # C3：局部地图三向净空（fail-safe 安全层的输入）
+        self.create_subscription(
+            String, str(self.get_parameter('map_status_topic').value),
+            self._on_map_status, 10)
 
         self._worker = threading.Thread(target=self._vlm_loop, daemon=True)
         self._worker.start()
@@ -262,6 +291,13 @@ class VlmNavigator(Node):
         if hasattr(self._client, 'instruction'):
             self._client.instruction = text
         self.get_logger().info(f'指令已切换为「{text}」（同一会话，frame_seq 继续递增）')
+
+    def _on_map_status(self, msg: String) -> None:
+        """缓存局部地图的三向净空（用于 C3 安全层；解析失败按"未知"处理）。"""
+        parsed = parse_clearance_status(msg.data)
+        with self._lock:
+            self._clearance = parsed
+            self._clearance_stamp = time.monotonic()
 
     def _depth_at(self, x_norm: float, y_norm: float):
         """在归一化像素处取本机深度（小窗口中位数，抗噪）。"""
@@ -399,7 +435,8 @@ class VlmNavigator(Node):
             self._note_error()
             return
 
-        command, self._last_guard = self._guard_command(command)
+        self._pre_filter_command = command
+        command, self._last_guard, self._last_guard_detail = self._guard_command(command)
         # 日志里的"缩放前"命令与实际下发的命令可能不同（forward_scale/lateral_scale、
         # 时长/围栏/慢响应都会改），这里把**实际下发值**单独打一行，避免误读日志。
         self.get_logger().info(
@@ -422,6 +459,16 @@ class VlmNavigator(Node):
             'frame_seq': self._frame_seq,
             'command_source': self._last_command_source,
             'guard': self._last_guard,
+            'guard_detail': self._last_guard_detail,
+            'clearance': self._clearance,
+            'pre_filter': (None if self._pre_filter_command is None else {
+                'forward': self._pre_filter_command.forward,
+                'left': self._pre_filter_command.left,
+                'yaw_rate': self._pre_filter_command.yaw_rate}),
+            'post_filter': {
+                'forward': command.forward,
+                'left': command.left,
+                'yaw_rate': command.yaw_rate},
             'label': pointing.label,
             'point_x_norm': pointing.x_norm,
             'point_y_norm': pointing.y_norm,
@@ -515,16 +562,32 @@ class VlmNavigator(Node):
                     f'延迟 {latency:.0f} ms 超过阈值 {self._slow_ms:.0f} ms，'
                     '暂停运动并保持（直到延迟恢复）')
                 self._slow_warned = True
-            return _hold(), 'slow'
+            return _hold(), 'slow', {'reason': 'slow_response',
+                                     'latency_ms': round(float(latency), 1)}
         self._slow_warned = False
 
         state = self._monitor.snapshot()
         if not (state.armed and state.offboard):
             self._guard_started_at = None
             self._guard_expired = False
-            return command, 'idle'
+            self._last_guard_detail = {}
+            return command, 'idle', {}
 
         now = time.monotonic()
+
+        # ---- 地图安全层（C3）：fail-safe 陈旧处理 + 压速 + 障碍保持（含迟滞）----
+        age = (now - self._clearance_stamp) if self._clearance_stamp else None
+        command, map_guard, self._map_holding, detail = apply_map_safety(
+            command, self._clearance, age, self._map_holding, self._map_limits)
+        self._last_guard_detail = detail
+        if map_guard == 'obstacle' and not self._obstacle_warned:
+            self.get_logger().warn(
+                f'地图安全层：前向净空 {detail.get("forward_m")} m 过近，'
+                f'归零保持并朝更宽一侧（{detail.get("avoid_side")}）偏航')
+            self._obstacle_warned = True
+        elif map_guard != 'obstacle':
+            self._obstacle_warned = False
+
         if self._guard_started_at is None:
             self._guard_started_at = now
             self._guard_origin = ((state.x, state.y)
@@ -539,7 +602,8 @@ class VlmNavigator(Node):
                 self.get_logger().warn(
                     f'安全包络：已达到 {self._run_duration:.0f} s 上限，停止下发运动（保持悬停）')
                 self._guard_expired = True
-            return _hold(), 'duration'
+            return _hold(), 'duration', {'reason': 'duration_limit',
+                                         'limit_s': self._run_duration}
 
         if (self._geofence > 0.0 and self._guard_origin is not None
                 and self._monitor.position_fresh()):
@@ -549,8 +613,9 @@ class VlmNavigator(Node):
                 self.get_logger().warn(
                     f'安全包络：距起点 {drift:.1f} m 超过围栏 {self._geofence:.1f} m，'
                     '停止下发运动')
-                return _hold(), 'geofence'
-        return command, 'ok'
+                return _hold(), 'geofence', {'reason': 'geofence',
+                                             'drift_m': round(drift, 2)}
+        return command, map_guard, detail
 
     # ------------------------------------------------------------------
     # 指令发布
@@ -621,7 +686,20 @@ class VlmNavigator(Node):
             'opos_state': pointing.opos_state,
             'command_source': self._last_command_source,
             'guard': self._last_guard,
+            'guard_detail': self._last_guard_detail,
+            'clearance': self._clearance,
             'waypoints': self._last_waypoints,
+            # 过滤前 vs 过滤后（服务器侧要求：便于事后归因，也能对时间窗）
+            'pre_filter': (None if self._pre_filter_command is None else {
+                'forward': self._pre_filter_command.forward,
+                'left': self._pre_filter_command.left,
+                'up': self._pre_filter_command.up,
+                'yaw_rate': self._pre_filter_command.yaw_rate}),
+            'post_filter': {
+                'forward': command.forward,
+                'left': command.left,
+                'up': command.up,
+                'yaw_rate': command.yaw_rate},
             'label': pointing.label,
             'body_velocity': {
                 'forward': command.forward,

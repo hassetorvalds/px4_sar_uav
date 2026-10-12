@@ -1,0 +1,93 @@
+"""地图安全层（C3）的单元测试：fail-safe、左右方向、迟滞、压速曲线。"""
+
+import math
+
+import pytest
+
+from vlm.pointing import BodyVelocity
+from vlm.safety import MapSafetyLimits, apply_map_safety, parse_clearance_status
+
+LIMITS = MapSafetyLimits()
+
+
+def _command(forward=0.12, left=0.0, yaw_rate=0.0):
+    return BodyVelocity(forward, left, 0.0, yaw_rate, 1.0)
+
+
+def test_parse_clearance_status_from_local_map_text():
+    text = ('voxels=1956 frames=12 nearest_forward_m=0.42 left_m=3.00 right_m=2.10')
+    assert parse_clearance_status(text) == pytest.approx((0.42, 3.00, 2.10))
+    assert parse_clearance_status('garbage') is None
+    assert parse_clearance_status('') is None
+
+
+def test_clear_forward_passes_through():
+    command, guard, holding, _ = apply_map_safety(
+        _command(), (3.0, 3.0, 3.0), 0.1, False, LIMITS)
+    assert guard == 'ok'
+    assert command.forward == pytest.approx(0.12)
+    assert holding is False
+
+
+def test_slow_zone_scales_final_forward_speed():
+    """0.9 m 处于 1.2→0.6 的压速段：scale=(0.9-0.6)/0.6=0.5。"""
+    command, guard, _, detail = apply_map_safety(
+        _command(forward=0.12), (0.9, 2.0, 2.0), 0.1, False, LIMITS)
+    assert guard == 'obstacle_slow'
+    assert command.forward == pytest.approx(0.06)
+    assert detail['scale'] == pytest.approx(0.5)
+
+
+def test_obstacle_hold_zeroes_translation_and_overrides_yaw_left():
+    """左更宽 → 左转（yaw_rate > 0，与 LightNav lateral + = 左 同一套符号）。"""
+    command, guard, holding, detail = apply_map_safety(
+        _command(yaw_rate=0.5), (0.4, 3.0, 1.0), 0.1, False, LIMITS)
+    assert guard == 'obstacle'
+    assert holding is True
+    assert (command.forward, command.left) == pytest.approx((0.0, 0.0))
+    assert command.yaw_rate == pytest.approx(LIMITS.avoid_yaw_rate)   # 覆盖 VLM 的 0.5
+    assert detail['avoid_side'] == 'left'
+
+
+def test_obstacle_hold_turns_right_when_right_is_wider():
+    command, _, _, detail = apply_map_safety(
+        _command(), (0.4, 1.0, 3.0), 0.1, False, LIMITS)
+    assert command.yaw_rate == pytest.approx(-LIMITS.avoid_yaw_rate)
+    assert detail['avoid_side'] == 'right'
+
+
+def test_hysteresis_keeps_holding_until_release_threshold():
+    # 已保持中：0.8 m < 0.9 m 释放门槛 → 继续保持
+    _, guard, holding, _ = apply_map_safety(
+        _command(), (0.8, 2.0, 2.0), 0.1, True, LIMITS)
+    assert guard == 'obstacle'
+    assert holding is True
+    # 0.95 m > 0.9 m → 解除保持
+    command, guard, holding, _ = apply_map_safety(
+        _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS)
+    assert holding is False
+    assert guard == 'obstacle_slow'          # 0.95 仍在压速段
+    assert command.forward < 0.12
+
+
+def test_stale_clearance_is_fail_safe_not_fail_open():
+    """数据陈旧 → 视为未知，前向压到很低（服务器侧 2026-10-12 明确要求 fail-safe）。"""
+    command, guard, _, detail = apply_map_safety(
+        _command(forward=0.5), (3.0, 3.0, 3.0), 1.5, False, LIMITS)
+    assert guard == 'stale'
+    assert command.forward == pytest.approx(LIMITS.stale_forward_limit_mps)
+    assert detail['reason'] == 'clearance_unknown'
+
+
+def test_missing_clearance_is_treated_as_stale():
+    command, guard, _, _ = apply_map_safety(_command(forward=0.5), None, None, False, LIMITS)
+    assert guard == 'stale'
+    assert command.forward == pytest.approx(LIMITS.stale_forward_limit_mps)
+
+
+def test_disabled_map_layer_does_not_touch_command():
+    limits = MapSafetyLimits(enabled=False)
+    command, guard, _, _ = apply_map_safety(
+        _command(forward=0.5), (0.1, 0.1, 0.1), 99.0, False, limits)
+    assert guard == 'map_off'
+    assert command.forward == pytest.approx(0.5)
