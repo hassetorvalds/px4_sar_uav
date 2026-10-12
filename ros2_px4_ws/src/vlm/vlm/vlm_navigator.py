@@ -106,6 +106,9 @@ class VlmNavigator(Node):
         self.declare_parameter('lateral_scale', 1.0)
         self.declare_parameter('run_duration_s', 0.0)          # 0 = 不限制
         self.declare_parameter('geofence_max_distance_m', 0.0)  # 0 = 不限制
+        # 机载看门狗（服务器侧 2026-10-12 明确：实时安全只能由机载负责，服务端不可当急停）
+        self.declare_parameter('max_consecutive_errors', 3)     # 连续失败到这数就停止下发运动
+        self.declare_parameter('hold_on_slow_response_ms', 800.0)  # 0 = 不判慢
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -138,6 +141,8 @@ class VlmNavigator(Node):
         self._lateral_scale = float(self.get_parameter('lateral_scale').value)
         self._run_duration = float(self.get_parameter('run_duration_s').value)
         self._geofence = float(self.get_parameter('geofence_max_distance_m').value)
+        self._max_errors = int(self.get_parameter('max_consecutive_errors').value)
+        self._slow_ms = float(self.get_parameter('hold_on_slow_response_ms').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -173,6 +178,8 @@ class VlmNavigator(Node):
         self._guard_origin = None
         self._guard_expired = False
         self._last_guard = 'idle'
+        self._error_streak = 0
+        self._slow_warned = False
         self._running = True
 
         if self._record:
@@ -305,6 +312,7 @@ class VlmNavigator(Node):
         meta = self._link_meta()
         try:
             response = self._client.complete(prompt, jpeg, meta=meta)
+            self._error_streak = 0
             pointing = parse_pointing(response)
             waypoints = parse_waypoints(response) if self._use_waypoints else []
             self._last_waypoints = [
@@ -377,6 +385,7 @@ class VlmNavigator(Node):
                     vertical_mode=self._vertical_mode,
                     max_vertical_mps=self._max_vertical_mps)
         except (VlmError, PointingParseError, ValueError) as exc:
+            self._note_error()
             if str(exc) != self._last_error:
                 self.get_logger().warn(f'本周期未产生有效指令：{exc}')
                 self._last_error = str(exc)
@@ -387,6 +396,7 @@ class VlmNavigator(Node):
             self.get_logger().error(
                 f'本周期发生未预期异常（已跳过，线程继续）：{type(exc).__name__}: {exc}',
                 throttle_duration_sec=5.0)
+            self._note_error()
             return
 
         command, self._last_guard = self._guard_command(command)
@@ -452,6 +462,21 @@ class VlmNavigator(Node):
             meta['heading_deg'] = round(math.degrees(float(state.heading)) % 360.0, 1)
         return meta
 
+    def _note_error(self) -> None:
+        """连续失败计数：到阈值就清空待发指令，让桥接节点回到位置保持。
+
+        服务器侧 2026-10-12 明确：他们的监控**只写日志、不能实时介入**，
+        所以"请求失败/超时 → 归零保持"必须由本机负责，这里就是那道闸。
+        """
+        self._error_streak += 1
+        if self._max_errors > 0 and self._error_streak >= self._max_errors:
+            with self._lock:
+                self._pending_command = None
+            self.get_logger().error(
+                f'机载看门狗：连续 {self._error_streak} 次未取得有效指令，'
+                '已停止下发运动（桥接节点保持位置）',
+                throttle_duration_sec=5.0)
+
     def _guard_command(self, command: BodyVelocity):
         """安全包络：分量缩放 + 运行时长上限 + 距起点围栏（C1/C2 小步闭环用）。
 
@@ -472,6 +497,19 @@ class VlmNavigator(Node):
 
         def _hold():
             return BodyVelocity(0.0, 0.0, 0.0, 0.0, command.duration_s)
+
+        # 慢响应降级：延迟超阈值时**不再前进/偏航**，改为原地保持
+        # （服务器侧明确"不要指望服务端实时急停"，这一层必须在本机）。
+        latency = getattr(self._client, 'last_latency_ms', None)
+        if (self._slow_ms > 0.0 and isinstance(latency, (int, float))
+                and latency > self._slow_ms):
+            if not self._slow_warned:
+                self.get_logger().warn(
+                    f'延迟 {latency:.0f} ms 超过阈值 {self._slow_ms:.0f} ms，'
+                    '暂停运动并保持（直到延迟恢复）')
+                self._slow_warned = True
+            return _hold(), 'slow'
+        self._slow_warned = False
 
         state = self._monitor.snapshot()
         if not (state.armed and state.offboard):
