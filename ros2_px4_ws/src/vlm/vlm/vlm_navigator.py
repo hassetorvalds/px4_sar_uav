@@ -353,7 +353,7 @@ class VlmNavigator(Node):
                     max_lateral_speed=self._max_lateral_speed)
                 self._last_command_source = f'waypoint[{len(waypoints)}]'
                 self.get_logger().info(
-                    f'远端路点 前 {target.forward_m:+.2f} m / 横 {target.lateral_m:+.2f} m / '
+                    f'远端路点（缩放前）前 {target.forward_m:+.2f} m / 横 {target.lateral_m:+.2f} m / '
                     f'偏航 {math.degrees(target.yaw_rad):+.1f}° → '
                     f'前 {command.forward:+.2f} 左 {command.left:+.2f} m/s、'
                     f'偏航 {command.yaw_rate:+.2f} rad/s（竖直 0，高度交飞控）',
@@ -400,6 +400,13 @@ class VlmNavigator(Node):
             return
 
         command, self._last_guard = self._guard_command(command)
+        # 日志里的"缩放前"命令与实际下发的命令可能不同（forward_scale/lateral_scale、
+        # 时长/围栏/慢响应都会改），这里把**实际下发值**单独打一行，避免误读日志。
+        self.get_logger().info(
+            f'实际下发：source={self._last_command_source} guard={self._last_guard} '
+            f'前 {command.forward:+.2f} 左 {command.left:+.2f} 上 {command.up:+.2f} m/s '
+            f'偏航 {command.yaw_rate:+.2f} rad/s',
+            throttle_duration_sec=1.0)
 
         # 下面这段（发布 + 日志 + 落盘）**必须**也在 try 里：
         # 状态动作（rot_left/rot_right/stop/not_visible）没有像素坐标，x_norm/y_norm 是 NaN，
