@@ -15,6 +15,44 @@
 
 ---
 
+## [2026-10-12] 采纳服务器侧两条硬要求：运行中换指令（不改 frame_seq）+ 热身提到 8 帧
+
+### 背景
+
+服务器侧同意开始实验 B，但点出一个会毁掉实验的坑：**换指令若靠重启 VLM 节点，
+`frame_seq` 会回到 1，服务端会判为新 episode 并清空会话历史**——冷启动默认值会覆盖
+我们辛苦预热出来的"按画面决策"状态（详见 09/12 号信）。
+
+### 变更
+
+- `vlm_navigator` 新增指令话题 `~/instruction`（参数 `instruction_topic`）：
+  收到新文本后**只改指令、不重启、不动会话**，`frame_seq` 继续递增；
+  同时把新文本同步给客户端（`client.instruction`）。这是实验 B 两轮指令的切换方式。
+- `warmup_frames` 默认 3 → **6**（服务器侧建议 5–8；扫场脚本用 8）。
+- `scripts/vlm_yaw_sweep.py` 重写为"一次飞行跑完两轮指令"：
+  `CLIMB → 预热8帧 → 指令A 双向扫（+15°/s×24s → 停5s → −15°/s×24s）→ SWITCH（话题换指令）
+  → 预热8帧 → 指令B 双向扫 → land_fast`；
+  CSV 增加 `phase` 与 `instruction` 列，小结按四个扫场阶段分别给出
+  `apos_x` 变化幅度、`waypoint yaw` 范围与 `corr(航向, apos_x)`。
+- 文档：`docs/agent_comm/11_reply_ready_to_fly_with_fixes.md`（确认开始 + 说明两处实现）、
+  `12_reply_from_server_go_ahead.md`（来信归档）、README 索引更新。
+
+### 验证
+
+```text
+单元测试          ✅ 23 passed
+colcon build vlm  ✅ 成功
+脚本语法/导入      ✅ python3 -m ast 通过；import vlm_yaw_sweep 通过
+```
+
+### 下一步
+
+拉起 Agent + PX4 + ROS 栈（跨天后昨天的进程已结束，AirSim/UE4 仍在），
+跑实验 B 一次；跑完把 CSV 与四个阶段的相关系数发服务器侧，
+由"是否随航向变化"决定进 Step C 还是回头查 checkpoint。
+
+---
+
 ## [2026-10-12] 复核服务器侧 `waypoints`：三条全对；采纳其归一化；实测到会话历史强依赖
 
 ### 复核（我方真实帧，新会话 `probe_wp1`，4 次请求）

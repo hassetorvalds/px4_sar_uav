@@ -28,6 +28,8 @@
 | `08_reply_waypoints_and_sweep_spec.md` | →服务器 | 2026-10-11 | 同意开 `waypoints`；**实验 B 的具体参数**（±15°/s、24 s、两条指令、判据） | 待转达 |
 | `09_reply_verify_waypoints_and_session_effect.md` | →服务器 | 2026-10-12 | 复核其 `waypoints` 回复（三条全对）；报告"输出强依赖会话历史"的实测证据与实验 B 的会话策略 | 待转达 |
 | `10_reply_from_server_waypoints_on.md` | 服务器→ | 2026-10-12 | `waypoints` 已开并重启；符号约定逐条确认（左正/CCW 为正/弧度）；给出参考归一化与量级提醒 | 已收到 |
+| `11_reply_ready_to_fly_with_fixes.md` | →服务器 | 2026-10-12 | 确认开始实验 B；说明两个硬要求已实现（运行中换指令保证 `frame_seq` 递增、热身提到 8 帧） | 待转达 |
+| `12_reply_from_server_go_ahead.md` | 服务器→ | 2026-10-12 | 认可实验 B 设计；提出两个硬要求（`frame_seq` 跨轮递增、热身 5–8 帧）；同意保持监控 | 已收到 |
 
 ## 历史路径说明
 

@@ -97,8 +97,10 @@ class VlmNavigator(Node):
         self.declare_parameter('waypoint_lateral_norm_m', 0.25)
         self.declare_parameter('waypoint_yaw_norm_deg', 9.0)
         self.declare_parameter('max_lateral_speed', 1.0)
-        # 冷启动前若干帧远端只会给 rot_left（时序策略需要历史），此期间只记录不下发运动
-        self.declare_parameter('warmup_frames', 3)
+        # 冷启动前若干帧远端只会给 rot_left（时序策略需要历史），此期间只记录不下发运动。
+        # 服务器侧建议 5–8 帧（我们探针实测第 4 帧才转 point），故默认 6。
+        self.declare_parameter('warmup_frames', 6)
+        self.declare_parameter('instruction_topic', '~/instruction')
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -175,6 +177,12 @@ class VlmNavigator(Node):
                 self.get_logger().info(
                     f'使用本机深度（{depth_topic}）在指向像素处采样，替代远端占位深度')
 
+        # 运行中换指令：**不能重启节点**，否则 frame_seq 归零会被服务端判为新 episode
+        # 并清空历史（服务器侧 2026-10-12 明确的硬性要求）。
+        self.create_subscription(
+            String, str(self.get_parameter('instruction_topic').value),
+            self._on_instruction, 10)
+
         self._worker = threading.Thread(target=self._vlm_loop, daemon=True)
         self._worker.start()
         self.create_timer(1.0 / command_rate, self._publish_loop)
@@ -224,6 +232,16 @@ class VlmNavigator(Node):
         with self._lock:
             self._latest_depth = (depth.reshape(int(msg.height), int(msg.width)),
                                   int(msg.width), int(msg.height))
+
+    def _on_instruction(self, msg: String) -> None:
+        """运行中切换指令（同一会话、frame_seq 继续递增；服务端 instruction 可逐帧改）。"""
+        text = str(msg.data).strip()
+        if not text or text == self._instruction:
+            return
+        self._instruction = text
+        if hasattr(self._client, 'instruction'):
+            self._client.instruction = text
+        self.get_logger().info(f'指令已切换为「{text}」（同一会话，frame_seq 继续递增）')
 
     def _depth_at(self, x_norm: float, y_norm: float):
         """在归一化像素处取本机深度（小窗口中位数，抗噪）。"""

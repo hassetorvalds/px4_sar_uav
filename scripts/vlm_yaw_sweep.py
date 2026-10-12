@@ -46,8 +46,15 @@ class YawSweepCheck(FlightCheckBase):
         self.declare_parameter('sweep_s', 24.0)
         self.declare_parameter('pause_s', 5.0)
         self.declare_parameter('decision_topic', '/vlm_navigator/decision')
+        self.declare_parameter('instruction_topic', '/vlm_navigator/instruction')
         self.declare_parameter('output_csv', 'logs/yaw_sweep.csv')
         self.declare_parameter('land_at_end', True)
+        # 两轮指令：A 跑"前飞/现状"，B 跑服务器侧建议的转向类指令。
+        # 切换指令**不重启节点**（否则 frame_seq 归零 → 服务端清历史，热身白做）。
+        self.declare_parameter('instruction_b', 'Turn left and go to the building on your right')
+        self.declare_parameter('instruction_a', 'go to the collapsed building ahead')
+        self.declare_parameter('warmup_frames', 8)
+        self.declare_parameter('switch_settle_s', 3.0)
 
         self.altitude = float(self.get_parameter('start_altitude_m').value)
         self.yaw_rate = math.radians(float(self.get_parameter('yaw_rate_deg_s').value))
@@ -55,15 +62,23 @@ class YawSweepCheck(FlightCheckBase):
         self.pause_s = float(self.get_parameter('pause_s').value)
         self.land_at_end = bool(self.get_parameter('land_at_end').value)
         self.output_csv = str(self.get_parameter('output_csv').value)
+        self.instruction_b = str(self.get_parameter('instruction_b').value)
+        self.warmup_frames = int(self.get_parameter('warmup_frames').value)
+        self.switch_settle_s = float(self.get_parameter('switch_settle_s').value)
+        self.instruction_a = str(self.get_parameter('instruction_a').value)
+        self.current_instruction = self.instruction_a
 
         self.rows = []
         self.latest_decision = None
         self.heading_rad = float('nan')
         self._last_seq = None
+        self._warmup_target = self.warmup_frames
         self._phase_marks = {}
         self.create_subscription(
             String, str(self.get_parameter('decision_topic').value),
             self._on_decision, 10)
+        self.instruction_pub = self.create_publisher(
+            String, str(self.get_parameter('instruction_topic').value), 10)
 
     # ------------------------------------------------------------- 回调
 
@@ -91,6 +106,16 @@ class YawSweepCheck(FlightCheckBase):
         msg.angular.z = float(rate)
         self.velocity_pub.publish(msg)
 
+    def publish_instruction(self, text: str) -> None:
+        """运行中切换 VLM 指令（同一会话，frame_seq 继续递增）。"""
+        msg = String()
+        msg.data = text
+        self.instruction_pub.publish(msg)
+        self.get_logger().info(f'已下发新指令：{text}')
+
+    def decision_seq(self) -> int:
+        return int((self.latest_decision or {}).get('frame_seq') or 0)
+
     def record(self, phase: str) -> None:
         decision = self.latest_decision or {}
         if decision.get('frame_seq') == self._last_seq:
@@ -101,6 +126,7 @@ class YawSweepCheck(FlightCheckBase):
         self.rows.append({
             't': round(self.elapsed(), 2),
             'phase': phase,
+            'instruction': self.current_instruction,
             'heading_deg': (round(math.degrees(self.heading_rad), 2)
                             if not math.isnan(self.heading_rad) else None),
             'frame_seq': decision.get('frame_seq'),
@@ -125,31 +151,63 @@ class YawSweepCheck(FlightCheckBase):
         return 'CLIMB'
 
     def on_phase(self) -> None:
-        if self.phase == 'CLIMB':
+        """阶段：CLIMB → WARMUP_A → A 双向扫 → SWITCH → WARMUP_B → B 双向扫 → DONE
+
+        预热与切换指令都不重启节点：`frame_seq` 全程递增，服务端历史连续
+        （服务器侧 2026-10-12 的硬性要求）。
+        """
+        phase = self.phase
+
+        if phase == 'CLIMB':
             if self.climb_to(self.altitude):
-                self.enter('SWEEP_FORWARD')
+                self._warmup_target = self.decision_seq() + self.warmup_frames
+                self.enter('WARMUP_A')
             elif self.elapsed() > self.phase_timeout:
                 self.fail('爬升超时')
             return
 
-        if self.phase in ('SWEEP_FORWARD', 'SWEEP_BACKWARD'):
-            rate = self.yaw_rate if self.phase == 'SWEEP_FORWARD' else -self.yaw_rate
-            self.publish_yaw_rate(rate)
-            self.record(self.phase)
+        if phase in ('WARMUP_A', 'WARMUP_B'):
+            self.publish_yaw_rate(0.0)
+            self.record(phase)
+            if self.decision_seq() >= self._warmup_target:
+                self.enter('SWEEP_A_FWD' if phase == 'WARMUP_A' else 'SWEEP_B_FWD')
+            elif self.elapsed() > 40.0:
+                self.fail(f'{phase} 预热超时（远端是否在出数据？）')
+            return
+
+        if phase in ('SWEEP_A_FWD', 'SWEEP_A_BACK', 'SWEEP_B_FWD', 'SWEEP_B_BACK'):
+            forward = phase.endswith('_FWD')
+            self.publish_yaw_rate(self.yaw_rate if forward else -self.yaw_rate)
+            self.record(phase)
             if self.elapsed() > self.sweep_s:
                 self.publish_yaw_rate(0.0)
-                self._phase_marks[self.phase] = self._summarise(self.phase)
-                self.enter('PAUSE' if self.phase == 'SWEEP_FORWARD' else 'DONE')
+                self._phase_marks[phase] = self._summarise(phase)
+                order = ['SWEEP_A_FWD', 'PAUSE_A', 'SWEEP_A_BACK', 'SWITCH',
+                         'WARMUP_B', 'SWEEP_B_FWD', 'PAUSE_B', 'SWEEP_B_BACK', 'DONE']
+                self.enter(order[order.index(phase) + 1])
             return
 
-        if self.phase == 'PAUSE':
+        if phase in ('PAUSE_A', 'PAUSE_B'):
             self.publish_yaw_rate(0.0)
-            self.record('PAUSE')
+            self.record(phase)
             if self.elapsed() > self.pause_s:
-                self.enter('SWEEP_BACKWARD')
+                self.enter('SWEEP_A_BACK' if phase == 'PAUSE_A' else 'SWEEP_B_BACK')
             return
 
-        if self.phase == 'DONE':
+        if phase == 'SWITCH':
+            self.publish_yaw_rate(0.0)
+            if self.elapsed() < 0.01:
+                pass
+            elif self.current_instruction != self.instruction_b:
+                self.publish_instruction(self.instruction_b)
+                self.current_instruction = self.instruction_b
+                self._warmup_target = self.decision_seq() + self.warmup_frames
+            if self.elapsed() > self.switch_settle_s and self.current_instruction == \
+                    self.instruction_b:
+                self.enter('WARMUP_B')
+            return
+
+        if phase == 'DONE':
             if self.land_at_end:
                 self.send('land_fast')
             self.finish()
@@ -162,6 +220,8 @@ class YawSweepCheck(FlightCheckBase):
         yaws = [r['wp_yaw_deg'] for r in rows if isinstance(r['wp_yaw_deg'], (int, float))]
         headings = [r['heading_deg'] for r in rows if isinstance(r['heading_deg'], (int, float))]
         out = {'frames': len(rows), 'apos_x': {}, 'wp_yaw_deg': {}}
+        if rows:
+            out['instruction'] = rows[0].get('instruction', '')
         for name, values in (('apos_x', xs), ('wp_yaw_deg', yaws)):
             if values:
                 out[name] = {
@@ -174,8 +234,9 @@ class YawSweepCheck(FlightCheckBase):
         return out
 
     def finish(self) -> None:
-        self._phase_marks.setdefault('SWEEP_FORWARD', self._summarise('SWEEP_FORWARD'))
-        self._phase_marks.setdefault('SWEEP_BACKWARD', self._summarise('SWEEP_BACKWARD'))
+        sweep_phases = ('SWEEP_A_FWD', 'SWEEP_A_BACK', 'SWEEP_B_FWD', 'SWEEP_B_BACK')
+        for phase in sweep_phases:
+            self._phase_marks.setdefault(phase, self._summarise(phase))
         if self.output_csv:
             directory = os.path.dirname(self.output_csv)
             if directory:
@@ -185,17 +246,21 @@ class YawSweepCheck(FlightCheckBase):
                 writer.writeheader()
                 writer.writerows(self.rows)
 
-        print('\n=========== 偏航扫场小结 ===========')
-        for phase in ('SWEEP_FORWARD', 'SWEEP_BACKWARD'):
+        print('\n=========== 偏航扫场小结（两轮指令、同一会话）===========')
+        for phase in sweep_phases:
             mark = self._phase_marks.get(phase, {})
-            print(f'{phase}: {mark.get("frames", 0)} 帧  '
+            print(f'{phase:16s}: {mark.get("frames", 0):3d} 帧  '
+                  f'指令「{mark.get("instruction", "-")}」  '
                   f'apos_x {mark.get("apos_x")}  wp_yaw_deg {mark.get("wp_yaw_deg")}  '
                   f'corr(航向, apos_x)={mark.get("corr_apos_x_vs_heading")}')
-        span = (self._phase_marks.get('SWEEP_FORWARD', {}).get('apos_x', {}) or {}).get('span')
+        spans = [(phase, (self._phase_marks.get(phase, {}).get('apos_x', {}) or {}).get('span'))
+                 for phase in sweep_phases]
+        best = max((s for _, s in spans if s is not None), default=None)
         print('\n判据：apos_x 或 wp_yaw 随航向变化 → 模型在跟踪方位（改控制映射即可）；'
               '两者 span≈0 → 疑似退化，需查 checkpoint/输入。')
-        if span is not None:
-            print(f'本次 apos_x 变化幅度 = {span}')
+        if best is not None:
+            print(f'四个扫场阶段中 apos_x 最大变化幅度 = {best}'
+                  f'（各阶段：{ {p: s for p, s in spans} }）')
         print(f'CSV：{self.output_csv}')
         raise SystemExit(0)
 
