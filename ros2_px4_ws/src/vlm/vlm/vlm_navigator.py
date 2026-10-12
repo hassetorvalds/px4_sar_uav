@@ -93,8 +93,12 @@ class VlmNavigator(Node):
         self.declare_parameter('vertical_mode', 'hold')
         self.declare_parameter('max_vertical_mps', 0.4)
         self.declare_parameter('use_waypoints', True)
-        self.declare_parameter('waypoint_full_speed_m', 0.5)
+        self.declare_parameter('waypoint_forward_norm_m', 0.375)
+        self.declare_parameter('waypoint_lateral_norm_m', 0.25)
+        self.declare_parameter('waypoint_yaw_norm_deg', 9.0)
         self.declare_parameter('max_lateral_speed', 1.0)
+        # 冷启动前若干帧远端只会给 rot_left（时序策略需要历史），此期间只记录不下发运动
+        self.declare_parameter('warmup_frames', 3)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -115,8 +119,14 @@ class VlmNavigator(Node):
         self._vertical_mode = str(self.get_parameter('vertical_mode').value)
         self._max_vertical_mps = float(self.get_parameter('max_vertical_mps').value)
         self._use_waypoints = bool(self.get_parameter('use_waypoints').value)
-        self._waypoint_full_speed_m = float(self.get_parameter('waypoint_full_speed_m').value)
+        self._waypoint_forward_norm_m = float(
+            self.get_parameter('waypoint_forward_norm_m').value)
+        self._waypoint_lateral_norm_m = float(
+            self.get_parameter('waypoint_lateral_norm_m').value)
+        self._waypoint_yaw_norm_rad = math.radians(
+            float(self.get_parameter('waypoint_yaw_norm_deg').value))
         self._max_lateral_speed = float(self.get_parameter('max_lateral_speed').value)
+        self._warmup_frames = int(self.get_parameter('warmup_frames').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -276,7 +286,15 @@ class VlmNavigator(Node):
             #   ④ 其余 → 指向反投影（竖直是否交给视觉由 vertical_mode 决定）
             state_action = (pointing.apos_state or '').strip().lower()
             self._last_command_source = ''
-            if state_action in ('stop', 'not_visible'):
+            if self._frame_seq <= self._warmup_frames:
+                # 时序策略需要历史：实测冷启动前 3–4 帧远端一律给 rot_left
+                # （换会话复测同一张帧也会变），此期间只记录、不下发运动。
+                command = BodyVelocity(0.0, 0.0, 0.0, 0.0, self._min_duration)
+                self._last_command_source = 'warmup'
+                self.get_logger().info(
+                    f'冷启动预热 {self._frame_seq}/{self._warmup_frames}：只记录不下发运动',
+                    throttle_duration_sec=1.0)
+            elif state_action in ('stop', 'not_visible'):
                 command = BodyVelocity(0.0, 0.0, 0.0, 0.0, self._min_duration)
                 self._last_command_source = f'state:{state_action}'
                 self.get_logger().info(f'远端状态动作 {state_action} → 保持位置')
@@ -290,7 +308,9 @@ class VlmNavigator(Node):
                     yaw_gain=self._yaw_gain,
                     yaw_deadband_rad=self._yaw_deadband_rad,
                     min_duration_s=self._min_duration,
-                    full_speed_distance_m=self._waypoint_full_speed_m,
+                    forward_norm_m=self._waypoint_forward_norm_m,
+                    lateral_norm_m=self._waypoint_lateral_norm_m,
+                    yaw_norm_rad=self._waypoint_yaw_norm_rad,
                     max_lateral_speed=self._max_lateral_speed)
                 self._last_command_source = f'waypoint[{len(waypoints)}]'
                 self.get_logger().info(

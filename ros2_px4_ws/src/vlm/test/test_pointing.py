@@ -212,13 +212,24 @@ def test_parse_waypoints_accepts_list_and_dict_and_null():
     assert degrees[0].yaw_rad == pytest.approx(math.radians(30.0))
 
 
-def test_waypoint_to_body_velocity_keeps_altitude_and_maps_yaw():
-    waypoint = parse_waypoints('{"waypoints": [[0.4, -0.2, 0.5]]}')[0]
+def test_waypoint_to_body_velocity_normalises_like_reference_client():
+    """按服务器侧给的参考映射：vx=clip(f/0.375)、vy=clip(l/0.25)、vyaw=clip(yaw/(π/20))。"""
+    waypoint = parse_waypoints('{"waypoints": [[0.1875, -0.125, 0.08]]}')[0]
     command = waypoint_to_body_velocity(
         waypoint, base_velocity=1.0, max_speed=1.5, max_yaw_rate=0.6,
-        yaw_gain=1.0, min_duration_s=1.0, full_speed_distance_m=0.5,
-        max_lateral_speed=1.0)
-    assert command.forward == pytest.approx(0.8)     # 0.4/0.5 → 80% 速度
-    assert command.left == pytest.approx(-0.2)
+        yaw_gain=1.0, min_duration_s=1.0, max_lateral_speed=1.0)
+    assert command.forward == pytest.approx(0.5)     # 0.1875/0.375 → 50 %
+    assert command.left == pytest.approx(-0.5)       # -0.125/0.25  → 50 %
     assert command.up == pytest.approx(0.0)          # 高度交飞控
-    assert command.yaw_rate == pytest.approx(0.5)
+    assert command.yaw_rate == pytest.approx(0.6 * (0.08 / (math.pi / 20)))
+
+
+def test_waypoint_yaw_saturates_for_step_sized_left_turn():
+    """真实帧实测 `waypoints[0].yaw≈+0.314 rad`（≈18°/步、rot_left 同现）：
+    按 π/20 归一化会饱和到偏航上限——这是预期的"以最大角速度左转"，不是钳位出错。"""
+    waypoint = parse_waypoints('{"waypoints": [[0.0, 0.0, 0.3141]]}')[0]
+    command = waypoint_to_body_velocity(
+        waypoint, base_velocity=1.0, max_speed=1.5, max_yaw_rate=0.6)
+    assert command.yaw_rate == pytest.approx(0.6)
+    assert command.forward == pytest.approx(0.0)
+    assert command.up == pytest.approx(0.0)

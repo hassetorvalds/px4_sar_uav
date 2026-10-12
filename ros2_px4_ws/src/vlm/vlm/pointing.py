@@ -126,6 +126,11 @@ def _to_unit(value: float) -> float:
     return min(max(number, 0.0), 1.0)
 
 
+def _clip_unit(value: float) -> float:
+    """裁剪到 [-1, 1]（路点归一化用）。"""
+    return min(max(float(value), -1.0), 1.0)
+
+
 def depth_score_to_meters(score: float, depth_far_m: float = DEPTH_FAR_M) -> float:
     """深度评分（1-10）→ 米。沿用 See, Point, Fly 的线性映射（1→0.2 m，10→上限）。"""
     clamped = min(max(float(score), 1.0), 10.0)
@@ -374,34 +379,45 @@ def waypoint_to_body_velocity(
     yaw_gain: float = 1.0,
     yaw_deadband_rad: float = 0.0,
     min_duration_s: float = 1.0,
-    full_speed_distance_m: float = 0.5,
+    forward_norm_m: float = 0.375,
+    lateral_norm_m: float = 0.25,
+    yaw_norm_rad: float = math.pi / 20.0,
     max_lateral_speed: float = 1.0,
 ) -> BodyVelocity:
     """路点 → 机体速度指令：**水平速度 + 偏航角速度，竖直恒为 0**（高度交给飞控）。
 
-    - ``forward_m`` 只当作"还有多远/往哪个纵向走"：达到 ``full_speed_distance_m`` 即取
-      ``base_velocity``，更近则按比例减速；
-    - ``lateral_m`` 限幅到 ``max_lateral_speed``；
-    - ``yaw_rad`` 经增益与限幅变成偏航角速度，是无人机转向的主要信号。
+    归一化方式照服务器侧给的参考客户端（2026-10-12 采纳）：
+
+    ```text
+    vx   = clip(forward_m / 0.375) * 巡航速度
+    vy   = clip(lateral_m / 0.25)  * 横向上限
+    vyaw = clip(yaw_rad / (π/20))  * 偏航上限 * yaw_gain
+    ```
+
+    为什么不用"0.5 m 才算全速"的写法：LightNav-0 每步平移上限约 **0.25 m**、
+    偏航约 **30°**，`waypoints[0]` 的 `forward` 通常在 0.15 m 量级——
+    用 0.5 m 当阈值几乎永远触发不了巡航速度（实测我们真实帧的 `forward`≈0.000，
+    即"原地转向"）。所以按参考客户端的**相对量程**归一化。
+
+    注意：`waypoints` 是**累积位姿**序列（chunk 起点 ego 系），只取 `[0]`（第一步），
+    其余是前瞻，本函数只接受单个 ``Waypoint``。
     """
     speed = min(float(base_velocity), float(max_speed))
     if speed <= 0.0:
         raise ValueError('base_velocity 必须为正')
 
-    full = max(float(full_speed_distance_m), 1e-3)
-    if abs(waypoint.forward_m) > 1e-3:
-        forward = math.copysign(speed * min(1.0, abs(waypoint.forward_m) / full),
-                                waypoint.forward_m)
-    else:
-        forward = 0.0
+    forward_span = max(float(forward_norm_m), 1e-6)
+    lateral_span = max(float(lateral_norm_m), 1e-6)
+    yaw_span = max(float(yaw_norm_rad), 1e-6)
 
-    lateral = max(-float(max_lateral_speed),
-                  min(float(max_lateral_speed), waypoint.lateral_m))
+    forward = _clip_unit(waypoint.forward_m / forward_span) * speed
+    left = _clip_unit(waypoint.lateral_m / lateral_span) * min(
+        float(max_lateral_speed), speed)
 
     if abs(waypoint.yaw_rad) < float(yaw_deadband_rad):
         yaw_rate = 0.0
     else:
-        yaw_rate = max(-float(max_yaw_rate),
-                       min(float(max_yaw_rate), float(yaw_gain) * waypoint.yaw_rad))
+        yaw_rate = (_clip_unit(float(yaw_gain) * waypoint.yaw_rad / yaw_span)
+                    * float(max_yaw_rate))
 
-    return BodyVelocity(forward, lateral, 0.0, yaw_rate, float(min_duration_s))
+    return BodyVelocity(forward, left, 0.0, yaw_rate, float(min_duration_s))

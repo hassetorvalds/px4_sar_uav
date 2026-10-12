@@ -15,6 +15,58 @@
 
 ---
 
+## [2026-10-12] 复核服务器侧 `waypoints`：三条全对；采纳其归一化；实测到会话历史强依赖
+
+### 复核（我方真实帧，新会话 `probe_wp1`，4 次请求）
+
+```text
+seq=0 153 ms rot_left  waypoints=10  row0 f=+0.0000 l=+0.0000 yaw=+0.3141
+seq=1 124 ms rot_left  waypoints=10  row0 yaw=+0.3141
+seq=2 126 ms rot_left  waypoints=10  row0 yaw=+0.3135
+seq=3 195 ms point     waypoints=10  row0 f=+0.0001 yaw=+0.3146
+行结构（seq=0）：row0 yaw=+0.3141 → row1 +0.6283 → row2 +0.9424（每步 +18°），row3 起平移变大
+```
+
+- `waypoints` 确实返回、**10 行/帧**，latency 124–195 ms（含隧道）；
+- **符号自洽**：我们真实帧在 `apos_state=rot_left` 时 `row0.yaw=+0.3141` → 正 = 左转，
+  与服务器侧的合成帧结论一致（`forward` 前正、`lateral` 左正、`yaw` CCW 正、弧度）；
+- **行是累积位姿**：yaw 逐行累加（0.3141/0.6283/0.9424），平移到 row3 才明显 →
+  只取 `waypoints[0]`；
+- 量级：`row0.forward ≈ 0.000–0.0002 m`（该步纯转向），
+  用 0.5 m 当巡航阈值确实触发不了，服务器侧的提醒成立。
+
+### 变更
+
+- `waypoint_to_body_velocity()` 改用服务器侧参考归一化：
+  `vx=clip(forward/0.375)`、`vy=clip(lateral/0.25)`、`vyaw=clip(yaw/(π/20))`，
+  参数化为 `forward_norm_m` / `lateral_norm_m` / `yaw_norm_rad`（替换原 `full_speed_distance_m`）。
+  实测后果：真实帧 `yaw=0.3141` → `vyaw` 归一化 2.0 → **饱和到偏航上限**（"以最大角速度左转"），
+  `forward≈0` 故不前进——与 `rot_left` 语义自洽。
+- `vlm_navigator` 新增 `warmup_frames`（默认 3）：冷启动前若干帧只记录、下发零速度。
+- 文档：`docs/agent_comm/09_reply_verify_waypoints_and_session_effect.md`（复核结果 + 会话策略）、
+  `10_reply_from_server_waypoints_on.md`（服务器侧来信归档）、README 索引与进度更新。
+
+### 观察：输出**强依赖会话历史**（我们自己测出来的新证据）
+
+```text
+同一张真实帧：Step B（会话 drone1，已喂多帧） → apos_state=point, apos=(0.5104, 0.9815)
+             本次探针（会话 probe_wp1，冷启动）→ 前 3 帧 rot_left，第 4 帧才 point，
+                                                  apos=(0.0104, 0.9815)（x 贴左边缘）
+```
+
+即冷启动的 `rot_left` + `yaw=+0.314` 是"尚未建立运动线索"的默认输出，与画面内容关系不大。
+因此实验 B 的设计调整为：**全程同一会话、不中途重启**，起飞后先预热 3 帧再扫场，
+两轮指令之间也不换会话。
+
+### 验证
+
+```text
+单元测试          ✅ 23 passed（新增/改写：参考归一化、yaw 饱和用例）
+colcon build vlm  ✅ 成功
+```
+
+---
+
 ## [2026-10-11] 按服务器侧结论改控制映射：竖直不再交给视觉 + 启用 waypoints + 偏航扫场脚本
 
 ### 背景（服务器侧的关键澄清）
