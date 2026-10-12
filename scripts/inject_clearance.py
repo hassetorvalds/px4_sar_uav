@@ -28,7 +28,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 # (时长 s, (前, 左, 右) 或 None=不发布)
-SCENARIO = [
+# demo：五态逐段验证（陈旧 / 通行 / 压速 / 左绕 / 右绕）
+SCENARIO_DEMO = [
     (8.0, None),
     (10.0, (3.0, 3.0, 3.0)),
     (8.0, (0.9, 2.0, 2.0)),
@@ -37,12 +38,29 @@ SCENARIO = [
     (6.0, None),
 ]
 
+# turn：验证服务器侧 2026-10-12 追加的三条防死角规则
+SCENARIO_TURN = [
+    (6.0, None),                 # 陈旧 → stale
+    (10.0, (3.0, 3.0, 3.0)),     # 放行 → ok
+    (22.0, (0.4, 3.0, 1.0)),     # 障碍：先左转+小前向；累积到 60° 后应停转（yaw=0）
+    (10.0, (0.95, 1.0, 1.0)),    # 前向恢复但侧向仍紧 → 迟滞：继续保持
+    (10.0, (0.95, 2.0, 2.0)),    # 前向+侧向都恢复 → 释放（转 obstacle_slow）
+    (6.0, None),                 # 陈旧 → stale
+]
+
+SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN}
+
 
 class ClearanceInjector(Node):
     def __init__(self) -> None:
         super().__init__('clearance_injector')
         self.declare_parameter('topic', '/inject/status')
         self.declare_parameter('rate_hz', 5.0)
+        self.declare_parameter('scenario', 'demo')
+        self.scenario_name = str(self.get_parameter('scenario').value)
+        if self.scenario_name not in SCENARIOS:
+            raise ValueError(f'未知场景 {self.scenario_name}，可选 {list(SCENARIOS)}')
+        self.scenario = SCENARIOS[self.scenario_name]
         self.publisher = self.create_publisher(
             String, str(self.get_parameter('topic').value), 10)
         self.index = 0
@@ -51,14 +69,15 @@ class ClearanceInjector(Node):
         self.timer = self.create_timer(
             1.0 / max(float(self.get_parameter('rate_hz').value), 0.5), self._tick)
         self.get_logger().info(
-            f'注入场景开始：共 {len(SCENARIO)} 段、约 {sum(s for s, _ in SCENARIO):.0f} s'
+            f'注入场景 {self.scenario_name} 开始：共 {len(self.scenario)} 段、'
+            f'约 {sum(s for s, _ in self.scenario):.0f} s'
             f'（话题 {self.get_parameter("topic").value}）')
 
     def _tick(self) -> None:
-        if self.index >= len(SCENARIO):
+        if self.index >= len(self.scenario):
             self.get_logger().info('注入场景结束（此后不再发布 → 应回到 guard=stale）')
             raise SystemExit(0)
-        duration, values = SCENARIO[self.index]
+        duration, values = self.scenario[self.index]
         elapsed = time.monotonic() - self.step_started
         if elapsed > duration:
             self.index += 1

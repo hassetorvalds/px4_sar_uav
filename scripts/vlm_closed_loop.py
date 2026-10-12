@@ -29,6 +29,10 @@ import rclpy
 from flight_check import FlightCheckBase
 from std_msgs.msg import String
 
+# 日志行缓冲：外部脚本常靠 grep 日志来判断阶段（例如"等进入 RUN 再开始注入"），
+# 块缓冲会让判断滞后甚至永远不命中（2026-10-12 踩到两次）。
+sys.stdout.reconfigure(line_buffering=True)
+
 
 class ClosedLoopBase(FlightCheckBase):
     """CLIMB → RUN（交出控制权给 VLM）→ 汇总 → 降落。"""

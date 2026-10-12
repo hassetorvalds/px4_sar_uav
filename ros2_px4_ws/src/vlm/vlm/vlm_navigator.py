@@ -118,7 +118,11 @@ class VlmNavigator(Node):
         self.declare_parameter('obstacle_slow_start_m', 1.2)
         self.declare_parameter('obstacle_stop_m', 0.6)
         self.declare_parameter('obstacle_release_m', 0.9)
-        self.declare_parameter('obstacle_avoid_yaw_rate', 0.3)
+        self.declare_parameter('obstacle_avoid_yaw_rate', 0.15)
+        self.declare_parameter('obstacle_side_release_m', 1.2)
+        self.declare_parameter('obstacle_max_turn_deg', 60.0)
+        self.declare_parameter('obstacle_creep_mps', 0.1)
+        self.declare_parameter('obstacle_creep_open_side_m', 1.5)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -161,7 +165,12 @@ class VlmNavigator(Node):
             slow_start_m=float(self.get_parameter('obstacle_slow_start_m').value),
             stop_m=float(self.get_parameter('obstacle_stop_m').value),
             release_m=float(self.get_parameter('obstacle_release_m').value),
-            avoid_yaw_rate=float(self.get_parameter('obstacle_avoid_yaw_rate').value))
+            avoid_yaw_rate=float(self.get_parameter('obstacle_avoid_yaw_rate').value),
+            side_release_m=float(self.get_parameter('obstacle_side_release_m').value),
+            max_turn_deg=float(self.get_parameter('obstacle_max_turn_deg').value),
+            creep_mps=float(self.get_parameter('obstacle_creep_mps').value),
+            creep_open_side_m=float(
+                self.get_parameter('obstacle_creep_open_side_m').value))
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -202,6 +211,8 @@ class VlmNavigator(Node):
         self._clearance = None          # (前, 左, 右) 米
         self._clearance_stamp = None    # 收到时刻（monotonic）
         self._map_holding = False       # 障碍保持的迟滞状态
+        self._obstacle_entry_heading = None   # 进入避障时的航向（用于累积转角）
+        self._obstacle_turn_deg = 0.0
         self._obstacle_warned = False
         self._last_guard_detail = {}
         self._pre_filter_command = None
@@ -577,8 +588,23 @@ class VlmNavigator(Node):
 
         # ---- 地图安全层（C3）：fail-safe 陈旧处理 + 压速 + 障碍保持（含迟滞）----
         age = (now - self._clearance_stamp) if self._clearance_stamp else None
+        # 累积转角：以"进入避障时的航向"为基准，到上限就停止继续转（防死角打转）
+        pending_hold = bool(self._map_holding)
+        if not pending_hold and self._clearance is not None:
+            pending_hold = self._clearance[0] < self._map_limits.stop_m
+        if pending_hold:
+            if self._obstacle_entry_heading is None and math.isfinite(state.heading):
+                self._obstacle_entry_heading = float(state.heading)
+            if (self._obstacle_entry_heading is not None
+                    and math.isfinite(state.heading)):
+                self._obstacle_turn_deg = math.degrees(math.remainder(
+                    float(state.heading) - self._obstacle_entry_heading, 2 * math.pi))
+        else:
+            self._obstacle_entry_heading = None
+            self._obstacle_turn_deg = 0.0
         command, map_guard, self._map_holding, detail = apply_map_safety(
-            command, self._clearance, age, self._map_holding, self._map_limits)
+            command, self._clearance, age, self._map_holding, self._map_limits,
+            turn_deg=self._obstacle_turn_deg)
         self._last_guard_detail = detail
         if map_guard == 'obstacle' and not self._obstacle_warned:
             self.get_logger().warn(

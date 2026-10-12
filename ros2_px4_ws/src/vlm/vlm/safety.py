@@ -35,7 +35,11 @@ class MapSafetyLimits:
     slow_start_m: float = 1.2            # 从该净空开始压速
     stop_m: float = 0.6                  # 低于该净空进入"保持"
     release_m: float = 0.9               # 高于该净空才解除"保持"（迟滞）
-    avoid_yaw_rate: float = 0.3          # 保持时朝较宽一侧的偏航角速度（覆盖 VLM）
+    avoid_yaw_rate: float = 0.15         # 保持时朝较宽一侧的偏航角速度（覆盖 VLM）
+    side_release_m: float = 1.2          # 所选侧也要恢复到该净空才解除（迟滞）
+    max_turn_deg: float = 60.0           # 相对进入避障时的航向，累积转角上限（防死角打转）
+    creep_mps: float = 0.1               # 较宽侧明显开阔时的小前向（绕行用，0 = 关闭）
+    creep_open_side_m: float = 1.5       # "明显开阔"的判定净空
 
 
 def parse_clearance_status(text: str):
@@ -58,13 +62,17 @@ def parse_clearance_status(text: str):
 
 
 def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bool,
-                     limits: MapSafetyLimits):
+                     limits: MapSafetyLimits, turn_deg: float = 0.0):
     """对命令施加地图安全层。
 
     返回 ``(新命令, guard, 新 holding, 细节dict)``：
 
     - ``guard`` ∈ ``map_off / ok / stale / obstacle_slow / obstacle``；
-    - ``holding`` 需要在上层保存（迟滞状态），下次调用传回来。
+    - ``holding`` 需要在上层保存（迟滞状态），下次调用传回来；
+    - ``turn_deg`` 是"相对进入避障时航向"的累积转角（上层按航向算好传进来），
+      达到 ``max_turn_deg`` 后**停止继续转**，避免在死角里绕圈；
+      较宽侧明显开阔（≥``creep_open_side_m``）时给 ``creep_mps`` 的小前向配合绕行，
+      只有两侧都紧才完全归零保持。
     """
     if not limits.enabled:
         return command, 'map_off', holding, {}
@@ -86,16 +94,29 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
 
     forward_c, left_c, right_c = clearance
 
-    # 迟滞：已在保持状态时用更高的释放门槛
-    holding = (forward_c < limits.release_m) if holding else (forward_c < limits.stop_m)
+    # 迟滞：进入用 stop_m，退出要求"前向恢复到 release_m **且** 所选侧恢复到 side_release_m"
     if holding:
-        # 障碍保持：偏航**覆盖** VLM（朝更宽一侧），前向/横向归零
+        release = (forward_c >= limits.release_m
+                   and max(left_c, right_c) >= limits.side_release_m)
+        holding = not release
+    else:
+        holding = forward_c < limits.stop_m
+    if holding:
+        # 障碍保持：偏航**覆盖** VLM（朝更宽一侧）
         yaw = limits.avoid_yaw_rate if left_c >= right_c else -limits.avoid_yaw_rate
         side = 'left' if left_c >= right_c else 'right'
-        return (_with(forward=0.0, left=0.0, yaw_rate=yaw), 'obstacle', True,
+        side_clear = max(left_c, right_c)
+        creep = limits.creep_mps if (limits.creep_mps > 0.0
+                                     and side_clear >= limits.creep_open_side_m) else 0.0
+        capped = abs(turn_deg) >= limits.max_turn_deg
+        if capped:
+            yaw = 0.0      # 到达转角上限：停止继续转（配合小前向/归零，避免原地绕圈）
+        return (_with(forward=creep, left=0.0, yaw_rate=yaw), 'obstacle', True,
                 {'reason': 'obstacle_hold', 'forward_m': round(forward_c, 2),
                  'left_m': round(left_c, 2), 'right_m': round(right_c, 2),
-                 'avoid_side': side, 'yaw_rate': round(yaw, 2)})
+                 'avoid_side': side, 'yaw_rate': round(yaw, 2),
+                 'side_clear_m': round(side_clear, 2), 'creep_mps': round(creep, 2),
+                 'turn_deg': round(turn_deg, 1), 'yaw_capped': capped})
 
     if forward_c < limits.slow_start_m:
         span = max(limits.slow_start_m - limits.stop_m, 1e-6)
