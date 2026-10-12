@@ -15,6 +15,67 @@
 
 ---
 
+## [2026-10-12] 服务器侧数据对账通过 + C1 安全包络落地（只偏航闭环准备就绪）
+
+### 服务器侧补的数据（实验 B 那一半）
+
+```text
+状态码        全部 200，无 4xx/5xx
+会话重置      new episode = 0（frame_seq 从未回退 → 热身/历史全程未被清空）
+服务端延迟    min 110 / mean 232 / p95 251 / max 517 ms（按分钟稳定在 235–243）
+显存          真实分辨率推理开始后一次性 +2.7 GB，之后全程持平（无泄漏）；GPU 峰值利用率 43%
+```
+
+### 请求数口径差已查清：746（服务端窗口）vs 244（我们的扫场 CSV）vs 920（全会话）
+
+根因：**VLM 节点落地后没有停止发帧**（13:21:11 启动 → 13:28:09 超时退出，共 920 帧），
+而扫场脚本的 CSV 只覆盖飞行窗口（244 帧）；服务器侧当时拉到的窗口是 746 帧。
+
+两边对账（这是关键结论）：
+
+```text
+                我们 920 帧      服务端 746 帧
+rot_left             76              76      ← 逐项一致
+rot_right            32              32      ← 逐项一致
+stop                 14              14      ← 逐项一致
+point               798             624      ← 差 174 = 920 − 746（落地后的地面帧）
+frame_seq        1 → 920 无缺号      new episode = 0
+```
+
+→ 两侧日志互为印证；**不是多段扫场，也不是会话被重置**。
+
+### 变更
+
+- 新增 `scripts/vlm_session_to_csv.py`：把 `vlm_decisions_*/*.json` 全量导出为逐帧 CSV
+  （本次导出 `logs/2026-10-12/drone1_session_920.csv`，920 行，含地面段），
+  用于与服务端日志对账；已实测 `frame_seq 1→920` 非 +1 处 0 个。
+- `vlm_navigator` 新增 C1/C2 用的安全包络（每帧记录 `guard` 状态）：
+  `forward_scale` / `lateral_scale`（C1 取 0 = 只偏航）、`run_duration_s`（30 s，进入
+  "已解锁+OFFBOARD"后才计时）、`geofence_max_distance_m`（5 m）；到点/越界只归零悬停，
+  不自动降落；`stop/not_visible` 归零保持（原有）。
+- 文档：`docs/agent_comm/15_reply_746_vs_244_and_C1_envelope.md`（口径差解释 + 偏航符号链说明 + C1 参数）、
+  `16_reply_from_server_expB_data_and_C_advice.md`（来信归档）、README 索引。
+
+### 偏航符号链（回应服务器侧的反号提醒）
+
+```text
+LightNav yaw（逆时针为正）→ navigator 发 Twist.angular.z（ENU，逆时针为正）
+→ offboard_bridge 写 yawspeed 时 flip_yaw_rate_sign() 取负 → PX4 NED（顺时针为正）
+```
+
+即**接口层已经做过 ENU↔NED 翻转**，理论上不需再取负（`test_frames.py` 覆盖该函数）。
+但 C1 仍要物理验证：`rot_left`（`yaw>0`）必须让机头**左转**，否则立刻停机改符号。
+
+### 验证
+
+```text
+单元测试          ✅ 23 passed
+colcon build vlm  ✅ 成功
+会话导出           ✅ 920 帧、frame_seq 无缺号
+```
+
+---
+
 ## [2026-10-12] 实验 B（偏航扫场）完成：模型**非退化**，可进闭环
 
 ### 结果（244 帧 / 约 140 s / 一次飞行跑完两轮指令）

@@ -32,6 +32,8 @@
 | `12_reply_from_server_go_ahead.md` | 服务器→ | 2026-10-12 | 认可实验 B 设计；提出两个硬要求（`frame_seq` 跨轮递增、热身 5–8 帧）；同意保持监控 | 已收到 |
 | `13_reply_from_server_confirm_and_caveat.md` | 服务器→ | 2026-10-12 | 确认可飞；提醒"`apos` 是机体系，偏航时贴底边不变≠模型坏"，并会整理服务端数据 | 已收到 |
 | `14_reply_yaw_sweep_result_to_server.md` | →服务器 | 2026-10-12 | **实验 B 结果**：模型非退化（扫场出现 43 次转向/7 次 stop、apos_x 24% 偏离默认）；Step C 分三步设计待其反馈 | 待转达 |
+| `15_reply_746_vs_244_and_C1_envelope.md` | →服务器 | 2026-10-12 | 解释请求数口径差（落地后节点仍在发帧 → 920 帧；状态动作计数两边逐项一致）；说明偏航符号链已有 ENU↔NED 翻转；C1 安全包络参数 | 待转达 |
+| `16_reply_from_server_expB_data_and_C_advice.md` | 服务器→ | 2026-10-12 | 实验 B 服务端数据（全 200、0 次会话重置、延迟 ~232 ms、显存平稳）；指出 746 vs 244 口径差；提醒 PX4 yaw 与 LightNav 反号；给出 C1/C2 建议 | 已收到 |
 
 ## 历史路径说明
 

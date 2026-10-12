@@ -101,6 +101,11 @@ class VlmNavigator(Node):
         # 服务器侧建议 5–8 帧（我们探针实测第 4 帧才转 point），故默认 6。
         self.declare_parameter('warmup_frames', 6)
         self.declare_parameter('instruction_topic', '~/instruction')
+        # 安全包络（C1/C2 小步闭环用）：分量缩放 + 运行时长上限 + 距起点围栏
+        self.declare_parameter('forward_scale', 1.0)
+        self.declare_parameter('lateral_scale', 1.0)
+        self.declare_parameter('run_duration_s', 0.0)          # 0 = 不限制
+        self.declare_parameter('geofence_max_distance_m', 0.0)  # 0 = 不限制
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -129,6 +134,10 @@ class VlmNavigator(Node):
             float(self.get_parameter('waypoint_yaw_norm_deg').value))
         self._max_lateral_speed = float(self.get_parameter('max_lateral_speed').value)
         self._warmup_frames = int(self.get_parameter('warmup_frames').value)
+        self._forward_scale = float(self.get_parameter('forward_scale').value)
+        self._lateral_scale = float(self.get_parameter('lateral_scale').value)
+        self._run_duration = float(self.get_parameter('run_duration_s').value)
+        self._geofence = float(self.get_parameter('geofence_max_distance_m').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -160,6 +169,10 @@ class VlmNavigator(Node):
         self._frame_seq = 0               # 已发给远端的帧序号（服务端用它检测重启）
         self._last_command_source = ''    # 本周期指令来自哪一路（指向/路点/状态动作）
         self._last_waypoints = []
+        self._guard_started_at = None
+        self._guard_origin = None
+        self._guard_expired = False
+        self._last_guard = 'idle'
         self._running = True
 
         if self._record:
@@ -376,6 +389,8 @@ class VlmNavigator(Node):
                 throttle_duration_sec=5.0)
             return
 
+        command, self._last_guard = self._guard_command(command)
+
         # 下面这段（发布 + 日志 + 落盘）**必须**也在 try 里：
         # 状态动作（rot_left/rot_right/stop/not_visible）没有像素坐标，x_norm/y_norm 是 NaN，
         # 之前在这里做 pixel_from_norm 会抛 ValueError 并把工作线程整条打死
@@ -389,6 +404,7 @@ class VlmNavigator(Node):
             decision.data = json.dumps({
             'frame_seq': self._frame_seq,
             'command_source': self._last_command_source,
+            'guard': self._last_guard,
             'label': pointing.label,
             'point_x_norm': pointing.x_norm,
             'point_y_norm': pointing.y_norm,
@@ -435,6 +451,61 @@ class VlmNavigator(Node):
         if math.isfinite(state.heading):
             meta['heading_deg'] = round(math.degrees(float(state.heading)) % 360.0, 1)
         return meta
+
+    def _guard_command(self, command: BodyVelocity):
+        """安全包络：分量缩放 + 运行时长上限 + 距起点围栏（C1/C2 小步闭环用）。
+
+    返回 ``(command, guard_state)``，``guard_state`` 会写进决策记录里便于事后归因：
+
+    - ``idle``：尚未进入"已解锁 + OFFBOARD"，计时与围栏原点都不启动
+      （节点可能在地面就跑了很久，不能把那段时间算进飞行时长）；
+    - ``ok``：正常；
+    - ``duration``：飞行时长达到 ``run_duration_s``，强制归零悬停；
+    - ``geofence``：距起点超过 ``geofence_max_distance_m``，强制归零悬停。
+        """
+        command = BodyVelocity(
+            command.forward * self._forward_scale,
+            command.left * self._lateral_scale,
+            command.up,
+            command.yaw_rate,
+            command.duration_s)
+
+        def _hold():
+            return BodyVelocity(0.0, 0.0, 0.0, 0.0, command.duration_s)
+
+        state = self._monitor.snapshot()
+        if not (state.armed and state.offboard):
+            self._guard_started_at = None
+            self._guard_expired = False
+            return command, 'idle'
+
+        now = time.monotonic()
+        if self._guard_started_at is None:
+            self._guard_started_at = now
+            self._guard_origin = ((state.x, state.y)
+                                  if self._monitor.position_fresh() else None)
+            self.get_logger().info(
+                f'安全包络起始：时长上限 {self._run_duration:.0f} s、'
+                f'围栏 {self._geofence:.1f} m、前向缩放 {self._forward_scale:.2f}、'
+                f'横向缩放 {self._lateral_scale:.2f}')
+
+        if self._run_duration > 0.0 and now - self._guard_started_at > self._run_duration:
+            if not self._guard_expired:
+                self.get_logger().warn(
+                    f'安全包络：已达到 {self._run_duration:.0f} s 上限，停止下发运动（保持悬停）')
+                self._guard_expired = True
+            return _hold(), 'duration'
+
+        if (self._geofence > 0.0 and self._guard_origin is not None
+                and self._monitor.position_fresh()):
+            drift = math.hypot(state.x - self._guard_origin[0],
+                               state.y - self._guard_origin[1])
+            if drift > self._geofence:
+                self.get_logger().warn(
+                    f'安全包络：距起点 {drift:.1f} m 超过围栏 {self._geofence:.1f} m，'
+                    '停止下发运动')
+                return _hold(), 'geofence'
+        return command, 'ok'
 
     # ------------------------------------------------------------------
     # 指令发布
@@ -504,6 +575,7 @@ class VlmNavigator(Node):
             'apos_state': pointing.apos_state,
             'opos_state': pointing.opos_state,
             'command_source': self._last_command_source,
+            'guard': self._last_guard,
             'waypoints': self._last_waypoints,
             'label': pointing.label,
             'body_velocity': {
