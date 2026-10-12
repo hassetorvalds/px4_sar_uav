@@ -30,7 +30,11 @@ class MapSafetyLimits:
     """安全层阈值（全部可在 ROS 参数里覆盖）。"""
 
     enabled: bool = True
-    stale_s: float = 0.5                 # 净空数据超过这个时间视为"未知"
+    # 净空数据超过这个时间视为"未知"。**取值必须大于地图周期的 3 倍**：
+    # 本机 local_map 跟随相机约 2.25 Hz（周期 0.44 s），若阈值取 0.5 s，
+    # 两个自由运行的循环会每隔一帧就判一次"陈旧"，出现 ok/stale 逐帧闪烁
+    # （2026-10-12 真实避障飞行实测到）。1.5 s ≈ 允许连丢 3 帧地图。
+    stale_s: float = 1.5
     stale_forward_limit_mps: float = 0.1  # 未知时前向速度上限（fail-safe）
     slow_start_m: float = 1.2            # 从该净空开始压速
     stop_m: float = 0.6                  # 低于该净空进入"保持"

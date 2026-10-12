@@ -113,7 +113,8 @@ class VlmNavigator(Node):
         # C3 地图安全层（详见 vlm/safety.py 的说明）
         self.declare_parameter('map_status_topic', '/local_map/status')
         self.declare_parameter('avoidance_enabled', True)
-        self.declare_parameter('map_stale_s', 0.5)
+        # 地图约 2.25 Hz（周期 0.44 s）：阈值取 1.5 s（≈连丢 3 帧）才不会被正常抖动误判陈旧
+        self.declare_parameter('map_stale_s', 1.5)
         self.declare_parameter('stale_forward_limit_mps', 0.1)
         self.declare_parameter('obstacle_slow_start_m', 1.2)
         self.declare_parameter('obstacle_stop_m', 0.6)

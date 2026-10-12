@@ -94,10 +94,18 @@ def test_hysteresis_keeps_holding_until_release_threshold():
 def test_stale_clearance_is_fail_safe_not_fail_open():
     """数据陈旧 → 视为未知，前向压到很低（服务器侧 2026-10-12 明确要求 fail-safe）。"""
     command, guard, _, detail = apply_map_safety(
-        _command(forward=0.5), (3.0, 3.0, 3.0), 1.5, False, LIMITS)
+        _command(forward=0.5), (3.0, 3.0, 3.0), 2.0, False, LIMITS)
     assert guard == 'stale'
     assert command.forward == pytest.approx(LIMITS.stale_forward_limit_mps)
     assert detail['reason'] == 'clearance_unknown'
+
+
+def test_not_stale_within_three_map_periods():
+    """地图 2.25 Hz（0.44 s）时，1.0 s 的年龄不该判陈旧——否则会 ok/stale 逐帧闪烁。"""
+    command, guard, _, _ = apply_map_safety(
+        _command(forward=0.12), (3.0, 3.0, 3.0), 1.0, False, LIMITS)
+    assert guard == 'ok'
+    assert command.forward == pytest.approx(0.12)
 
 
 def test_missing_clearance_is_treated_as_stale():
