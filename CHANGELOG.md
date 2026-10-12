@@ -43,6 +43,9 @@ seq=3 195 ms point     waypoints=10  row0 f=+0.0001 yaw=+0.3146
   实测后果：真实帧 `yaw=0.3141` → `vyaw` 归一化 2.0 → **饱和到偏航上限**（"以最大角速度左转"），
   `forward≈0` 故不前进——与 `rot_left` 语义自洽。
 - `vlm_navigator` 新增 `warmup_frames`（默认 3）：冷启动前若干帧只记录、下发零速度。
+- 新增 `scripts/vlm_tunnel.sh start|stop|status`：一键管理到 LightNav-0 的 SSH 隧道
+  （01 号信里承诺过但一直没做；今天隧道跨天消失过一次，客户端只报"连接被拒绝"）。
+  实测：`status` 能列出进程并打印 `/health → {"ready":true,...}`。
 - 文档：`docs/agent_comm/09_reply_verify_waypoints_and_session_effect.md`（复核结果 + 会话策略）、
   `10_reply_from_server_waypoints_on.md`（服务器侧来信归档）、README 索引与进度更新。
 
