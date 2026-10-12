@@ -15,6 +15,58 @@
 
 ---
 
+## [2026-10-12] 实验 B（偏航扫场）完成：模型**非退化**，可进闭环
+
+### 结果（244 帧 / 约 140 s / 一次飞行跑完两轮指令）
+
+```text
+流程     起飞 2 m → 预热 → 指令A 双向扫(+15°/s×24s → 停5s → −15°/s×24s)
+         → ROS 话题切指令B（不重启节点）→ 预热 → 指令B 双向扫 → land_fast（landed=true、已上锁）
+会话     drone1 全程一个；frame_seq 1→244 连续无回退（满足服务端"严格递增"要求）
+速率     244 帧 / 140 s ≈ 1.75 Hz
+取证     logs/2026-10-12/yaw_sweep.csv（逐帧）+ yaw_sweep_run.log + yaw_sweep_vlm.log
+```
+
+### 关键证据：状态动作随视角变化（对照 Step B 静止悬停）
+
+```text
+Step B（静止 148 s）      point ×325 | rot_left ×2         ← 几乎不变
+SWEEP_A_FWD  52 帧        point 51 | rot_right 1
+SWEEP_A_BACK 53 帧        rot_right 13 | rot_left 4 | stop 3 | point 33
+SWEEP_B_FWD  53 帧        rot_left 8 | rot_right 5 | stop 1 | point 39
+SWEEP_B_BACK 53 帧        rot_right 9 | rot_left 7 | stop 3 | point 34
+```
+
+即扫场时模型明确输出**转向/停止**（43 次转向、7 次 `stop`），
+`apos_x` 也有 **59/244 帧**偏离默认落点 0.5104（极值 0.0104 贴左、0.9896 贴右）。
+→ **模型对场景有响应，不是退化**；悬停时的"恒定"是场景静止 + `apos` 为机体系落点所致
+（服务器侧的提醒成立）。
+
+### 结论：相关系数不作硬判据
+
+`corr(航向, apos_x)` 各阶段仅 −0.40~+0.51、`corr(航向, wp_yaw)` −0.64~+0.18——
+匀速偏航且场景无单一可跟踪目标，本就不该有干净线性关系。判据改为
+**"是否曾偏离默认输出" + "状态动作是否变化"**（服务器侧建议），已在脚本与文档中固化。
+
+### 新增/修复
+
+- `scripts/analyze_yaw_sweep.py`：离线汇总扫场 CSV（分阶段统计 + 状态动作分布 + 相关系数，
+  并显式统计"偏离默认落点"的帧数）。
+- `scripts/vlm_yaw_sweep.py`：修复小结里 `apos_x` 统计被 NaN 污染的问题
+  （状态动作帧无坐标，必须过滤 `isfinite`）。
+- 文档：`docs/agent_comm/14_reply_yaw_sweep_result_to_server.md`（结果 + Step C 三步设计）、
+  `13_reply_from_server_confirm_and_caveat.md`（来信归档）、README 索引与进度。
+
+### 下一步（Step C，小步走）
+
+```text
+C1  固定高度 2 m + 只偏航不前进，30 s：验证 waypoint yaw → 偏航角速度的方向与幅值
+C2  C1 通过后加前进分量（waypoint forward 归一化、限速 1 m/s），仍在开阔区
+C3  把本机局部地图/避障接入 VLM 指令通道（当前两者尚未打通），做避障闭环
+```
+
+---
+
 ## [2026-10-12] 采纳服务器侧两条硬要求：运行中换指令（不改 frame_seq）+ 热身提到 8 帧
 
 ### 背景

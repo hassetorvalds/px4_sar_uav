@@ -216,9 +216,14 @@ class YawSweepCheck(FlightCheckBase):
 
     def _summarise(self, phase: str) -> dict:
         rows = [r for r in self.rows if r['phase'] == phase]
-        xs = [r['apos_x'] for r in rows if isinstance(r['apos_x'], (int, float))]
-        yaws = [r['wp_yaw_deg'] for r in rows if isinstance(r['wp_yaw_deg'], (int, float))]
-        headings = [r['heading_deg'] for r in rows if isinstance(r['heading_deg'], (int, float))]
+        # 注意：状态动作帧（rot_* / stop）**没有坐标**，apos_x 是 NaN——
+        # 必须滤掉，否则 min/max 会被 NaN 污染（2026-10-12 首次跑就踩到）。
+        xs = [r['apos_x'] for r in rows
+              if isinstance(r['apos_x'], float) and math.isfinite(r['apos_x'])]
+        yaws = [r['wp_yaw_deg'] for r in rows
+                if isinstance(r['wp_yaw_deg'], float) and math.isfinite(r['wp_yaw_deg'])]
+        headings = [r['heading_deg'] for r in rows
+                    if isinstance(r['heading_deg'], float) and math.isfinite(r['heading_deg'])]
         out = {'frames': len(rows), 'apos_x': {}, 'wp_yaw_deg': {}}
         if rows:
             out['instruction'] = rows[0].get('instruction', '')
