@@ -61,6 +61,11 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('scan_side_open_m', 1.5)
         self.declare_parameter('scan_max_s', 32.0)
         self.declare_parameter('verify_s', 2.5)
+        # 对准（服务器侧建议）：用扫描时确认的方位作为目标航向，转到位再逼近
+        self.declare_parameter('align_tolerance_deg', 8.0)
+        self.declare_parameter('align_timeout_s', 10.0)
+        self.declare_parameter('align_yaw_rate', 0.4)
+        self.declare_parameter('realign_max', 3)
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
         self.declare_parameter('transit_east_m', 0.0)
@@ -98,6 +103,9 @@ class ClosedLoopBase(FlightCheckBase):
         self._scan_hits = 0
         self._scan_best = None
         self._verify_history = []
+        self._align_heading = None       # 目标航向（ENU）
+        self._realign_count = 0
+        self._lost_counter = 0
         self.clearance = None
 
         self.rows = []
@@ -325,8 +333,51 @@ class ClosedLoopBase(FlightCheckBase):
                 self.enter('SCAN' if self.pre_scan else 'APPROACH')
             return
 
+        if self.phase == 'ALIGN':
+            # 转到位再逼近（服务器侧建议）：用扫描确认方位作为目标航向
+            if self._align_heading is None or math.isnan(self.heading_rad):
+                self.enter('APPROACH')
+                return
+            current = ned_yaw_to_enu_yaw(self.heading_rad)
+            error = math.remainder(self._align_heading - current, 2.0 * math.pi)
+            tolerance = math.radians(float(self.get_parameter('align_tolerance_deg').value))
+            if abs(error) <= tolerance:
+                self.publish_yaw_rate(0.0)
+                self.get_logger().info(
+                    f'对准完成（误差 {math.degrees(error):+.1f}°）→ 开始以 '
+                    f'{self.pre_speed:.2f} m/s 逼近')
+                self.enter('APPROACH')
+                return
+            if self.elapsed() > float(self.get_parameter('align_timeout_s').value):
+                self.publish_yaw_rate(0.0)
+                self.get_logger().warn(
+                    f'对准超时（残留误差 {math.degrees(error):+.1f}°）→ 仍转入逼近')
+                self.enter('APPROACH')
+                return
+            limit = float(self.get_parameter('align_yaw_rate').value)
+            self.publish_yaw_rate(max(-limit, min(limit, 1.2 * error)))
+            return
+
         if self.phase == 'APPROACH':
             forward_clear = self.clearance[0] if self.clearance else None
+            # 逼近中**持续复验**：净空回升/消失（障碍脱离视野）→ 停下重新对准
+            if forward_clear is not None and forward_clear >= self.scan_found:
+                self._lost_counter += 1
+            else:
+                self._lost_counter = 0
+            if (self._lost_counter >= self.pre_stable
+                    and self._realign_count < int(self.get_parameter('realign_max').value)):
+                self.publish_enu_velocity(0.0)
+                self._realign_count += 1
+                self._lost_counter = 0
+                self._clearance_history = []
+                self.get_logger().warn(
+                    f'逼近中净空回升到 {forward_clear:.2f} m（障碍脱离视野）→ 停下重新对准'
+                    f'（第 {self._realign_count} 次）')
+                self._align_heading = (ned_yaw_to_enu_yaw(self.heading_rad)
+                                       if self._align_heading is None else self._align_heading)
+                self.enter('ALIGN')
+                return
             if forward_clear is not None:
                 self._clearance_history.append(forward_clear)
                 self._clearance_history = self._clearance_history[-self.pre_stable:]
@@ -402,9 +453,10 @@ class ClosedLoopBase(FlightCheckBase):
                 if stable:
                     self.get_logger().info(
                         f'静止复验通过：净空 {values} 仍 ≤ {self.scan_found:.1f} m → 是真障碍，'
-                        '转入逼近')
+                        '先对准再逼近')
                     self._clearance_history = []
-                    self.enter('APPROACH')
+                    self._align_heading = ned_yaw_to_enu_yaw(self.heading_rad)
+                    self.enter('ALIGN')
                 else:
                     self.get_logger().info(
                         f'静止复验未通过：净空 {values}（疑似自运动拖影）→ 继续扫描')
