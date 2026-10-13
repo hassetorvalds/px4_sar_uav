@@ -54,6 +54,13 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('pre_timeout_s', 30.0)
         # 本地图偶发单帧近读数（实测见过 1.91 m 一闪而过），摆位判定必须要求**连续稳定**
         self.declare_parameter('pre_stable_samples', 3)
+        # 扫描变体（服务器侧 2026-10-13 确认）：慢速偏航 360° 找障碍 → 对准 → 逼近 → 交权
+        self.declare_parameter('pre_scan', False)
+        self.declare_parameter('scan_yaw_rate_deg_s', 15.0)
+        self.declare_parameter('scan_found_m', 3.0)
+        self.declare_parameter('scan_side_open_m', 1.5)
+        self.declare_parameter('scan_max_s', 32.0)
+        self.declare_parameter('verify_s', 2.5)
         self.declare_parameter('map_status_topic', '/local_map/status')
 
         self.altitude = float(self.get_parameter('start_altitude_m').value)
@@ -66,6 +73,16 @@ class ClosedLoopBase(FlightCheckBase):
         self.pre_timeout = float(self.get_parameter('pre_timeout_s').value)
         self.pre_stable = max(int(self.get_parameter('pre_stable_samples').value), 1)
         self._clearance_history = []
+        self.pre_scan = bool(self.get_parameter('pre_scan').value)
+        self.scan_yaw_rate = math.radians(
+            float(self.get_parameter('scan_yaw_rate_deg_s').value))
+        self.scan_found = float(self.get_parameter('scan_found_m').value)
+        self.scan_side_open = float(self.get_parameter('scan_side_open_m').value)
+        self.scan_max_s = float(self.get_parameter('scan_max_s').value)
+        self.verify_s = float(self.get_parameter('verify_s').value)
+        self._scan_hits = 0
+        self._scan_best = None
+        self._verify_history = []
         self.clearance = None
 
         self.rows = []
@@ -200,6 +217,15 @@ class ClosedLoopBase(FlightCheckBase):
         msg.angular.z = 0.0
         self.velocity_pub.publish(msg)
 
+    def publish_yaw_rate(self, rate: float) -> None:
+        """只给偏航角速度（速度模式），用于扫描阶段边转边看净空。"""
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.linear.y = 0.0
+        msg.linear.z = 0.0
+        msg.angular.z = float(rate)
+        self.velocity_pub.publish(msg)
+
     # ------------------------------------------------------------- 阶段机
 
     def first_phase(self) -> str:
@@ -212,7 +238,7 @@ class ClosedLoopBase(FlightCheckBase):
                     self.get_logger().info(
                         f'到达 {self.altitude:.1f} m，开始摆位：以 {self.pre_speed:.2f} m/s '
                         f'前进直到前向净空 ≤ {self.pre_stop:.1f} m')
-                    self.enter('APPROACH')
+                    self.enter('SCAN' if self.pre_scan else 'APPROACH')
                 else:
                     self.get_logger().info(
                         f'到达 {self.altitude:.1f} m，交出控制权给 VLM（本脚本不再发目标点）')
@@ -245,6 +271,67 @@ class ClosedLoopBase(FlightCheckBase):
                 return
             self.publish_enu_velocity(self.pre_speed)
             self.record_approach()
+            return
+
+        if self.phase == 'SCAN':
+            # 慢速偏航扫一圈，边转边看本机地图净空（服务器侧 2026-10-13 确认的做法）
+            self.publish_yaw_rate(self.scan_yaw_rate)
+            self.record_approach()          # 与摆位共用记录（同一套列）
+            forward_clear = self.clearance[0] if self.clearance else None
+            sides_open = (self.clearance is not None
+                          and max(self.clearance[1], self.clearance[2]) >= self.scan_side_open)
+            if forward_clear is not None and forward_clear <= self.scan_found:
+                self._scan_hits += 1
+                self._scan_best = forward_clear
+                if sides_open and self._scan_hits >= self.pre_stable:
+                    self.publish_yaw_rate(0.0)
+                    self.get_logger().info(
+                        f'扫描发现可用障碍：前向净空连续 {self._scan_hits} 次 ≤ '
+                        f'{self.scan_found:.1f} m（最近 {forward_clear:.2f} m），'
+                        f'且一侧开阔（左 {self.clearance[1]:.2f} / 右 {self.clearance[2]:.2f}）'
+                        '→ 停转，先**原地静止复验**（排除自运动拖影）')
+                    self._verify_history = []
+                    self.enter('VERIFY')
+                    return
+                if not sides_open:
+                    self.get_logger().info(
+                        f'该方位净空 {forward_clear:.2f} m 但两侧都紧'
+                        f'（左 {self.clearance[1]:.2f} / 右 {self.clearance[2]:.2f}）'
+                        '→ 不适合绕行，继续扫', throttle_duration_sec=2.0)
+                    self._scan_hits = 0
+            else:
+                self._scan_hits = 0
+            if self.elapsed() > self.scan_max_s:
+                self.publish_yaw_rate(0.0)
+                self.get_logger().warn(
+                    f'扫描 {self.scan_max_s:.0f} s 未找到"前方净空 ≤ {self.scan_found:.1f} m '
+                    '且一侧开阔"的方位 → 按时间预算收工降落')
+                self.send('land_fast')
+                self.finish()
+            return
+
+        if self.phase == 'VERIFY':
+            # 原地静止复验：自运动拖影在停下 2–3 s 后会消失，真障碍会稳定留在净空里
+            self.publish_yaw_rate(0.0)
+            self.record_approach()
+            if self.clearance is not None:
+                self._verify_history.append(self.clearance[0])
+                self._verify_history = self._verify_history[-self.pre_stable:]
+            if self.elapsed() > self.verify_s:
+                stable = (len(self._verify_history) >= self.pre_stable
+                          and all(v <= self.scan_found for v in self._verify_history))
+                values = [round(v, 2) for v in self._verify_history]
+                if stable:
+                    self.get_logger().info(
+                        f'静止复验通过：净空 {values} 仍 ≤ {self.scan_found:.1f} m → 是真障碍，'
+                        '转入逼近')
+                    self._clearance_history = []
+                    self.enter('APPROACH')
+                else:
+                    self.get_logger().info(
+                        f'静止复验未通过：净空 {values}（疑似自运动拖影）→ 继续扫描')
+                    self._scan_hits = 0
+                    self.enter('SCAN')
             return
 
         if self.phase == 'RUN':

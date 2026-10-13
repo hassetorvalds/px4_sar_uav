@@ -48,11 +48,17 @@ class FlightSupervisor(Node):
         self.declare_parameter('status_topic', '/fmu/out/vehicle_status_v4')
         self.declare_parameter('timeout_s', 5.0)
         self.declare_parameter('repeat_s', 3.0)
+        # 解锁后的宽限期：驱动脚本要过约 1 s 才发布第一条心跳，
+        # 若不给宽限，会拿"上一轮遗留的旧心跳时间"直接判超时并在起飞瞬间发 land_fast
+        # （2026-10-13 实测：c16 起飞时心跳被判定"已停 712.9 s"→ 桥接切速度模式下降 → 爬升超时）
+        self.declare_parameter('arm_grace_s', 6.0)
 
         self.timeout_s = float(self.get_parameter('timeout_s').value)
         self.repeat_s = float(self.get_parameter('repeat_s').value)
+        self.arm_grace_s = float(self.get_parameter('arm_grace_s').value)
         self.last_heartbeat = None
         self.armed = False
+        self.armed_since = None
         self.last_land_sent = 0.0
 
         self.command_pub = self.create_publisher(
@@ -76,12 +82,21 @@ class FlightSupervisor(Node):
 
     def _tick(self) -> None:
         if not self.armed:
-            return
-        age = (float('inf') if self.last_heartbeat is None
-               else time.monotonic() - self.last_heartbeat)
-        if age <= self.timeout_s:
+            self.armed_since = None
             return
         now = time.monotonic()
+        if self.armed_since is None:
+            self.armed_since = now
+            self.get_logger().info(
+                f'检测到解锁：给驱动 {self.arm_grace_s:.0f} s 宽限期再开始判心跳')
+        if now - self.armed_since < self.arm_grace_s:
+            return                      # 宽限期内不判（避免拿旧心跳时间误触发）
+        # 宽限期结束时若还没有任何心跳，就从"本进程启动"算起，而不是沿用上一轮的旧时间
+        baseline = self.last_heartbeat if self.last_heartbeat is not None \
+            else self.armed_since
+        age = now - max(baseline, self.armed_since - self.arm_grace_s)
+        if age <= self.timeout_s:
+            return
         if now - self.last_land_sent < self.repeat_s:
             return
         self.last_land_sent = now
