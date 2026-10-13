@@ -78,8 +78,14 @@ class VoxelGrid:
 
     # ------------------------------------------------------------------ 更新
 
-    def insert(self, points_enu: np.ndarray, origin_enu, now: float) -> int:
-        """插入一帧点云（ENU），返回新增/更新的体素数。"""
+    def insert(self, points_enu: np.ndarray, origin_enu, now: float,
+               min_range_m: float = 0.0) -> int:
+        """插入一帧点云（ENU），返回新增/更新的体素数。
+
+        ``min_range_m`` 以**机体原点**为球心再做一次过滤，判据落在**体素中心**上：
+        点级过滤挡不住量化——离原点 0.31 m 的点可能被归到中心距 0.22 m 的体素里
+        （2026-10-13 实测 `nearest_forward=0.23 m` 却设了 0.3 m 过滤，就是这个原因）。
+        """
         if points_enu.size == 0:
             return 0
         origin = np.asarray(origin_enu, dtype=float)
@@ -90,7 +96,12 @@ class VoxelGrid:
                   & (local[:, 2] <= self.height_max))
         updated = 0
         for point in points_enu[inside]:
-            self._voxels[self._key(point)] = now
+            key = self._key(point)
+            if min_range_m > 0.0:
+                center = np.asarray(self._center(key), dtype=float)
+                if np.linalg.norm(center - origin) < float(min_range_m):
+                    continue
+            self._voxels[key] = now
             updated += 1
         return updated
 

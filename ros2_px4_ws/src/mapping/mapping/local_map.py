@@ -39,7 +39,7 @@ class LocalMap(Node):
         # 近场过滤：丢掉相机看到的"自身/起飞残点"（详见 voxel_grid.filter_by_min_range）。
         # **必须远低于保持阈值**（当前 0.6 m），否则会把触发"保持"所需的数据也删掉——
         # 服务器侧 2026-10-13 指出过这个死结，故取 0.3 m。
-        self.declare_parameter('min_range_m', 0.3)
+        self.declare_parameter('min_range_m', 0.45)
 
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._cone_deg = float(self.get_parameter('cone_deg').value)
@@ -109,7 +109,8 @@ class LocalMap(Node):
         origin_enu = ned_to_enu(*position_ned)
         world_local = yaw_rotate_flu_to_enu(body, heading_enu) + np.asarray(origin_enu)
         now = self.get_clock().now().nanoseconds / 1e9
-        self._grid.insert(world_local, origin_enu=origin_enu, now=now)
+        self._grid.insert(world_local, origin_enu=origin_enu, now=now,
+                          min_range_m=self._min_range)
         self._frames += 1
 
     # ------------------------------------------------------------------ 输出
