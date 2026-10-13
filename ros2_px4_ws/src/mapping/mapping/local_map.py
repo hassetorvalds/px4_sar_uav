@@ -17,7 +17,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import String
 
-from .voxel_grid import VoxelGrid, yaw_rotate_flu_to_enu
+from .voxel_grid import VoxelGrid, filter_by_min_range, yaw_rotate_flu_to_enu
 
 
 class LocalMap(Node):
@@ -34,12 +34,15 @@ class LocalMap(Node):
         self.declare_parameter('cone_deg', 30.0)
         self.declare_parameter('cone_max_distance', 6.0)
         self.declare_parameter('cone_vertical_tolerance_m', 0.6)
+        # 近场过滤：丢掉相机看到的"自身/起飞残点"（详见 voxel_grid.filter_by_min_range）
+        self.declare_parameter('min_range_m', 0.6)
 
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._cone_deg = float(self.get_parameter('cone_deg').value)
         self._cone_max = float(self.get_parameter('cone_max_distance').value)
         self._cone_vertical = float(
             self.get_parameter('cone_vertical_tolerance_m').value)
+        self._min_range = float(self.get_parameter('min_range_m').value)
 
         self._grid = VoxelGrid(
             resolution=float(self.get_parameter('resolution').value),
@@ -80,6 +83,15 @@ class LocalMap(Node):
         body = np.frombuffer(msg.data, dtype=np.float32).reshape(-1, 3)
         if body.size == 0:
             return
+        raw_count = int(body.shape[0])
+        body = filter_by_min_range(body, self._min_range)
+        if body.size == 0:
+            return
+        if raw_count != int(body.shape[0]):
+            self.get_logger().info(
+                f'近场过滤：丢弃 {raw_count - int(body.shape[0])} 个 '
+                f'<{self._min_range:.2f} m 的点',
+                throttle_duration_sec=10.0)
         heading_enu = ned_yaw_to_enu_yaw(state.heading)
         origin_enu = ned_to_enu(*position_ned)
         world_local = yaw_rotate_flu_to_enu(body, heading_enu) + np.asarray(origin_enu)

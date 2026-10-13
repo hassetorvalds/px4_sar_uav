@@ -27,7 +27,10 @@ import sys
 
 import rclpy
 from flight_check import FlightCheckBase
+from geometry_msgs.msg import Twist
+from px4_interface.frames import ned_yaw_to_enu_yaw
 from std_msgs.msg import String
+from vlm.safety import parse_clearance_status
 
 # 日志行缓冲：外部脚本常靠 grep 日志来判断阶段（例如"等进入 RUN 再开始注入"），
 # 块缓冲会让判断滞后甚至永远不命中（2026-10-12 踩到两次）。
@@ -44,11 +47,26 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('decision_topic', '/vlm_navigator/decision')
         self.declare_parameter('output_csv', 'logs/c1_closed_loop.csv')
         self.declare_parameter('land_at_end', True)
+        # 摆位阶段：起飞后先朝当前机头方向慢速前进，直到"前向净空"降到阈值（把飞机送到障碍前）
+        self.declare_parameter('pre_position', False)
+        self.declare_parameter('pre_speed_mps', 0.2)
+        self.declare_parameter('pre_stop_clearance_m', 2.0)
+        self.declare_parameter('pre_timeout_s', 30.0)
+        # 本地图偶发单帧近读数（实测见过 1.91 m 一闪而过），摆位判定必须要求**连续稳定**
+        self.declare_parameter('pre_stable_samples', 3)
+        self.declare_parameter('map_status_topic', '/local_map/status')
 
         self.altitude = float(self.get_parameter('start_altitude_m').value)
         self.run_s = float(self.get_parameter('run_s').value)
         self.output_csv = str(self.get_parameter('output_csv').value)
         self.land_at_end = bool(self.get_parameter('land_at_end').value)
+        self.pre_position = bool(self.get_parameter('pre_position').value)
+        self.pre_speed = float(self.get_parameter('pre_speed_mps').value)
+        self.pre_stop = float(self.get_parameter('pre_stop_clearance_m').value)
+        self.pre_timeout = float(self.get_parameter('pre_timeout_s').value)
+        self.pre_stable = max(int(self.get_parameter('pre_stable_samples').value), 1)
+        self._clearance_history = []
+        self.clearance = None
 
         self.rows = []
         self.latest_decision = None
@@ -62,6 +80,9 @@ class ClosedLoopBase(FlightCheckBase):
         self.create_subscription(
             String, str(self.get_parameter('decision_topic').value),
             self._on_decision, 10)
+        self.create_subscription(
+            String, str(self.get_parameter('map_status_topic').value),
+            self._on_map_status, 10)
 
     # ------------------------------------------------------------- 回调
 
@@ -70,6 +91,11 @@ class ClosedLoopBase(FlightCheckBase):
             self.latest_decision = json.loads(msg.data)
         except ValueError:
             self.latest_decision = None
+
+    def _on_map_status(self, msg: String) -> None:
+        parsed = parse_clearance_status(msg.data)
+        if parsed is not None:
+            self.clearance = parsed
 
     def _on_position(self, msg) -> None:
         super()._on_position(msg)
@@ -112,6 +138,7 @@ class ClosedLoopBase(FlightCheckBase):
             'drift_m': None if drift is None else round(drift, 3),
             'frame_seq': decision.get('frame_seq'),
             'apos_state': decision.get('apos_state'),
+            'forward_clear_m': (self.clearance[0] if self.clearance else None),
             'wp_yaw_deg': (math.degrees(first['yaw_rad'])
                            if isinstance(first.get('yaw_rad'), (int, float)) else None),
             'command_source': decision.get('command_source'),
@@ -119,6 +146,49 @@ class ClosedLoopBase(FlightCheckBase):
             'cmd_yaw_rate': velocity.get('yaw_rate'),
             'cmd_forward': velocity.get('forward'),
         })
+
+    def record_approach(self) -> None:
+        """摆位阶段没有 VLM 决策，单独记一行（保留同一套列名，便于统一分析）。"""
+        now = round(self.elapsed(), 2)
+        if self.rows and self.rows[-1]['phase'] == 'APPROACH' \
+                and now - self.rows[-1]['t'] < 0.4:
+            return
+        row = {
+            'frame_seq': None, 'apos_state': None, 'wp_yaw_deg': None, 'guard': None,
+            'drift_m': None,
+        }
+        row.update({
+            't': now,
+            'phase': 'APPROACH',
+            'heading_unwrapped_deg': round(self._heading_unwrapped_deg, 2),
+            'heading_deg': (round(math.degrees(self.heading_rad), 2)
+                            if not math.isnan(self.heading_rad) else None),
+            'px4_z': (round(self.px4_z, 3) if self.px4_z is not None else None),
+            'px4_x': None if math.isnan(self.px4_x) else round(self.px4_x, 3),
+            'px4_y': None if math.isnan(self.px4_y) else round(self.px4_y, 3),
+            'forward_clear_m': (self.clearance[0] if self.clearance else None),
+            'command_source': 'approach',
+            'cmd_forward': self.pre_speed,
+            'cmd_yaw_rate': 0.0,
+        })
+        self.rows.append(row)
+
+    def publish_enu_velocity(self, forward_mps: float) -> None:
+        """按当前航向把"机头方向的前进速度"转成 ENU 速度发给桥接节点。
+
+        摆位阶段我们用最简单的开环前进（不依赖 VLM），把飞机送到障碍前再交权。
+        """
+        if math.isnan(self.heading_rad):
+            return
+        heading_enu = ned_yaw_to_enu_yaw(self.heading_rad)
+        east = forward_mps * math.cos(heading_enu)
+        north = forward_mps * math.sin(heading_enu)
+        msg = Twist()
+        msg.linear.x = east
+        msg.linear.y = north
+        msg.linear.z = 0.0
+        msg.angular.z = 0.0
+        self.velocity_pub.publish(msg)
 
     # ------------------------------------------------------------- 阶段机
 
@@ -128,11 +198,43 @@ class ClosedLoopBase(FlightCheckBase):
     def on_phase(self) -> None:
         if self.phase == 'CLIMB':
             if self.climb_to(self.altitude):
-                self.get_logger().info(
-                    f'到达 {self.altitude:.1f} m，交出控制权给 VLM（本脚本不再发目标点）')
-                self.enter('RUN')
+                if self.pre_position:
+                    self.get_logger().info(
+                        f'到达 {self.altitude:.1f} m，开始摆位：以 {self.pre_speed:.2f} m/s '
+                        f'前进直到前向净空 ≤ {self.pre_stop:.1f} m')
+                    self.enter('APPROACH')
+                else:
+                    self.get_logger().info(
+                        f'到达 {self.altitude:.1f} m，交出控制权给 VLM（本脚本不再发目标点）')
+                    self.enter('RUN')
             elif self.elapsed() > self.phase_timeout:
                 self.fail('爬升超时')
+            return
+
+        if self.phase == 'APPROACH':
+            forward_clear = self.clearance[0] if self.clearance else None
+            if forward_clear is not None:
+                self._clearance_history.append(forward_clear)
+                self._clearance_history = self._clearance_history[-self.pre_stable:]
+            stable = (len(self._clearance_history) >= self.pre_stable
+                      and all(value <= self.pre_stop for value in self._clearance_history))
+            if stable:
+                self.publish_enu_velocity(0.0)
+                self.get_logger().info(
+                    f'摆位完成：前向净空连续 {self.pre_stable} 次 ≤ {self.pre_stop:.1f} m'
+                    f'（最近 {[round(v, 2) for v in self._clearance_history]}），'
+                    '停下并交出控制权给 VLM')
+                self.enter('RUN')
+                return
+            if self.elapsed() > self.pre_timeout:
+                self.publish_enu_velocity(0.0)
+                self.get_logger().warn(
+                    f'摆位超时（{self.pre_timeout:.0f} s，前向净空 {forward_clear}），'
+                    '仍在当前位置交出控制权')
+                self.enter('RUN')
+                return
+            self.publish_enu_velocity(self.pre_speed)
+            self.record_approach()
             return
 
         if self.phase == 'RUN':

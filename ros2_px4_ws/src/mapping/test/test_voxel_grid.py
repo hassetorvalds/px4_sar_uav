@@ -4,7 +4,26 @@ import math
 
 import numpy as np
 
-from mapping.voxel_grid import VoxelGrid, yaw_rotate_flu_to_enu
+from mapping.voxel_grid import VoxelGrid, filter_by_min_range, yaw_rotate_flu_to_enu
+
+
+def test_min_range_filter_drops_self_returns():
+    """近场伪点（自身/起飞残点）必须被丢掉：地面静止实测读到 0.17 m。"""
+    points = np.array([
+        [0.17, 0.0, 0.0],      # 自身/近场伪点 → 丢
+        [0.59, 0.1, 0.0],      # 仍小于阈值 → 丢
+        [0.60, 0.0, 0.0],      # 恰好阈值 → 保留
+        [3.0, 0.5, 0.2],       # 真实障碍 → 保留
+    ])
+    kept = filter_by_min_range(points, 0.6)
+    assert kept.shape == (2, 3)
+    assert np.allclose(kept[0], [0.60, 0.0, 0.0])
+    assert np.allclose(kept[1], [3.0, 0.5, 0.2])
+
+
+def test_min_range_filter_disabled_when_zero():
+    points = np.array([[0.1, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    assert filter_by_min_range(points, 0.0).shape == (2, 3)
 
 
 def test_rotate_identity_when_heading_east():

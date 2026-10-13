@@ -31,6 +31,26 @@ def yaw_rotate_flu_to_enu(points_flu: np.ndarray, heading_enu: float) -> np.ndar
     return np.concatenate([horizontal, points_flu[:, 2:3]], axis=1)
 
 
+def filter_by_min_range(points_flu: np.ndarray, min_range_m: float) -> np.ndarray:
+    """丢弃机体坐标系下距离原点小于 ``min_range_m`` 的点。
+
+    为什么要这道过滤（2026-10-13 实测）：
+    深度相机会把**无人机自身**（起落架/机臂）以及起飞阶段的近场残点投进地图，
+    地面静止时 `/local_map/status` 持续读到 `nearest_forward_m=0.17`；
+    在 2 m 高度交接瞬间也读到四周 0.40–0.53 m，随后又变 `inf`。
+    这些近场点会被安全层当成"障碍"，造成**无谓的归零保持**。
+
+    取值建议：**与本机避障的停止距离一致（0.6 m）**——比停止距离更近的信息
+    对决策没有价值（那时本来就该保持），却最容易被自身点污染。
+    """
+    if points_flu.size == 0:
+        return points_flu.reshape(0, 3)
+    if min_range_m <= 0.0:
+        return points_flu
+    ranges = np.linalg.norm(points_flu, axis=1)
+    return points_flu[ranges >= float(min_range_m)]
+
+
 class VoxelGrid:
     """带时间衰减的局部体素栅格。"""
 
