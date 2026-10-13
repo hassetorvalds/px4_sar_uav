@@ -15,6 +15,42 @@
 
 ---
 
+## [2026-10-13] track（质心）取代链式比较 + 几何门限；查明 AirSim 与 PX4 本地系存在固定偏移
+
+### 变更（按服务器侧两点补充）
+
+- `vlm/safety.py` 新增 `ObstacleTrack`：维护最近 N 帧（默认 3）**世界系候选点的质心**，
+  新点必须落在质心容差（`obstacle_world_tolerance_m=0.4`）内才算同一障碍。
+  取代"只和上一帧链式比较"——链式会随帧漂移、丢帧即清零。
+- `vlm_navigator` 增加**几何门限** `obstacle_candidate_max_m`（默认 4.0 m）：
+  只有"前向锥内且距离 ≤ 该值"的点才进入候选/track，避免远处噪声当候选；
+  参数 `obstacle_track_size`。记录 `obstacle_world` / `world_consistent` 不变。
+- 单测新增 2 项（稳定点连续通过、跳变点被拒、质心只统计最近 N 帧）→ vlm **39 passed**。
+
+### 用 AirSim 真值选障碍：发现两个前提问题
+
+新增 `scripts/list_scene_objects.py`（`simListSceneObjects` + `simGetObjectPose`），实测：
+
+```text
+场景物体 211 个、≤60 m 的 107 个，但几乎全是引擎/相机/GameMode/Volume 类 actor
+→ **建筑不是独立 actor**（属关卡静态网格），拿不到"有限跨度障碍"的坐标
+⚠️ AirSim 的 Drone1 位姿与本机 PX4 本地原点相差约 (东 3.4, 北 −6.9, 上 −0.9) m
+   → **AirSim 世界系与 PX4 本地 ENU 存在固定偏移**；地图/规划/避障都在后者，
+     若要按 AirSim 物体坐标瞄准，必须先标定并换算该偏移
+```
+
+### 建议的替代路径（已在 38 号信里请示）
+
+改走"**扫描变体**"：悬停 2 m → 缓慢偏航 360° 边转边看本机地图净空 → 找到净空较小的方位后
+对准并慢速逼近到 ~1.2 m → 交权（`yaw_lock_s=0`）观察"保持→绕行→恢复"。
+全程只用自己的坐标系，无需跨系标定。
+
+### 取证
+
+`logs/2026-10-13/c15_detour.csv`（开阔区结论）、`scripts/list_scene_objects.py` 输出（本轮对话）。
+
+---
+
 ## [2026-10-13] 世界系一致性判据 + 逐帧速度/俯仰落盘；c15 显示起飞点前方开阔
 
 ### 变更（按服务器侧两条判据）

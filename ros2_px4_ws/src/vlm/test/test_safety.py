@@ -5,7 +5,12 @@ import math
 import pytest
 
 from vlm.pointing import BodyVelocity
-from vlm.safety import MapSafetyLimits, apply_map_safety, parse_clearance_status
+from vlm.safety import (
+    MapSafetyLimits,
+    ObstacleTrack,
+    apply_map_safety,
+    parse_clearance_status,
+)
 
 LIMITS = MapSafetyLimits()
 
@@ -116,6 +121,26 @@ def test_world_inconsistent_reading_does_not_accumulate_streak():
     assert holding2 is True
     assert guard2 == 'obstacle'
     assert detail2['stop_streak'] == 3
+
+
+def test_obstacle_track_rejects_jumping_points_and_keeps_stable_ones():
+    """世界系 track：稳定的真障碍连续通过；逐帧跳变的拖影被拒。"""
+    track = ObstacleTrack(size=3, tolerance_m=0.4)
+    assert track.update((0.0, 0.0, 0.0)) is True        # 第一个点建 track
+    assert track.update((0.05, 0.02, 0.0)) is True      # 与质心一致
+    assert track.update((0.10, 0.03, 0.0)) is True      # 仍在容差内（质心随动）
+    assert track.update((1.50, 0.0, 0.0)) is False      # 跳变 → 拒绝并重建
+    assert track.update((1.55, 0.0, 0.0)) is True       # 新 track 建立后继续一致
+
+
+def test_obstacle_track_centroid_tracks_recent_points_only():
+    track = ObstacleTrack(size=2, tolerance_m=0.4)
+    track.update((0.0, 0.0, 0.0))
+    track.update((0.2, 0.0, 0.0))
+    # 只保留最近 2 个点 → 质心为 (0.1, 0, 0)
+    assert track.centroid[0] == pytest.approx(0.1)
+    track.update((0.4, 0.0, 0.0))
+    assert track.centroid[0] == pytest.approx(0.3)
 
 
 def test_hysteresis_keeps_holding_until_release_threshold():

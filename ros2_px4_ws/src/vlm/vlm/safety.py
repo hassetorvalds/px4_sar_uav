@@ -48,6 +48,51 @@ class MapSafetyLimits:
     creep_open_side_m: float = 1.5       # "明显开阔"的判定净空
 
 
+class ObstacleTrack:
+    """世界系"障碍候选点"的短时 track（服务器侧 2026-10-13 建议）。
+
+    为什么不只和"上一帧候选点"链式比较：
+
+    - 链式比较会**随帧缓慢漂移**（每帧只差一点点也一路通过）；
+    - 中间丢一帧就清零重整，容易误判。
+
+    这里维护最近 ``size`` 个世界坐标点的**质心**：新点必须落在质心的
+    ``tolerance_m`` 内才算"同一个障碍"，随后并入 track；否则视为新目标（计数重新开始）。
+    """
+
+    def __init__(self, size: int = 3, tolerance_m: float = 0.4):
+        self.size = max(int(size), 1)
+        self.tolerance_m = float(tolerance_m)
+        self._points = []
+
+    @property
+    def centroid(self):
+        if not self._points:
+            return None
+        count = len(self._points)
+        return tuple(sum(p[i] for p in self._points) / count for i in range(3))
+
+    def update(self, point) -> bool:
+        """喂入本帧世界坐标；返回"是否与既有 track 一致"。"""
+        if point is None:
+            return False
+        center = self.centroid
+        if center is None:
+            self._points = [tuple(point)]
+            return True
+        distance = math.dist(tuple(point), center)
+        consistent = distance <= self.tolerance_m
+        if consistent:
+            self._points.append(tuple(point))
+            self._points = self._points[-self.size:]
+        else:
+            self._points = [tuple(point)]
+        return consistent
+
+    def reset(self) -> None:
+        self._points = []
+
+
 def parse_clearance_status(text: str):
     """解析 ``/local_map/status``：``... nearest_forward_m=0.42 left_m=3.00 right_m=2.10``。
 

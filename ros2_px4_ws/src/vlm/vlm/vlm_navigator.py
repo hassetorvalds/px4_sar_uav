@@ -31,7 +31,12 @@ from .pointing import (
     pointing_to_body_velocity,
     waypoint_to_body_velocity,
 )
-from .safety import MapSafetyLimits, apply_map_safety, parse_clearance_status
+from .safety import (
+    MapSafetyLimits,
+    ObstacleTrack,
+    apply_map_safety,
+    parse_clearance_status,
+)
 from .vlm_client import VlmError, create_client, image_file_to_jpeg, image_message_to_jpeg
 
 # 提示词为本项目自写（接口约定与本地参考实现 SeePointFly 一致，但文字不复制其原文；
@@ -126,6 +131,8 @@ class VlmNavigator(Node):
         self.declare_parameter('obstacle_creep_open_side_m', 1.5)
         self.declare_parameter('obstacle_stop_confirm_frames', 3)
         self.declare_parameter('obstacle_world_tolerance_m', 0.4)
+        self.declare_parameter('obstacle_candidate_max_m', 4.0)
+        self.declare_parameter('obstacle_track_size', 3)
         # 交权后锁偏航若干秒（外部锁优先于安全层避让偏航，用于逼出"保持"状态做验证）
         self.declare_parameter('yaw_lock_s', 0.0)
 
@@ -180,6 +187,11 @@ class VlmNavigator(Node):
             self.get_parameter('obstacle_stop_confirm_frames').value)
         self._world_tolerance = float(
             self.get_parameter('obstacle_world_tolerance_m').value)
+        self._candidate_max = float(
+            self.get_parameter('obstacle_candidate_max_m').value)
+        self._track = ObstacleTrack(
+            size=int(self.get_parameter('obstacle_track_size').value),
+            tolerance_m=self._world_tolerance)
         self._yaw_lock_s = float(self.get_parameter('yaw_lock_s').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
@@ -625,12 +637,16 @@ class VlmNavigator(Node):
         world_point = self._nearest_world_point(state)
         close_to_obstacle = (self._clearance is not None
                              and self._clearance[0] < self._map_limits.stop_m)
-        if not close_to_obstacle:
+        # 几何门限：只把"前向锥内且距离 ≤ obstacle_candidate_max_m"的点当候选
+        # （服务器侧 2026-10-13：别把远处噪声当候选；容差 0.4 m 只适合近距）
+        candidate_ok = (close_to_obstacle
+                        and (self._clearance[0] <= self._candidate_max))
+        if not candidate_ok:
             self._obstacle_world = None
+            self._track.reset()
         elif world_point is not None:
-            if self._obstacle_world is not None:
-                jump = math.dist(world_point, self._obstacle_world)
-                self._world_consistent = jump <= self._world_tolerance
+            # 与"最近 N 帧质心"比较，而不是只和上一帧链式比较
+            self._world_consistent = self._track.update(world_point)
             self._obstacle_world = world_point
         age = (now - self._clearance_stamp) if self._clearance_stamp else None
         # 累积转角：以"进入避障时的航向"为基准，到上限就停止继续转（防死角打转）
