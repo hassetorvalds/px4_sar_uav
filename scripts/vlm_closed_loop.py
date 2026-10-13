@@ -28,7 +28,7 @@ import sys
 import rclpy
 from flight_check import FlightCheckBase
 from geometry_msgs.msg import Twist
-from px4_interface.frames import ned_yaw_to_enu_yaw
+from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
 from std_msgs.msg import String
 from vlm.safety import parse_clearance_status
 
@@ -61,6 +61,14 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('scan_side_open_m', 1.5)
         self.declare_parameter('scan_max_s', 32.0)
         self.declare_parameter('verify_s', 2.5)
+        # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
+        self.declare_parameter('transit_enabled', False)
+        self.declare_parameter('transit_east_m', 0.0)
+        self.declare_parameter('transit_north_m', 0.0)
+        self.declare_parameter('transit_altitude_m', 3.5)
+        self.declare_parameter('transit_timeout_s', 45.0)
+        # 交权瞬间通知 VLM 节点解除 dry_run（节点提前以 dry_run 跑，消除 ~30 s 启动时间差）
+        self.declare_parameter('vlm_enable_topic', '/vlm_navigator/enable')
         self.declare_parameter('map_status_topic', '/local_map/status')
 
         self.altitude = float(self.get_parameter('start_altitude_m').value)
@@ -80,6 +88,13 @@ class ClosedLoopBase(FlightCheckBase):
         self.scan_side_open = float(self.get_parameter('scan_side_open_m').value)
         self.scan_max_s = float(self.get_parameter('scan_max_s').value)
         self.verify_s = float(self.get_parameter('verify_s').value)
+        self.transit_enabled = bool(self.get_parameter('transit_enabled').value)
+        self.transit_east = float(self.get_parameter('transit_east_m').value)
+        self.transit_north = float(self.get_parameter('transit_north_m').value)
+        self.transit_altitude = float(self.get_parameter('transit_altitude_m').value)
+        self.transit_timeout = float(self.get_parameter('transit_timeout_s').value)
+        self.enable_pub = self.create_publisher(
+            String, str(self.get_parameter('vlm_enable_topic').value), 10)
         self._scan_hits = 0
         self._scan_best = None
         self._verify_history = []
@@ -226,25 +241,88 @@ class ClosedLoopBase(FlightCheckBase):
         msg.angular.z = float(rate)
         self.velocity_pub.publish(msg)
 
+    def publish_target_enu(self, east: float, north: float, up: float) -> None:
+        """位置模式目标（ENU，绝对坐标）：转场与降高用。
+
+        基类的 ``publish_target`` 只写 z（x,y 默认 0），会把飞机拉回原点——转场必须给全 x,y。
+        """
+        from geometry_msgs.msg import PoseStamped
+
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.pose.position.x = float(east)
+        msg.pose.position.y = float(north)
+        msg.pose.position.z = float(up)
+        msg.pose.orientation.w = 1.0
+        self.target_pub.publish(msg)
+
+    def position_enu(self):
+        """当前 ENU 位置（拿不到返回 None）。"""
+        if self.px4_z is None or math.isnan(self.px4_x) or math.isnan(self.px4_y):
+            return None
+        return ned_to_enu(self.px4_x, self.px4_y, self.px4_z)
+
     # ------------------------------------------------------------- 阶段机
 
     def first_phase(self) -> str:
         return 'CLIMB'
 
+    def enter(self, phase: str) -> None:
+        """进入 RUN（交权）时通知提前跑着的 VLM 节点解除 dry_run。"""
+        super().enter(phase)
+        if phase == 'RUN':
+            msg = String()
+            msg.data = 'enable'
+            self.enable_pub.publish(msg)
+            self.get_logger().info('已向 VLM 节点发送 enable（解除 dry_run）')
+
     def on_phase(self) -> None:
         if self.phase == 'CLIMB':
             if self.climb_to(self.altitude):
                 if self.pre_position:
-                    self.get_logger().info(
-                        f'到达 {self.altitude:.1f} m，开始摆位：以 {self.pre_speed:.2f} m/s '
-                        f'前进直到前向净空 ≤ {self.pre_stop:.1f} m')
-                    self.enter('SCAN' if self.pre_scan else 'APPROACH')
+                    if self.transit_enabled:
+                        self.get_logger().info(
+                            f'到达 {self.altitude:.1f} m，先转场到 ENU（东 {self.transit_east:+.1f}, '
+                            f'北 {self.transit_north:+.1f}），转场高度 {self.transit_altitude:.1f} m')
+                        self.enter('TRANSIT')
+                    else:
+                        self.get_logger().info(
+                            f'到达 {self.altitude:.1f} m，开始摆位：以 {self.pre_speed:.2f} m/s '
+                            f'前进直到前向净空 ≤ {self.pre_stop:.1f} m')
+                        self.enter('SCAN' if self.pre_scan else 'APPROACH')
                 else:
                     self.get_logger().info(
                         f'到达 {self.altitude:.1f} m，交出控制权给 VLM（本脚本不再发目标点）')
                     self.enter('RUN')
             elif self.elapsed() > self.phase_timeout:
                 self.fail('爬升超时')
+            return
+
+        if self.phase in ('TRANSIT', 'DESCEND'):
+            altitude = self.transit_altitude if self.phase == 'TRANSIT' else self.altitude
+            self.publish_target_enu(self.transit_east, self.transit_north, altitude)
+            self.record_approach()
+            current = self.position_enu()
+            close = (current is not None
+                     and abs(current[0] - self.transit_east) < 0.5
+                     and abs(current[1] - self.transit_north) < 0.5
+                     and abs(current[2] - altitude) < 0.4)
+            if close:
+                if self.phase == 'TRANSIT':
+                    self.get_logger().info(
+                        f'转场到位（ENU 东 {current[0]:+.1f} 北 {current[1]:+.1f} '
+                        f'上 {current[2]:.1f}），降到扫描高度 {self.altitude:.1f} m')
+                    self.enter('DESCEND')
+                else:
+                    self.get_logger().info(
+                        f'已降到 {self.altitude:.1f} m，开始扫描/摆位')
+                    self.enter('SCAN' if self.pre_scan else 'APPROACH')
+            elif self.elapsed() > self.transit_timeout:
+                self.get_logger().warn(
+                    f'{self.phase} 超时（{self.transit_timeout:.0f} s，'
+                    f'当前 {current}）→ 就地继续')
+                self.enter('SCAN' if self.pre_scan else 'APPROACH')
             return
 
         if self.phase == 'APPROACH':

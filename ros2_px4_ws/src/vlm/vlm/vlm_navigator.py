@@ -107,6 +107,10 @@ class VlmNavigator(Node):
         # 服务器侧建议 5–8 帧（我们探针实测第 4 帧才转 point），故默认 6。
         self.declare_parameter('warmup_frames', 6)
         self.declare_parameter('instruction_topic', '~/instruction')
+        # 运行中"解除 dry_run"：让节点提前启动（只记录），交权瞬间再实飞。
+        # 背景（2026-10-13）：摆位脚本要先找到障碍再交权，但节点启动要 ~30 s，
+        # 这段时间障碍读数已随地图衰减消失；提前启动可消除这个时间差。
+        self.declare_parameter('enable_topic', '~/enable')
         # 安全包络（C1/C2 小步闭环用）：分量缩放 + 运行时长上限 + 距起点围栏
         self.declare_parameter('forward_scale', 1.0)
         self.declare_parameter('lateral_scale', 1.0)
@@ -263,6 +267,9 @@ class VlmNavigator(Node):
         self.create_subscription(
             String, str(self.get_parameter('instruction_topic').value),
             self._on_instruction, 10)
+        self.create_subscription(
+            String, str(self.get_parameter('enable_topic').value),
+            self._on_enable, 10)
         # C3：局部地图三向净空（fail-safe 安全层的输入）
         self.create_subscription(
             String, str(self.get_parameter('map_status_topic').value),
@@ -327,6 +334,21 @@ class VlmNavigator(Node):
         if hasattr(self._client, 'instruction'):
             self._client.instruction = text
         self.get_logger().info(f'指令已切换为「{text}」（同一会话，frame_seq 继续递增）')
+
+    def _on_enable(self, msg: String) -> None:
+        """解除 dry_run：交权瞬间由摆位脚本触发，节点开始真正下发速度。"""
+        token = str(msg.data).strip().lower()
+        if token in ('1', 'true', 'enable', 'go', 'live'):
+            if self._dry_run:
+                self._dry_run = False
+                self._guard_started_at = None      # 以"接管时刻"为安全包络起点
+                self._guard_origin = None          # 围栏原点也重置到交权点（服务器侧建议）
+                self._guard_expired = False
+                self.get_logger().warn('收到 enable：解除 dry_run，开始实飞（安全包络重新计时）')
+        elif token in ('0', 'false', 'disable', 'hold'):
+            if not self._dry_run:
+                self._dry_run = True
+                self.get_logger().warn('收到 disable：回到 dry_run（只记录不执行）')
 
     def _on_map_status(self, msg: String) -> None:
         """缓存局部地图的三向净空（用于 C3 安全层；解析失败按"未知"处理）。"""
