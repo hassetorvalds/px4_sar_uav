@@ -66,6 +66,9 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('align_timeout_s', 10.0)
         self.declare_parameter('align_yaw_rate', 0.4)
         self.declare_parameter('realign_max', 3)
+        # 多点扫描（服务器侧 2026-10-13 建议 ①）：形如 "0,15;12,0;0,-15;-12,0"（东,北）
+        self.declare_parameter('scan_points', '')
+        self.declare_parameter('verify_rounds', 2)
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
         self.declare_parameter('transit_east_m', 0.0)
@@ -106,6 +109,10 @@ class ClosedLoopBase(FlightCheckBase):
         self._align_heading = None       # 目标航向（ENU）
         self._realign_count = 0
         self._lost_counter = 0
+        self._points = self._parse_points(str(self.get_parameter('scan_points').value))
+        self._point_index = 0
+        self._verify_rounds = max(int(self.get_parameter('verify_rounds').value), 1)
+        self._verify_passed = 0
         self.clearance = None
 
         self.rows = []
@@ -276,6 +283,36 @@ class ClosedLoopBase(FlightCheckBase):
     def first_phase(self) -> str:
         return 'CLIMB'
 
+    @staticmethod
+    def _parse_points(text: str):
+        """解析 "东,北;东,北" → [(east, north), ...]（空串返回 []）。"""
+        points = []
+        for chunk in (text or '').split(';'):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            try:
+                east, north = (float(v) for v in chunk.split(','))
+            except ValueError:
+                continue
+            points.append((east, north))
+        return points
+
+    def _current_point(self):
+        if self._points:
+            return self._points[min(self._point_index, len(self._points) - 1)]
+        return (self.transit_east, self.transit_north)
+
+    def _next_point(self) -> bool:
+        """切到下一个候选点；用尽返回 False（调用方应降落收工）。"""
+        self._point_index += 1
+        if self._point_index >= len(self._points):
+            return False
+        self._scan_hits = 0
+        self._verify_passed = 0
+        self._realign_count = 0
+        return True
+
     def enter(self, phase: str) -> None:
         """进入 RUN（交权）时通知提前跑着的 VLM 节点解除 dry_run。"""
         super().enter(phase)
@@ -289,7 +326,7 @@ class ClosedLoopBase(FlightCheckBase):
         if self.phase == 'CLIMB':
             if self.climb_to(self.altitude):
                 if self.pre_position:
-                    if self.transit_enabled:
+                    if self.transit_enabled or self._points:
                         self.get_logger().info(
                             f'到达 {self.altitude:.1f} m，先转场到 ENU（东 {self.transit_east:+.1f}, '
                             f'北 {self.transit_north:+.1f}），转场高度 {self.transit_altitude:.1f} m')
@@ -309,12 +346,13 @@ class ClosedLoopBase(FlightCheckBase):
 
         if self.phase in ('TRANSIT', 'DESCEND'):
             altitude = self.transit_altitude if self.phase == 'TRANSIT' else self.altitude
-            self.publish_target_enu(self.transit_east, self.transit_north, altitude)
+            target_east, target_north = self._current_point()
+            self.publish_target_enu(target_east, target_north, altitude)
             self.record_approach()
             current = self.position_enu()
             close = (current is not None
-                     and abs(current[0] - self.transit_east) < 0.5
-                     and abs(current[1] - self.transit_north) < 0.5
+                     and abs(current[0] - target_east) < 0.5
+                     and abs(current[1] - target_north) < 0.5
                      and abs(current[2] - altitude) < 0.4)
             if close:
                 if self.phase == 'TRANSIT':
@@ -432,11 +470,18 @@ class ClosedLoopBase(FlightCheckBase):
                 self._scan_hits = 0
             if self.elapsed() > self.scan_max_s:
                 self.publish_yaw_rate(0.0)
-                self.get_logger().warn(
-                    f'扫描 {self.scan_max_s:.0f} s 未找到"前方净空 ≤ {self.scan_found:.1f} m '
-                    '且一侧开阔"的方位 → 按时间预算收工降落')
-                self.send('land_fast')
-                self.finish()
+                if self._next_point():
+                    target_east, target_north = self._current_point()
+                    self.get_logger().warn(
+                        f'本点扫描 {self.scan_max_s:.0f} s 未找到可复验障碍 → 转场到下一个候选点 '
+                        f'(东 {target_east:+.0f}, 北 {target_north:+.0f})')
+                    self.enter('TRANSIT')
+                else:
+                    self.get_logger().warn(
+                        f'全部候选点扫描完毕仍未找到可复验障碍（{self.scan_max_s:.0f} s/点）'
+                        '→ 按多点预算收工降落')
+                    self.send('land_fast')
+                    self.finish()
             return
 
         if self.phase == 'VERIFY':
@@ -451,16 +496,25 @@ class ClosedLoopBase(FlightCheckBase):
                           and all(v <= self.scan_found for v in self._verify_history))
                 values = [round(v, 2) for v in self._verify_history]
                 if stable:
-                    self.get_logger().info(
-                        f'静止复验通过：净空 {values} 仍 ≤ {self.scan_found:.1f} m → 是真障碍，'
-                        '先对准再逼近')
-                    self._clearance_history = []
-                    self._align_heading = ned_yaw_to_enu_yaw(self.heading_rad)
-                    self.enter('ALIGN')
+                    self._verify_passed += 1
+                    if self._verify_passed >= self._verify_rounds:
+                        self.get_logger().info(
+                            f'静止复验通过 {self._verify_passed}/{self._verify_rounds} 轮：'
+                            f'净空 {values} 仍 ≤ {self.scan_found:.1f} m → 真障碍，先对准再逼近')
+                        self._clearance_history = []
+                        self._align_heading = ned_yaw_to_enu_yaw(self.heading_rad)
+                        self.enter('ALIGN')
+                    else:
+                        self.get_logger().info(
+                            f'静止复验第 {self._verify_passed}/{self._verify_rounds} 轮通过'
+                            f'（净空 {values}）→ 再做一轮确认（服务器侧建议的"二次通过"）')
+                        self._verify_history = []
+                        self.enter('VERIFY')
                 else:
                     self.get_logger().info(
                         f'静止复验未通过：净空 {values}（疑似自运动拖影）→ 继续扫描')
                     self._scan_hits = 0
+                    self._verify_passed = 0
                     self.enter('SCAN')
             return
 
