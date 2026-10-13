@@ -34,14 +34,19 @@ class LocalMap(Node):
         self.declare_parameter('cone_deg', 30.0)
         self.declare_parameter('cone_max_distance', 6.0)
         self.declare_parameter('cone_vertical_tolerance_m', 0.6)
-        # 近场过滤：丢掉相机看到的"自身/起飞残点"（详见 voxel_grid.filter_by_min_range）
-        self.declare_parameter('min_range_m', 0.6)
+        # 向下的竖直窗要**更紧**，否则贴地/低空时地面点会被算成"正前方障碍"
+        self.declare_parameter('cone_down_tolerance_m', 0.25)
+        # 近场过滤：丢掉相机看到的"自身/起飞残点"（详见 voxel_grid.filter_by_min_range）。
+        # **必须远低于保持阈值**（当前 0.6 m），否则会把触发"保持"所需的数据也删掉——
+        # 服务器侧 2026-10-13 指出过这个死结，故取 0.3 m。
+        self.declare_parameter('min_range_m', 0.3)
 
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._cone_deg = float(self.get_parameter('cone_deg').value)
         self._cone_max = float(self.get_parameter('cone_max_distance').value)
         self._cone_vertical = float(
             self.get_parameter('cone_vertical_tolerance_m').value)
+        self._cone_down = float(self.get_parameter('cone_down_tolerance_m').value)
         self._min_range = float(self.get_parameter('min_range_m').value)
 
         self._grid = VoxelGrid(
@@ -61,6 +66,8 @@ class LocalMap(Node):
         rate = max(float(self.get_parameter('publish_rate_hz').value), 0.2)
         self.create_timer(1.0 / rate, self._tick)
         self._frames = 0
+        self._dropped_near = 0          # 上一帧被近场过滤丢弃的点数
+        self._dropped_min_m = float('inf')  # 被丢弃点中的最小距离（诊断用）
         self.get_logger().info(
             f'局部地图启动：分辨率 {self._grid.resolution:.2f} m，'
             f'范围 ±{self._grid.extent:.1f} m，衰减 {self._grid.decay_s:.0f} s，'
@@ -84,6 +91,12 @@ class LocalMap(Node):
         if body.size == 0:
             return
         raw_count = int(body.shape[0])
+        if self._min_range > 0.0 and raw_count:
+            ranges = np.linalg.norm(body, axis=1)
+            dropped = ranges < self._min_range
+            self._dropped_near = int(np.count_nonzero(dropped))
+            self._dropped_min_m = (float(ranges[dropped].min())
+                                   if np.any(dropped) else float('inf'))
         body = filter_by_min_range(body, self._min_range)
         if body.size == 0:
             return
@@ -127,15 +140,32 @@ class LocalMap(Node):
         position_ned = state.position_ned
         if position_ned is None:
             forward = left = right = float('inf')
+            nearest_text = 'nearest_fwd=inf'      # 还没收到 PX4 位置时也要有值（否则报错）
         else:
             forward, left, right = self._grid.clearance_profile(
                 ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
                 half_angle_deg=self._cone_deg, max_distance=self._cone_max,
-                vertical_tolerance_m=self._cone_vertical)
+                vertical_tolerance_m=self._cone_vertical,
+                vertical_down_tolerance_m=self._cone_down,
+                min_distance_m=self._min_range)
+            nearest_d, nearest_delta = self._grid.nearest_point_in_cone(
+                ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
+                half_angle_deg=self._cone_deg, max_distance=self._cone_max,
+                vertical_tolerance_m=self._cone_vertical,
+                vertical_down_tolerance_m=self._cone_down,
+                min_distance_m=self._min_range)
+            if nearest_delta is None:
+                nearest_text = 'nearest_fwd=inf'
+            else:
+                nearest_text = ('nearest_fwd=(%.2f,%.2f,%.2f)@%.2fm'
+                                % (nearest_delta[0], nearest_delta[1], nearest_delta[2],
+                                   nearest_d))
         status = String()
         status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
                        f'nearest_forward_m={forward:.2f} '
-                       f'left_m={left:.2f} right_m={right:.2f}')
+                       f'left_m={left:.2f} right_m={right:.2f} '
+                       f'{nearest_text} '
+                       f'dropped_near={self._dropped_near} dropped_min_m={self._dropped_min_m:.2f}')
         self._status_pub.publish(status)
 
 

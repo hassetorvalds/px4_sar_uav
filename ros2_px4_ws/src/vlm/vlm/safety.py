@@ -38,6 +38,8 @@ class MapSafetyLimits:
     stale_forward_limit_mps: float = 0.1  # 未知时前向速度上限（fail-safe）
     slow_start_m: float = 1.2            # 从该净空开始压速
     stop_m: float = 0.6                  # 低于该净空进入"保持"
+    # 进入保持需要**连续 N 次**都低于 stop_m（时间维滤除单帧伪点，而不是按距离硬切）
+    stop_confirm_frames: int = 3
     release_m: float = 0.9               # 高于该净空才解除"保持"（迟滞）
     avoid_yaw_rate: float = 0.15         # 保持时朝较宽一侧的偏航角速度（覆盖 VLM）
     side_release_m: float = 1.2          # 所选侧也要恢复到该净空才解除（迟滞）
@@ -66,7 +68,7 @@ def parse_clearance_status(text: str):
 
 
 def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bool,
-                     limits: MapSafetyLimits, turn_deg: float = 0.0):
+                     limits: MapSafetyLimits, turn_deg: float = 0.0, stop_streak: int = 0):
     """对命令施加地图安全层。
 
     返回 ``(新命令, guard, 新 holding, 细节dict)``：
@@ -94,17 +96,21 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
             min(abs(command.forward), limits.stale_forward_limit_mps), command.forward)
         return (_with(forward=limited), 'stale', holding,
                 {'reason': 'clearance_unknown', 'age_s': None if age_s is None else round(age_s, 2),
-                 'forward_limit_mps': limits.stale_forward_limit_mps})
+                 'forward_limit_mps': limits.stale_forward_limit_mps,
+                 'stop_streak': 0})
 
     forward_c, left_c, right_c = clearance
 
-    # 迟滞：进入用 stop_m，退出要求"前向恢复到 release_m **且** 所选侧恢复到 side_release_m"
+    # 迟滞：进入用 stop_m（且需连续 confirm 帧），退出要求"前向恢复到 release_m 且所选侧 ≥ side_release_m"
     if holding:
         release = (forward_c >= limits.release_m
                    and max(left_c, right_c) >= limits.side_release_m)
         holding = not release
+        if not holding:
+            stop_streak = 0
     else:
-        holding = forward_c < limits.stop_m
+        stop_streak = stop_streak + 1 if forward_c < limits.stop_m else 0
+        holding = stop_streak >= max(int(limits.stop_confirm_frames), 1)
     if holding:
         # 障碍保持：偏航**覆盖** VLM（朝更宽一侧）
         yaw = limits.avoid_yaw_rate if left_c >= right_c else -limits.avoid_yaw_rate
@@ -120,13 +126,15 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
                  'left_m': round(left_c, 2), 'right_m': round(right_c, 2),
                  'avoid_side': side, 'yaw_rate': round(yaw, 2),
                  'side_clear_m': round(side_clear, 2), 'creep_mps': round(creep, 2),
-                 'turn_deg': round(turn_deg, 1), 'yaw_capped': capped})
+                 'turn_deg': round(turn_deg, 1), 'yaw_capped': capped,
+                 'stop_streak': stop_streak})
 
     if forward_c < limits.slow_start_m:
         span = max(limits.slow_start_m - limits.stop_m, 1e-6)
         scale = min(max((forward_c - limits.stop_m) / span, 0.0), 1.0)
         return (_with(forward=command.forward * scale), 'obstacle_slow', False,
                 {'reason': 'obstacle_slow', 'forward_m': round(forward_c, 2),
-                 'scale': round(scale, 3)})
+                 'scale': round(scale, 3), 'stop_streak': stop_streak})
 
-    return command, 'ok', False, {'forward_m': round(forward_c, 2)}
+    return command, 'ok', False, {'forward_m': round(forward_c, 2),
+                                  'stop_streak': stop_streak}

@@ -124,6 +124,9 @@ class VlmNavigator(Node):
         self.declare_parameter('obstacle_max_turn_deg', 60.0)
         self.declare_parameter('obstacle_creep_mps', 0.1)
         self.declare_parameter('obstacle_creep_open_side_m', 1.5)
+        self.declare_parameter('obstacle_stop_confirm_frames', 3)
+        # 交权后锁偏航若干秒（外部锁优先于安全层避让偏航，用于逼出"保持"状态做验证）
+        self.declare_parameter('yaw_lock_s', 0.0)
 
         self._instruction = str(self.get_parameter('instruction').value)
         self._image_file = str(self.get_parameter('image_file').value)
@@ -172,6 +175,9 @@ class VlmNavigator(Node):
             creep_mps=float(self.get_parameter('obstacle_creep_mps').value),
             creep_open_side_m=float(
                 self.get_parameter('obstacle_creep_open_side_m').value))
+        self._stop_confirm = int(
+            self.get_parameter('obstacle_stop_confirm_frames').value)
+        self._yaw_lock_s = float(self.get_parameter('yaw_lock_s').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -217,6 +223,7 @@ class VlmNavigator(Node):
         self._obstacle_warned = False
         self._last_guard_detail = {}
         self._pre_filter_command = None
+        self._stop_streak = 0            # 连续低于 stop_m 的帧数（进入保持的时间维确认）
         self._running = True
 
         if self._record:
@@ -605,7 +612,8 @@ class VlmNavigator(Node):
             self._obstacle_turn_deg = 0.0
         command, map_guard, self._map_holding, detail = apply_map_safety(
             command, self._clearance, age, self._map_holding, self._map_limits,
-            turn_deg=self._obstacle_turn_deg)
+            turn_deg=self._obstacle_turn_deg, stop_streak=self._stop_streak)
+        self._stop_streak = int(detail.get('stop_streak', 0))
         self._last_guard_detail = detail
         if map_guard == 'obstacle' and not self._obstacle_warned:
             self.get_logger().warn(
@@ -642,6 +650,14 @@ class VlmNavigator(Node):
                     '停止下发运动')
                 return _hold(), 'geofence', {'reason': 'geofence',
                                              'drift_m': round(drift, 2)}
+        # 外部锁偏航优先：用于"逼出保持状态"的验证（否则安全层的避让偏航会立刻把视野转开）
+        if self._yaw_lock_s > 0.0 and (now - self._guard_started_at) < self._yaw_lock_s:
+            if command.yaw_rate != 0.0:
+                command = BodyVelocity(command.forward, command.left, command.up,
+                                       0.0, command.duration_s)
+            detail = dict(detail)
+            detail['yaw_locked_s'] = round(self._yaw_lock_s
+                                           - (now - self._guard_started_at), 1)
         return command, map_guard, detail
 
     # ------------------------------------------------------------------

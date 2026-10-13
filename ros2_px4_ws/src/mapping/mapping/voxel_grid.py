@@ -117,19 +117,24 @@ class VoxelGrid:
     def nearest_in_cone(self, origin_enu, heading_enu: float,
                         half_angle_deg: float = 30.0,
                         max_distance: float = 6.0,
-                        vertical_tolerance_m: float = 0.6) -> float:
+                        vertical_tolerance_m: float = 0.6,
+                        vertical_down_tolerance_m: float = 0.25,
+                        min_distance_m: float = 0.0) -> float:
         """前方锥形区域内最近障碍距离；无遮挡时返回 ``inf``。
 
-        ``vertical_tolerance_m`` 限制只统计与机体**同高度薄层**内的点：
-        否则低空飞行时下方地面会一直被判为"正前方障碍"（实测 0.8 m 高度时
-        地面恒定贡献约 0.9 m 的净空读数，导致飞机无法正常前进）。
+        只统计与机体**同高度薄层**内的点，且**上宽下窄**：
+
+        - ``vertical_tolerance_m``（向上，默认 0.6 m）保留障碍在机体上方的部分；
+        - ``vertical_down_tolerance_m``（向下，默认 0.25 m）**收紧**，用于排除地面：
+          低空/贴地时光轴下方的地面点会被算成"正前方 0.5 m 障碍"
+          （2026-10-13 地面静止实测 `nearest_forward_m=0.17~0.55`，就是这个原因）。
         """
         centers = self.centers()
         if centers.shape[0] == 0:
             return float('inf')
         delta = centers - np.asarray(origin_enu, dtype=float)
         distance = np.linalg.norm(delta, axis=1)
-        keep = (distance > 1e-6) & (distance <= max_distance)
+        keep = (distance >= max(float(min_distance_m), 1e-6)) & (distance <= max_distance)
         if not np.any(keep):
             return float('inf')
         delta, distance = delta[keep], distance[keep]
@@ -140,27 +145,65 @@ class VoxelGrid:
         cos_angle = np.divide(delta[:, :2] @ forward[:2], horizontal_norm,
                               out=np.zeros_like(horizontal_norm),
                               where=horizontal_norm > 1e-6)
-        vertical_ok = np.abs(delta[:, 2]) <= float(vertical_tolerance_m)
+        vertical_ok = ((delta[:, 2] <= float(vertical_tolerance_m))
+                       & (delta[:, 2] >= -float(vertical_down_tolerance_m)))
         in_cone = (cos_angle >= cos_limit) & vertical_ok
         if not np.any(in_cone):
             return float('inf')
         return float(distance[in_cone].min())
 
+    def nearest_point_in_cone(self, origin_enu, heading_enu: float,
+                              half_angle_deg: float = 30.0,
+                              max_distance: float = 6.0,
+                              vertical_tolerance_m: float = 0.6,
+                              vertical_down_tolerance_m: float = 0.25,
+                              min_distance_m: float = 0.0):
+        """与 ``nearest_in_cone`` 同样的判据，但返回最近点本身（用于诊断"障碍在哪"）。
+
+        返回 ``(distance_m, (dx, dy, dz))``；无命中返回 ``(inf, None)``。
+        诊断价值（2026-10-13）：只看距离无法区分"正前方 0.7 m 的真墙"、
+        "机体自身近场回波"和"光轴下方的地面"，看相对坐标就一目了然。
+        """
+        centers = self.centers()
+        if centers.shape[0] == 0:
+            return float('inf'), None
+        delta = centers - np.asarray(origin_enu, dtype=float)
+        distance = np.linalg.norm(delta, axis=1)
+        keep = (distance >= max(float(min_distance_m), 1e-6)) & (distance <= max_distance)
+        if not np.any(keep):
+            return float('inf'), None
+        delta, distance = delta[keep], distance[keep]
+        cos_limit = math.cos(math.radians(half_angle_deg))
+        forward = np.array([math.cos(heading_enu), math.sin(heading_enu), 0.0])
+        horizontal_norm = np.linalg.norm(delta[:, :2], axis=1)
+        cos_angle = np.divide(delta[:, :2] @ forward[:2], horizontal_norm,
+                              out=np.zeros_like(horizontal_norm),
+                              where=horizontal_norm > 1e-6)
+        vertical_ok = ((delta[:, 2] <= float(vertical_tolerance_m))
+                       & (delta[:, 2] >= -float(vertical_down_tolerance_m)))
+        in_cone = (cos_angle >= cos_limit) & vertical_ok
+        if not np.any(in_cone):
+            return float('inf'), None
+        index = int(np.argmin(np.where(in_cone, distance, np.inf)))
+        return float(distance[index]), tuple(float(v) for v in delta[index])
+
     def clearance_profile(self, origin_enu, heading_enu: float,
                           half_angle_deg: float = 30.0,
                           max_distance: float = 6.0,
-                          vertical_tolerance_m: float = 0.6):
+                          vertical_tolerance_m: float = 0.6,
+                          vertical_down_tolerance_m: float = 0.25,
+                          min_distance_m: float = 0.0):
         """返回 (前方, 左方, 右方) 最近障碍距离；左右按航向 ±90° 锥统计。
 
         用于决定绕障往哪一侧：更宽的一侧更安全。
         """
         forward = self.nearest_in_cone(
             origin_enu, heading_enu, half_angle_deg, max_distance,
-            vertical_tolerance_m)
+            vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         left = self.nearest_in_cone(
             origin_enu, heading_enu + math.pi / 2, half_angle_deg,
-            max_distance, vertical_tolerance_m)
+            max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         right = self.nearest_in_cone(
             origin_enu, heading_enu - math.pi / 2, half_angle_deg,
-            max_distance, vertical_tolerance_m)
+            max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         return forward, left, right

@@ -41,7 +41,8 @@ def test_slow_zone_scales_final_forward_speed():
 def test_obstacle_hold_zeroes_translation_and_overrides_yaw_left():
     """左更宽且明显开阔 → 左转（yaw>0）+ 小前向绕行（不原地打转）。"""
     command, guard, holding, detail = apply_map_safety(
-        _command(yaw_rate=0.5), (0.4, 3.0, 1.0), 0.1, False, LIMITS)
+        _command(yaw_rate=0.5), (0.4, 3.0, 1.0), 0.1, False, LIMITS,
+        stop_streak=LIMITS.stop_confirm_frames - 1)
     assert guard == 'obstacle'
     assert holding is True
     assert command.left == pytest.approx(0.0)
@@ -53,14 +54,17 @@ def test_obstacle_hold_zeroes_translation_and_overrides_yaw_left():
 
 def test_obstacle_hold_zeroes_forward_when_both_sides_tight():
     """两侧都紧 → 完全归零保持（不前进）。"""
-    command, _, _, _ = apply_map_safety(_command(), (0.4, 0.5, 0.5), 0.1, False, LIMITS)
+    command, _, _, _ = apply_map_safety(
+        _command(), (0.4, 0.5, 0.5), 0.1, False, LIMITS,
+        stop_streak=LIMITS.stop_confirm_frames - 1)
     assert command.forward == pytest.approx(0.0)
 
 
 def test_turn_limit_stops_rotation_to_avoid_dead_end_circling():
     """累积转角到上限后停止继续转（服务器侧 2026-10-12 建议）。"""
     command, guard, _, detail = apply_map_safety(
-        _command(), (0.4, 3.0, 1.0), 0.1, False, LIMITS, turn_deg=61.0)
+        _command(), (0.4, 3.0, 1.0), 0.1, False, LIMITS, turn_deg=61.0,
+        stop_streak=LIMITS.stop_confirm_frames - 1)
     assert guard == 'obstacle'
     assert command.yaw_rate == pytest.approx(0.0)
     assert detail['yaw_capped'] is True
@@ -68,9 +72,30 @@ def test_turn_limit_stops_rotation_to_avoid_dead_end_circling():
 
 def test_obstacle_hold_turns_right_when_right_is_wider():
     command, _, _, detail = apply_map_safety(
-        _command(), (0.4, 1.0, 3.0), 0.1, False, LIMITS)
+        _command(), (0.4, 1.0, 3.0), 0.1, False, LIMITS,
+        stop_streak=LIMITS.stop_confirm_frames - 1)
     assert command.yaw_rate == pytest.approx(-LIMITS.avoid_yaw_rate)
     assert detail['avoid_side'] == 'right'
+
+
+def test_single_frame_dip_does_not_enter_hold():
+    """单帧近读数（伪点）不该立刻进"保持+转向"——先按慢速区把前向压到 0。
+
+    这是服务器侧 2026-10-13 的建议：用**时间维连续确认**代替"按距离硬切"。
+    """
+    command, guard, holding, detail = apply_map_safety(
+        _command(forward=0.12), (0.4, 3.0, 3.0), 0.1, False, LIMITS, stop_streak=0)
+    assert guard == 'obstacle_slow'
+    assert holding is False
+    assert command.forward == pytest.approx(0.0)      # 压速把前向压到 0
+    assert command.yaw_rate == pytest.approx(0.0)     # 但不转向
+    assert detail['stop_streak'] == 1
+
+    # 连续第 3 帧才进入保持
+    _, guard3, holding3, _ = apply_map_safety(
+        _command(forward=0.12), (0.4, 3.0, 3.0), 0.1, False, LIMITS, stop_streak=2)
+    assert guard3 == 'obstacle'
+    assert holding3 is True
 
 
 def test_hysteresis_keeps_holding_until_release_threshold():

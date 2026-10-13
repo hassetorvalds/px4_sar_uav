@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+import pytest
 
 from mapping.voxel_grid import VoxelGrid, filter_by_min_range, yaw_rotate_flu_to_enu
 
@@ -24,6 +25,44 @@ def test_min_range_filter_drops_self_returns():
 def test_min_range_filter_disabled_when_zero():
     points = np.array([[0.1, 0.0, 0.0], [2.0, 0.0, 0.0]])
     assert filter_by_min_range(points, 0.0).shape == (2, 3)
+
+
+def test_ground_points_below_drone_are_excluded():
+    """飞行高度下，机体下方 >0.25 m 的地面点不得算成"前方障碍"。
+
+    2026-10-13 实测：地面静止/低空时 nearest_forward_m 持续 0.17~0.55 m，
+    就是"光轴下方的地面"被当成障碍。竖直窗改成**下窄（0.25 m）上宽（0.6 m）**后，
+    2 m 高度飞行时地面（低 2 m）被排除，只看到同高度的真实障碍。
+    """
+    grid = VoxelGrid(resolution=0.15, extent=8.0, height_min=-2.0, height_max=6.0,
+                     decay_s=5.0)
+    origin = (0.0, 0.0, 2.0)           # 2 m 高度飞行
+    # 正前方 0.5 / 1.0 m 处的地面点（比机体低 2 m，旧的对称 ±0.6 m 窗也会排除，
+    # 但低空时会漏进来；这里锁住"下窗更窄"的语义）
+    ground = np.array([[0.5, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    # 正前方 2 m、与机体同高的真实障碍
+    wall = np.array([[2.0, 0.0, 2.0]])
+    grid.insert(np.vstack([ground, wall]), origin_enu=origin, now=0.0)
+
+    forward, _, _ = grid.clearance_profile(
+        origin, 0.0, half_angle_deg=30.0, max_distance=6.0,
+        vertical_tolerance_m=0.6, vertical_down_tolerance_m=0.25)
+    assert forward == pytest.approx(2.0, abs=0.2)     # 只看到墙，不是地面
+
+
+def test_low_altitude_ground_within_down_window_is_still_seen():
+    """诚实的边界：机体离地 <0.25 m 时，地面点仍落在下窗内，会被算作近障碍。
+
+    这是"下窗 0.25 m"的已知代价；飞行中（≥0.3 m）不受影响，起飞阶段由爬升快速越过。
+    """
+    grid = VoxelGrid(resolution=0.15, extent=8.0, height_min=-2.0, height_max=6.0,
+                     decay_s=5.0)
+    origin = (0.0, 0.0, 0.15)
+    grid.insert(np.array([[0.5, 0.0, 0.0]]), origin_enu=origin, now=0.0)
+    forward, _, _ = grid.clearance_profile(
+        origin, 0.0, half_angle_deg=30.0, max_distance=6.0,
+        vertical_tolerance_m=0.6, vertical_down_tolerance_m=0.25)
+    assert forward < 1.0
 
 
 def test_rotate_identity_when_heading_east():
