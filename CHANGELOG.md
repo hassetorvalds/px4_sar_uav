@@ -15,6 +15,66 @@
 
 ---
 
+## [2026-10-13] 落地保护解耦（独立监督层，实测触发）+ 场景②完整链路通过
+
+### 背景（服务器侧安全建议）
+
+`land_fast` 原先写在驱动脚本收尾里，**脚本一崩保护也没了**（判别脚本汇总崩溃那次就是）。
+服务器侧建议解耦，三选一或叠加：① PX4 侧 failsafe ② 独立监督进程 ③ 脚本 try/finally。
+
+### 变更
+
+- 新增 `scripts/flight_supervisor.py`（方案 ②）：订阅 `/flight_heartbeat`（驱动脚本 2 Hz 发布）
+  与 `vehicle_status`；**已解锁且心跳停 > `timeout_s`（默认 5 s）** → 下发 `land_fast`
+  （每 `repeat_s` 重复）。与驱动脚本**不同进程**，脚本崩溃/被 kill/卡死都能兜住。
+- `vlm_closed_loop.py` / `map_selfcheck.py` 增加心跳发布与**顶层异常兜底**
+  （异常时先 `land_fast` 再退出；正常收尾走 `SystemExit(0)`，不被误记为异常）。
+- 方案 ① 现状保持：offboard/手动源丢失 → **位置保持**（`COM_OBL_RC_ACT=0`，早先已验证），
+  不改成自动降落（任务里还有 F9 人工接管路径）；进程崩溃由 ② 覆盖。
+
+### 实测触发（不是纸面功能）
+
+```text
+c12 收尾：驱动脚本已退出、飞机仍在降落（尚未上锁），心跳停了 5.4 s / 8.4 s
+→ supervisor 两次下发 land_fast（logs/2026-10-13/supervisor.log 有 ERROR 记录）
+```
+
+### 场景②完整链路（c13，干净单栈）
+
+```text
+摆位      前进 ~2 s，前向净空连续 3 次 0.91 m → 停机交权
+闭环      173 帧：ok 94 | duration 74 | obstacle_slow 2 | obstacle 3
+关键      seq1–2 obstacle_slow（0.45/0.47 m，前向→0，streak 1→2）
+          seq3–5 obstacle（streak=3，avoid_side=right）；yaw_lock_s=10 按设计强制偏航 0
+          seq6 起变 inf → 释放 → 恢复前向；45 s duration → 归零悬停 → 落地并上锁
+结论      状态机链路完整：慢速区 → 三帧确认 → 保持+选侧 → 释放 → 恢复；
+          仅"保持期间转向"被我们自己的 yaw_lock 按住（下一轮置 0 即补上该序列）
+```
+
+### 待定性（已埋好取证）
+
+每次"摆位前进后交权"最初 1–2 秒会出现 0.45–0.91 m 的净空读数随后转 inf，
+而**静止偏航**实验 142 帧从未出现 → 假设是运动/俯仰变化下进入前向锥的近场回波，
+悬停后随 5 s 衰减清除。决策记录已新增 `map_status`（地图状态原文，含最近点相对坐标），
+下一轮可直接判定"相对机体还是相对世界"。
+
+### 另外
+
+- 隧道再次断开（c12 时 VLM 报 Connection refused）→ 机载看门狗按设计连续 3 次失败即
+  **停止下发运动**（日志 "连续 3 / 连续 14 次未取得有效指令"），第 ④ 条闸的真实生效记录；
+  隧道已用 `scripts/vlm_tunnel.sh` 恢复。
+- `except BaseException` → `except Exception`：避免正常 `SystemExit(0)` 被误记为异常。
+
+### 验证
+
+```text
+单元测试          ✅ vlm 36 passed
+colcon build vlm  ✅ 成功
+实飞              ✅ c13 状态机全链路；supervisor 实测触发；落地并上锁
+```
+
+---
+
 ## [2026-10-13] 近场伪点定性：干净环境下不存在；过滤改"机体原点系 + 体素中心"
 
 ### 变更（按服务器侧 2026-10-13 建议）

@@ -216,6 +216,7 @@ class VlmNavigator(Node):
         self._error_streak = 0
         self._slow_warned = False
         self._clearance = None          # (前, 左, 右) 米
+        self._clearance_raw = ''        # 地图状态原文（含最近点相对坐标）
         self._clearance_stamp = None    # 收到时刻（monotonic）
         self._map_holding = False       # 障碍保持的迟滞状态
         self._obstacle_entry_heading = None   # 进入避障时的航向（用于累积转角）
@@ -317,6 +318,7 @@ class VlmNavigator(Node):
         with self._lock:
             self._clearance = parsed
             self._clearance_stamp = time.monotonic()
+            self._clearance_raw = msg.data        # 原始状态串（含最近点坐标，便于归因）
 
     def _depth_at(self, x_norm: float, y_norm: float):
         """在归一化像素处取本机深度（小窗口中位数，抗噪）。"""
@@ -731,6 +733,7 @@ class VlmNavigator(Node):
             'guard': self._last_guard,
             'guard_detail': self._last_guard_detail,
             'clearance': self._clearance,
+            'map_status': self._clearance_raw,
             'waypoints': self._last_waypoints,
             # 过滤前 vs 过滤后（服务器侧要求：便于事后归因，也能对时间窗）
             'pre_filter': (None if self._pre_filter_command is None else {

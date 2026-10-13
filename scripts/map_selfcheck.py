@@ -57,6 +57,15 @@ class MapSelfCheck(FlightCheckBase):
         self.create_subscription(
             String, str(self.get_parameter('map_status_topic').value),
             self._on_map_status, 10)
+        self.declare_parameter('heartbeat_topic', '/flight_heartbeat')
+        self.heartbeat_pub = self.create_publisher(
+            String, str(self.get_parameter('heartbeat_topic').value), 10)
+        self.create_timer(0.5, self._beat)
+
+    def _beat(self) -> None:
+        msg = String()
+        msg.data = f'{self.phase} t={self.elapsed():.1f}'
+        self.heartbeat_pub.publish(msg)
 
     def _on_map_status(self, msg: String) -> None:
         """注意：**不能**叫 `_on_status`——基类用它订阅 VehicleStatus（今天踩过）。"""
@@ -183,6 +192,10 @@ def main() -> int:
         rclpy.spin(node)
     except KeyboardInterrupt:
         node.send('land_fast')
+    except Exception as exc:  # noqa: BLE001
+        node.get_logger().error(f'脚本异常退出（{type(exc).__name__}: {exc}），先下发 land_fast')
+        node.send('land_fast')
+        raise
     finally:
         node.destroy_node()
         if rclpy.ok():

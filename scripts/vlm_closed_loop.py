@@ -83,6 +83,11 @@ class ClosedLoopBase(FlightCheckBase):
         self.create_subscription(
             String, str(self.get_parameter('map_status_topic').value),
             self._on_map_status, 10)
+        # 心跳：独立监督进程（flight_supervisor.py）据此判断"驱动是否还活着"
+        self.declare_parameter('heartbeat_topic', '/flight_heartbeat')
+        self.heartbeat_pub = self.create_publisher(
+            String, str(self.get_parameter('heartbeat_topic').value), 10)
+        self.create_timer(0.5, self._beat)
 
     # ------------------------------------------------------------- 回调
 
@@ -96,6 +101,11 @@ class ClosedLoopBase(FlightCheckBase):
         parsed = parse_clearance_status(msg.data)
         if parsed is not None:
             self.clearance = parsed
+
+    def _beat(self) -> None:
+        msg = String()
+        msg.data = f'{self.phase} t={self.elapsed():.1f}'
+        self.heartbeat_pub.publish(msg)
 
     def _on_position(self, msg) -> None:
         super()._on_position(msg)
@@ -291,6 +301,12 @@ def main() -> int:
         rclpy.spin(node)
     except KeyboardInterrupt:
         node.send('land_fast')
+    except Exception as exc:  # noqa: BLE001
+        # 顶层兜底：脚本自己崩了也必须先落地（今天踩过——汇总崩溃时保护一起没了）。
+        # 注意只拦 Exception：正常收尾走 SystemExit(0)，不该被记成异常。
+        node.get_logger().error(f'驱动脚本异常退出（{type(exc).__name__}: {exc}），先下发 land_fast')
+        node.send('land_fast')
+        raise
     finally:
         node.destroy_node()
         if rclpy.ok():
