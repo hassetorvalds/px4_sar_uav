@@ -68,7 +68,8 @@ def parse_clearance_status(text: str):
 
 
 def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bool,
-                     limits: MapSafetyLimits, turn_deg: float = 0.0, stop_streak: int = 0):
+                     limits: MapSafetyLimits, turn_deg: float = 0.0, stop_streak: int = 0,
+                     world_consistent: bool = True):
     """对命令施加地图安全层。
 
     返回 ``(新命令, guard, 新 holding, 细节dict)``：
@@ -79,6 +80,9 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
       达到 ``max_turn_deg`` 后**停止继续转**，避免在死角里绕圈；
       较宽侧明显开阔（≥``creep_open_side_m``）时给 ``creep_mps`` 的小前向配合绕行，
       只有两侧都紧才完全归零保持。
+    - ``world_consistent``：本帧近场点在**世界系**里是否与上一帧候选点接近。
+      自运动拖影在世界系里逐帧跳变，真障碍稳定——用它把"接近但世界坐标在跳"的帧
+      排除在保持确认之外（服务器侧 2026-10-13 的建议）。
     """
     if not limits.enabled:
         return command, 'map_off', holding, {}
@@ -109,7 +113,12 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
         if not holding:
             stop_streak = 0
     else:
-        stop_streak = stop_streak + 1 if forward_c < limits.stop_m else 0
+        if forward_c < limits.stop_m and world_consistent:
+            stop_streak += 1
+        elif forward_c < limits.stop_m:
+            stop_streak = 1      # 近但在跳（疑拖影）：不累计，重新观察
+        else:
+            stop_streak = 0
         holding = stop_streak >= max(int(limits.stop_confirm_frames), 1)
     if holding:
         # 障碍保持：偏航**覆盖** VLM（朝更宽一侧）

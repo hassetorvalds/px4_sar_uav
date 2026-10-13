@@ -16,7 +16,7 @@ import time
 
 import rclpy
 from geometry_msgs.msg import Twist
-from px4_interface.frames import body_flu_to_enu, ned_yaw_to_enu_yaw
+from px4_interface.frames import body_flu_to_enu, ned_to_enu, ned_yaw_to_enu_yaw
 from px4_interface.state import Px4StateMonitor
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -125,6 +125,7 @@ class VlmNavigator(Node):
         self.declare_parameter('obstacle_creep_mps', 0.1)
         self.declare_parameter('obstacle_creep_open_side_m', 1.5)
         self.declare_parameter('obstacle_stop_confirm_frames', 3)
+        self.declare_parameter('obstacle_world_tolerance_m', 0.4)
         # 交权后锁偏航若干秒（外部锁优先于安全层避让偏航，用于逼出"保持"状态做验证）
         self.declare_parameter('yaw_lock_s', 0.0)
 
@@ -177,6 +178,8 @@ class VlmNavigator(Node):
                 self.get_parameter('obstacle_creep_open_side_m').value))
         self._stop_confirm = int(
             self.get_parameter('obstacle_stop_confirm_frames').value)
+        self._world_tolerance = float(
+            self.get_parameter('obstacle_world_tolerance_m').value)
         self._yaw_lock_s = float(self.get_parameter('yaw_lock_s').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
@@ -221,6 +224,7 @@ class VlmNavigator(Node):
         self._map_holding = False       # 障碍保持的迟滞状态
         self._obstacle_entry_heading = None   # 进入避障时的航向（用于累积转角）
         self._obstacle_turn_deg = 0.0
+        self._obstacle_world = None      # 世界系(ENU)候选障碍点（用于拖影判别）
         self._obstacle_warned = False
         self._last_guard_detail = {}
         self._pre_filter_command = None
@@ -537,6 +541,25 @@ class VlmNavigator(Node):
             meta['heading_deg'] = round(math.degrees(float(state.heading)) % 360.0, 1)
         return meta
 
+    def _nearest_world_point(self, state):
+        """把地图状态里的最近点（机体系 ENU 偏移）换算成**世界系 ENU 点**。
+
+        用于服务器侧建议的"世界系一致性"判据：自运动拖影逐帧跳，真障碍稳定。
+        拿不到（状态里没有 `nearest_fwd` 或位置无效）时返回 ``None``。
+        """
+        text = self._clearance_raw or ''
+        if 'nearest_fwd=(' not in text:
+            return None
+        if not self._monitor.position_fresh():
+            return None
+        try:
+            body = text.split('nearest_fwd=(')[1].split(')')[0]
+            dx, dy, dz = (float(value) for value in body.split(','))
+        except (IndexError, ValueError):
+            return None
+        east, north, up = ned_to_enu(state.x, state.y, state.z)
+        return (east + dx, north + dy, up + dz)
+
     def _note_error(self) -> None:
         """连续失败计数：到阈值就清空待发指令，让桥接节点回到位置保持。
 
@@ -597,6 +620,18 @@ class VlmNavigator(Node):
         now = time.monotonic()
 
         # ---- 地图安全层（C3）：fail-safe 陈旧处理 + 压速 + 障碍保持（含迟滞）----
+        # 世界系一致性：自运动拖影在世界系里逐帧跳变，真障碍稳定（服务器侧 2026-10-13 建议）
+        self._world_consistent = True
+        world_point = self._nearest_world_point(state)
+        close_to_obstacle = (self._clearance is not None
+                             and self._clearance[0] < self._map_limits.stop_m)
+        if not close_to_obstacle:
+            self._obstacle_world = None
+        elif world_point is not None:
+            if self._obstacle_world is not None:
+                jump = math.dist(world_point, self._obstacle_world)
+                self._world_consistent = jump <= self._world_tolerance
+            self._obstacle_world = world_point
         age = (now - self._clearance_stamp) if self._clearance_stamp else None
         # 累积转角：以"进入避障时的航向"为基准，到上限就停止继续转（防死角打转）
         pending_hold = bool(self._map_holding)
@@ -614,7 +649,8 @@ class VlmNavigator(Node):
             self._obstacle_turn_deg = 0.0
         command, map_guard, self._map_holding, detail = apply_map_safety(
             command, self._clearance, age, self._map_holding, self._map_limits,
-            turn_deg=self._obstacle_turn_deg, stop_streak=self._stop_streak)
+            turn_deg=self._obstacle_turn_deg, stop_streak=self._stop_streak,
+            world_consistent=self._world_consistent)
         self._stop_streak = int(detail.get('stop_streak', 0))
         self._last_guard_detail = detail
         if map_guard == 'obstacle' and not self._obstacle_warned:
@@ -713,6 +749,7 @@ class VlmNavigator(Node):
 
     def _record_decision(self, pointing, command, response: str, jpeg: bytes) -> None:
         stamp = time.strftime('%Y%m%d_%H%M%S') + f'_{int(time.time() * 1000) % 1000:03d}'
+        state = self._monitor.snapshot()      # 速度/俯仰用于"伪点是否与运动相关"的分析
         record = {
             'timestamp': stamp,
             'frame_seq': self._frame_seq,
@@ -734,6 +771,11 @@ class VlmNavigator(Node):
             'guard_detail': self._last_guard_detail,
             'clearance': self._clearance,
             'map_status': self._clearance_raw,
+            'obstacle_world': self._obstacle_world,
+            'world_consistent': self._world_consistent,
+            'px4_velocity': {'vx': state.vx, 'vy': state.vy, 'vz': state.vz},
+            'pitch_deg': (round(math.degrees(state.pitch), 2)
+                          if math.isfinite(state.pitch) else None),
             'waypoints': self._last_waypoints,
             # 过滤前 vs 过滤后（服务器侧要求：便于事后归因，也能对时间窗）
             'pre_filter': (None if self._pre_filter_command is None else {

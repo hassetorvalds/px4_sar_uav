@@ -98,6 +98,26 @@ def test_single_frame_dip_does_not_enter_hold():
     assert holding3 is True
 
 
+def test_world_inconsistent_reading_does_not_accumulate_streak():
+    """世界系里逐帧跳变的近场点（自运动拖影）不该累积成"保持"。
+
+    服务器侧 2026-10-13 建议：真障碍在世界系稳定，拖影会跳——用世界系一致性做判据。
+    """
+    _, guard, holding, detail = apply_map_safety(
+        _command(forward=0.12), (0.4, 3.0, 3.0), 0.1, False, LIMITS,
+        stop_streak=2, world_consistent=False)
+    assert holding is False
+    assert guard == 'obstacle_slow'
+    assert detail['stop_streak'] == 1        # 不累计
+
+    _, guard2, holding2, detail2 = apply_map_safety(
+        _command(forward=0.12), (0.4, 3.0, 3.0), 0.1, False, LIMITS,
+        stop_streak=2, world_consistent=True)
+    assert holding2 is True
+    assert guard2 == 'obstacle'
+    assert detail2['stop_streak'] == 3
+
+
 def test_hysteresis_keeps_holding_until_release_threshold():
     # 已保持中：前向 0.8 m < 0.9 m → 继续保持
     _, guard, holding, _ = apply_map_safety(

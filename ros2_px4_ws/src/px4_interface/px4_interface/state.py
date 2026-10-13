@@ -4,10 +4,12 @@
 它负责订阅、时间戳与超时判定，调用方只读快照，避免每个模块重复写一遍订阅代码。
 """
 
+import math
 import time
 from dataclasses import dataclass
 
 from px4_msgs.msg import (
+    VehicleAttitude,
     VehicleLandDetected,
     VehicleLocalPosition,
     VehicleStatus,
@@ -29,6 +31,10 @@ class Px4State:
     y: float = float('nan')
     z: float = float('nan')
     heading: float = float('nan')
+    vx: float = float('nan')          # NED 速度（m/s），用于分析"伪点是否与运动相关"
+    vy: float = float('nan')
+    vz: float = float('nan')
+    pitch: float = float('nan')       # 俯仰角（rad），同上
     xy_valid: bool = False
     z_valid: bool = False
     landed: bool = False
@@ -71,6 +77,8 @@ class Px4StateMonitor:
         node.create_subscription(
             VehicleLandDetected, '/fmu/out/vehicle_land_detected',
             self._on_land_detected, qos)
+        node.create_subscription(
+            VehicleAttitude, '/fmu/out/vehicle_attitude', self._on_attitude, qos)
 
     # ------------------------------------------------------------------
     # 订阅回调
@@ -90,6 +98,9 @@ class Px4StateMonitor:
         s.x = msg.x
         s.y = msg.y
         s.z = msg.z
+        s.vx = msg.vx
+        s.vy = msg.vy
+        s.vz = msg.vz
         s.heading = msg.heading
         s.xy_valid = msg.xy_valid
         s.z_valid = msg.z_valid
@@ -97,6 +108,13 @@ class Px4StateMonitor:
 
     def _on_land_detected(self, msg: VehicleLandDetected) -> None:
         self._state.landed = msg.landed
+
+    def _on_attitude(self, msg: VehicleAttitude) -> None:
+        """只取俯仰角（用于分析"近场伪点是否与俯仰回正相关"）。"""
+        q = msg.q                     # [w, x, y, z]
+        w, x, y, z = float(q[0]), float(q[1]), float(q[2]), float(q[3])
+        sin_pitch = 2.0 * (w * y - z * x)
+        self._state.pitch = math.asin(max(-1.0, min(1.0, sin_pitch)))
 
     # ------------------------------------------------------------------
     # 查询接口
