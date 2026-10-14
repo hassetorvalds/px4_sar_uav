@@ -40,6 +40,22 @@ QOS = QoSProfile(
 sys.stdout.reconfigure(line_buffering=True)
 
 
+def parse_phase_budgets(text: str) -> dict:
+    """解析 "ALIGN:15|SEEK:45" → {"ALIGN": 15.0, "SEEK": 45.0}（纯函数，便于单测）。"""
+    budgets = {}
+    for chunk in (text or '').split('|'):
+        chunk = chunk.strip()
+        if not chunk or ':' not in chunk:
+            continue
+        name, _, value = chunk.partition(':')
+        name = name.strip().upper()
+        try:
+            budgets[name] = float(value)
+        except ValueError:
+            continue
+    return budgets
+
+
 class FlightSupervisor(Node):
     def __init__(self) -> None:
         super().__init__('flight_supervisor')
@@ -56,11 +72,19 @@ class FlightSupervisor(Node):
         # 背景（2026-10-14）：驱动因缩进 bug 卡在 ALIGN 658 s，但心跳一直在发 →
         # "心跳停"判据兜不住；阶段不再变化才是那种情形的信号。
         self.declare_parameter('phase_stuck_s', 180.0)
+        # 按阶段给"卡死预算"（服务器侧 2026-10-14 建议）：统一 180 s 对 ALIGN 太松、
+        # 对长扫描又可能偏紧。格式 "PHASE:秒|PHASE:秒"，未列出的阶段用 phase_stuck_s。
+        self.declare_parameter(
+            'phase_budgets',
+            'CLIMB:30|SEEK:45|TRANSIT:90|DESCEND:30|SCAN:35|VERIFY:15'
+            '|ALIGN:15|APPROACH:45|RUN:150')
 
         self.timeout_s = float(self.get_parameter('timeout_s').value)
         self.repeat_s = float(self.get_parameter('repeat_s').value)
         self.arm_grace_s = float(self.get_parameter('arm_grace_s').value)
         self.phase_stuck_s = float(self.get_parameter('phase_stuck_s').value)
+        self.phase_budgets = parse_phase_budgets(
+            str(self.get_parameter('phase_budgets').value))
         self.current_phase = None
         self.phase_since = None
         self.last_heartbeat = None
@@ -103,10 +127,10 @@ class FlightSupervisor(Node):
         if now - self.armed_since < self.arm_grace_s:
             return                      # 宽限期内不判（避免拿旧心跳时间误触发）
         # 卡阶段兜底
-        if (self.phase_since is not None
-                and now - self.phase_since > self.phase_stuck_s):
+        budget = self.phase_budgets.get(self.current_phase, self.phase_stuck_s)
+        if (self.phase_since is not None and now - self.phase_since > budget):
             self._send_land('阶段 {0} 已持续 {1:.0f} s（> {2:.0f} s）'.format(
-                self.current_phase, now - self.phase_since, self.phase_stuck_s))
+                self.current_phase, now - self.phase_since, budget))
             return
         # 宽限期结束时若还没有任何心跳，就从"本进程启动"算起，而不是沿用上一轮的旧时间
         baseline = self.last_heartbeat if self.last_heartbeat is not None \
