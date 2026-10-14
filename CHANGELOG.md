@@ -15,6 +15,40 @@
 
 ---
 
+## [2026-10-14] 新增速度指令仲裁（②）：`local_planner` 与 `vlm_navigator` 不再抢同一话题
+
+### 新增
+
+- `px4_interface` 新增 **速度仲裁节点** `velocity_arbiter`（`px4_interface/velocity_arbiter.py`，
+  入口 `ros2 run px4_interface velocity_arbiter`）。背景：`local_planner`（几何避障）与
+  `vlm_navigator`（语义导航）**都**发布 `/offboard_bridge/velocity_setpoint`，同时运行会互相覆盖。
+  - 规则：每个来源有独立新鲜度超时（默认 `avoid=0.5 s`、`vlm=1.0 s`）；在**未过期**的来源里按
+    `priority`（默认 **`avoid,vlm`**，即几何避障优先）取第一个转发；**全部过期则不发布**，
+    交由 `offboard_bridge` 的速度超时保持位置（保守，不把过期指令当新指令）。
+  - 纯函数 `select_command()` 与 ROS 节点分离，便于单测。
+  - 只有一路来源在发时，行为与"直连"等价（透传）。
+- `bringup/sim_stack.launch.py`：新增 `with_arbiter`（默认 `true`）并接入仲裁器——
+  `local_planner`/`vlm_navigator` 的 `velocity_topic` 经 `PythonExpression` 解析为
+  仲裁器输入（`/velocity_arbiter/{avoid,vlm}_cmd`）；`with_arbiter:=false` 时回到直连旧行为。
+
+### 验证
+
+- 单元测试：`ros2_px4_ws/src/px4_interface/test/test_velocity_arbiter.py`（8 个用例，含优先级、
+  逐级回落、全部过期、超时边界、超时覆盖）→ **colcon test：20 tests, 0 failures**。
+- 运行时冒烟（无硬件）：起仲裁节点 + 两路 `ros2 topic pub`，节点日志实测
+  `速度控制权 → avoid` → （停掉 avoid）`→ vlm` → （全部停）`所有速度来源均已过期 → 停止发布`。
+- 启动栈：`ros2 launch bringup sim_stack.launch.py --show-args` 通过；`with_arbiter` 取值
+  `true/false` 时 `local_planner.velocity_topic` 分别解析为 `/velocity_arbiter/avoid_cmd`
+  与 `/offboard_bridge/velocity_setpoint`（已用 `PythonExpression.perform` 实测）。
+
+### 已知问题
+
+- **未实飞验证**：仲裁节点尚未在带 AirSim/PX4 的完整链路上飞过；沙箱内 DDS 组网受限，
+  仅验证到"节点启动 + 逻辑正确"。带硬件联调时需确认 `local_planner` 与 `vlm_navigator` 同时
+  运行时只有一个来源在输出。
+
+---
+
 ## [2026-10-14] 修复后批次 t6–t10 统计；保持超时"脱困"行为（`hold_max_s`/`escape_back_mps`）
 
 ### 新增

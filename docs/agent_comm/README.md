@@ -174,8 +174,10 @@ Step C（闭环飞行）      ✅ C1 只偏航：航向 −102.8°（方向正�
                            （≈90 s）到窗口结束**（0 帧恢复，0/1 FAIL）
                         ✅ 已实现（**待飞验证**）：`hold_max_s`（默认 20 s）+ `escape_back_mps`（0.10 m/s）——
                            保持超时则**慢速后退 + 朝宽侧偏航**脱困（guard=`obstacle_escape`）
+                        ✅ ② 速度指令仲裁已实现（`velocity_arbiter`：优先级 avoid>vlm、逐级回落、全部过期不发；
+                           单测 20 passed + 运行时冒烟通过；`sim_stack.launch.py` `with_arbiter` 接入）——**未实飞**
                         ⏳ 飞验 `obstacle_escape` → 待服务器侧定"寻障排序/成功率口径" → ③ 按口径连跑统计
-                           → ② VLM 与 local_planner 速度话题仲裁（两者都写同一 velocity_setpoint，同跑会抢）
+                           → 带硬件联调仲裁（确认两回路同跑时只有一个来源在输出）
 ```
 
 ## 服务器侧提供的版本标识（归档）

@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'offboard_bridge = px4_interface.offboard_bridge:main',
+            'velocity_arbiter = px4_interface.velocity_arbiter:main',
         ],
     },
 )
