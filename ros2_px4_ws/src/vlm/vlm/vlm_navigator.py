@@ -241,6 +241,7 @@ class VlmNavigator(Node):
         self._obstacle_entry_heading = None   # 进入避障时的航向（用于累积转角）
         self._obstacle_turn_deg = 0.0
         self._obstacle_world = None      # 世界系(ENU)候选障碍点（用于拖影判别）
+        self._world_consistent = True    # 必须是实例属性：未解锁/慢响应路径也会读它（今天踩过）
         self._obstacle_warned = False
         self._last_guard_detail = {}
         self._pre_filter_command = None

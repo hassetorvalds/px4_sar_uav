@@ -69,6 +69,9 @@ class ClosedLoopBase(FlightCheckBase):
         # 多点扫描（服务器侧 2026-10-13 建议 ①）：形如 "0,15;12,0;0,-15;-12,0"（东,北）
         self.declare_parameter('scan_points', '')
         self.declare_parameter('verify_rounds', 2)
+        # 可闭合门限（服务器侧 2026-10-13 补充）：对准后、逼近前要求至少一侧 ≥ 该余量，
+        # 否则即使障碍可复现也只会"保持不闭合"（大片墙面），应换下一个 scan_point
+        self.declare_parameter('closable_side_m', 2.5)
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
         self.declare_parameter('transit_east_m', 0.0)
@@ -113,6 +116,7 @@ class ClosedLoopBase(FlightCheckBase):
         self._point_index = 0
         self._verify_rounds = max(int(self.get_parameter('verify_rounds').value), 1)
         self._verify_passed = 0
+        self._closable_side = float(self.get_parameter('closable_side_m').value)
         self.clearance = None
 
         self.rows = []
@@ -285,12 +289,20 @@ class ClosedLoopBase(FlightCheckBase):
 
     @staticmethod
     def _parse_points(text: str):
-        """解析 "东,北;东,北" → [(east, north), ...]（空串返回 []）。"""
+        """解析多点字符串 → [(east, north), ...]。
+
+        分隔符支持 `;`、`|` 或空白（ROS 参数里 `;` 可能被 shell/CLI 吃掉，
+        2026-10-14 实测 `"0,15;12,0"` 传进来变成空 → 这里多支持几种写法，
+        文档/命令统一用 `|`）。
+        """
         points = []
-        for chunk in (text or '').split(';'):
+        normalized = (text or '').replace(';', '|').replace(',,', ',')
+        for chunk in normalized.replace('\n', '|').split('|'):
             chunk = chunk.strip()
             if not chunk:
                 continue
+            if ',' not in chunk and ' ' in chunk:
+                chunk = ','.join(chunk.split())
             try:
                 east, north = (float(v) for v in chunk.split(','))
             except ValueError:
@@ -327,6 +339,9 @@ class ClosedLoopBase(FlightCheckBase):
             if self.climb_to(self.altitude):
                 if self.pre_position:
                     if self.transit_enabled or self._points:
+                        self.get_logger().info(
+                            f'多点扫描配置：{len(self._points)} 个候选点 {self._points}'
+                            if self._points else '转场配置：无候选点列表（用 transit_east/north）')
                         self.get_logger().info(
                             f'到达 {self.altitude:.1f} m，先转场到 ENU（东 {self.transit_east:+.1f}, '
                             f'北 {self.transit_north:+.1f}），转场高度 {self.transit_altitude:.1f} m')
@@ -381,8 +396,26 @@ class ClosedLoopBase(FlightCheckBase):
             tolerance = math.radians(float(self.get_parameter('align_tolerance_deg').value))
             if abs(error) <= tolerance:
                 self.publish_yaw_rate(0.0)
+                side_max = (max(self.clearance[1], self.clearance[2])
+                            if self.clearance else None)
+                if side_max is not None and side_max < self._closable_side:
+                    self.get_logger().warn(
+                        f'对准完成（误差 {math.degrees(error):+.1f}°）但两侧都紧'
+                        f'（左 {self.clearance[1]:.2f} / 右 {self.clearance[2]:.2f}，'
+                        f'< {self._closable_side:.1f} m）→ 绕行无法闭合，换下一个候选点')
+                    if self._next_point():
+                        target_east, target_north = self._current_point()
+                        self.get_logger().info(
+                            f'转场到下一个候选点（东 {target_east:+.0f}, 北 {target_north:+.0f}）')
+                        self.enter('TRANSIT')
+                    else:
+                        self.get_logger().warn('候选点用尽 → 收工降落')
+                        self.send('land_fast')
+                        self.finish()
+                    return
                 self.get_logger().info(
-                    f'对准完成（误差 {math.degrees(error):+.1f}°）→ 开始以 '
+                    f'对准完成（误差 {math.degrees(error):+.1f}°，宽侧净空 '
+                    f'{side_max if side_max is None else round(side_max, 2)} m）→ 开始以 '
                     f'{self.pre_speed:.2f} m/s 逼近')
                 self.enter('APPROACH')
                 return
