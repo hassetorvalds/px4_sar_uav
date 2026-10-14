@@ -114,7 +114,7 @@ def parse_clearance_status(text: str):
 
 def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bool,
                      limits: MapSafetyLimits, turn_deg: float = 0.0, stop_streak: int = 0,
-                     world_consistent: bool = True):
+                     world_consistent: bool = True, defer: bool = False):
     """对命令施加地图安全层。
 
     返回 ``(新命令, guard, 新 holding, 细节dict)``：
@@ -128,6 +128,9 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
     - ``world_consistent``：本帧近场点在**世界系**里是否与上一帧候选点接近。
       自运动拖影在世界系里逐帧跳变，真障碍稳定——用它把"接近但世界坐标在跳"的帧
       排除在保持确认之外（服务器侧 2026-10-13 的建议）。
+    - ``defer``：**位姿质量不足**（位置陈旧 / 角速度过大）时置位——此时世界系判据不可靠，
+      因此**暂缓判定**：既不当真障碍，也不判拖影（服务器侧 2026-10-14）。已在保持就维持保持，
+      否则只压速、既不累计也不清零 ``stop_streak``，等位姿恢复后再判。
     """
     if not limits.enabled:
         return command, 'map_off', holding, {}
@@ -149,6 +152,23 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
                  'stop_streak': 0})
 
     forward_c, left_c, right_c = clearance
+
+    if defer:
+        # 位姿质量不足 → 暂缓判定（不采信"真障碍"，也不采信"拖影"）
+        if holding:
+            yaw = limits.avoid_yaw_rate if left_c >= right_c else -limits.avoid_yaw_rate
+            side = 'left' if left_c >= right_c else 'right'
+            capped = abs(turn_deg) >= limits.max_turn_deg
+            return (_with(forward=0.0, left=0.0, yaw_rate=0.0 if capped else yaw),
+                    'obstacle', True,
+                    {'reason': 'pose_defer_hold', 'pose_defer': True, 'avoid_side': side,
+                     'forward_m': round(forward_c, 2), 'left_m': round(left_c, 2),
+                     'right_m': round(right_c, 2), 'stop_streak': stop_streak})
+        limited = math.copysign(
+            min(abs(command.forward), limits.stale_forward_limit_mps), command.forward)
+        return (_with(forward=limited), 'stale', holding,
+                {'reason': 'pose_defer', 'pose_defer': True, 'forward_m': round(forward_c, 2),
+                 'stop_streak': stop_streak})
 
     # 迟滞：进入用 stop_m（且需连续 confirm 帧），退出要求"前向恢复到 release_m 且所选侧 ≥ side_release_m"
     if holding:

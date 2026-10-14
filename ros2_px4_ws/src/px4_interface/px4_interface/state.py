@@ -136,3 +136,13 @@ class Px4StateMonitor:
         if self._last_position_monotonic == 0.0:
             return False
         return (time.monotonic() - self._last_position_monotonic) <= self._status_timeout_s
+
+    def position_age_s(self) -> float:
+        """距离最近一次收到 vehicle_local_position 的秒数；从未收到时返回 inf。
+
+        2026-10-14 加：世界系一致性判据需要"位姿质量门"——位置陈旧时反投影到世界系的
+        点会抖，不能据此判"拖影"（服务器侧：那可能是位姿问题而非真拖影）。
+        """
+        if self._last_position_monotonic == 0.0:
+            return float('inf')
+        return time.monotonic() - self._last_position_monotonic

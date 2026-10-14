@@ -66,6 +66,8 @@ python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:
     -p scan_side_open_m:=1.5 -p scan_max_s:=25.0 -p verify_s:=2.5 -p verify_rounds:=2 \
     -p align_tolerance_deg:=8.0 -p align_timeout_s:=10.0 -p align_yaw_rate:=0.4 -p realign_max:=3 \
     -p closable_side_m:=2.5 \
+    -p rot_verify:=true -p rot_deg:=15.0 -p rot_rate_deg_s:=12.0 -p rot_settle_s:=2.5 \
+    -p rot_tol_m:=1.0 -p rot_dist_tol_m:=1.0 -p rot_pose_age_max_s:=0.5 \
     -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=1.0 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
     -p output_csv:="${log_dir}/${label}_${sid}_detour.csv" \
     > "${log_dir}/${label}_${sid}_driver.log" 2>&1

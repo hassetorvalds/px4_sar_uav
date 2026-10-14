@@ -23,6 +23,7 @@ import csv
 import json
 import math
 import os
+import re
 import sys
 import time
 
@@ -34,6 +35,9 @@ from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from vlm.safety import parse_clearance_status
+
+# local_map 的状态串里"前向锥内最近点"的 ENU 相对坐标（微转复验用）
+_NEAREST_RE = re.compile(r'nearest_fwd=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\)@([0-9.]+)m')
 
 # 日志行缓冲：外部脚本常靠 grep 日志来判断阶段（例如"等进入 RUN 再开始注入"），
 # 块缓冲会让判断滞后甚至永远不命中（2026-10-12 踩到两次）。
@@ -109,6 +113,18 @@ class ClosedLoopBase(FlightCheckBase):
         # 交权瞬间通知 VLM 节点解除 dry_run（节点提前以 dry_run 跑，消除 ~30 s 启动时间差）
         self.declare_parameter('vlm_enable_topic', '/vlm_navigator/enable')
         self.declare_parameter('map_status_topic', '/local_map/status')
+        # 交权前的 ±微转复验（服务器侧 2026-10-14 选 B）：
+        # 真结构在世界系固定——纯偏航左右各转一点，它的**世界坐标与距离都不变**；
+        # 自运动拖影会随姿态改变/消失。比"原地静止再看一次"更本质，且顺带把
+        # "转场到位后结构不在前向锥里"的情形扫进锥内。
+        self.declare_parameter('rot_verify', True)
+        self.declare_parameter('rot_deg', 15.0)          # 左右各转多少度
+        self.declare_parameter('rot_rate_deg_s', 12.0)   # 微转速度（慢，避免位姿滞后）
+        self.declare_parameter('rot_settle_s', 2.5)      # 每个姿态静置多久再采样（等地图刷新）
+        self.declare_parameter('rot_timeout_s', 15.0)    # 单次转向的时间上限
+        self.declare_parameter('rot_tol_m', 1.0)         # 世界系位置一致性容差
+        self.declare_parameter('rot_dist_tol_m', 1.0)    # 距离一致性容差
+        self.declare_parameter('rot_pose_age_max_s', 0.5)  # 位姿质量门：位置太旧就不判定
 
         self.altitude = float(self.get_parameter('start_altitude_m').value)
         self.run_s = float(self.get_parameter('run_s').value)
@@ -146,6 +162,22 @@ class ClosedLoopBase(FlightCheckBase):
         self._point_index = 0
         self._verify_rounds = max(int(self.get_parameter('verify_rounds').value), 1)
         self._verify_passed = 0
+        self.rot_verify = bool(self.get_parameter('rot_verify').value)
+        self._rot_deg = float(self.get_parameter('rot_deg').value)
+        self._rot_rate = math.radians(float(self.get_parameter('rot_rate_deg_s').value))
+        self._rot_settle = float(self.get_parameter('rot_settle_s').value)
+        self._rot_timeout = float(self.get_parameter('rot_timeout_s').value)
+        self._rot_tol = float(self.get_parameter('rot_tol_m').value)
+        self._rot_dist_tol = float(self.get_parameter('rot_dist_tol_m').value)
+        self._rot_pose_age_max = float(self.get_parameter('rot_pose_age_max_s').value)
+        self._rot_step = 0            # 0 静置采 A → 1 转 +deg → 2 静置采 B → 3 转 -deg → 4 静置采 C → 5 判定
+        self._rot_anchor_deg = 0.0
+        self._rot_samples = []        # [{'heading_deg','world','dist','pose_age_s','fwd_m'}]
+        self._rot_step_started = 0.0
+        self._position_at = 0.0       # 位置最近一次更新的时刻（位姿质量门/落盘）
+        self.nearest_delta = None     # 本机地图"前向锥内最近点"的 ENU 相对坐标
+        self.nearest_dist = float('inf')
+        self.nearest_at = 0.0
         self._closable_side = float(self.get_parameter('closable_side_m').value)
         self._approach_confirmed = False     # 是否真的逼近到停止阈值（否则不交权）
         self.seek_enabled = bool(self.get_parameter('seek_enabled').value)
@@ -204,6 +236,18 @@ class ClosedLoopBase(FlightCheckBase):
         parsed = parse_clearance_status(msg.data)
         if parsed is not None:
             self.clearance = parsed
+        # 前向锥内最近点的**ENU 相对坐标**（local_map 的 nearest_fwd=(dx,dy,dz)@d）：
+        # 微转复验靠它算"世界系里的障碍点"是否稳定（服务器侧 2026-10-14 B）。
+        match = _NEAREST_RE.search(msg.data or '')
+        if match:
+            self.nearest_delta = (float(match.group(1)), float(match.group(2)),
+                                  float(match.group(3)))
+            self.nearest_dist = float(match.group(4))
+            self.nearest_at = time.monotonic()
+        elif 'nearest_fwd=inf' in (msg.data or ''):
+            self.nearest_delta = None
+            self.nearest_dist = float('inf')
+            self.nearest_at = time.monotonic()
 
     def _on_depth_image(self, msg: Image) -> None:
         """SEEK 阶段用：**几何去地面**后取最近结构点的方位与距离。
@@ -264,6 +308,7 @@ class ClosedLoopBase(FlightCheckBase):
         if getattr(msg, 'xy_valid', True):
             self.px4_x = float(msg.x)
             self.px4_y = float(msg.y)
+            self._position_at = time.monotonic()
         heading = getattr(msg, 'heading', None)
         if heading is None or math.isnan(heading):
             return
@@ -383,6 +428,40 @@ class ClosedLoopBase(FlightCheckBase):
             return None
         return ned_to_enu(self.px4_x, self.px4_y, self.px4_z)
 
+    # ------------------------------------------------ 微转复验（服务器侧 B）
+
+    @property
+    def heading_enu_unwrapped_deg(self) -> float:
+        """ENU 约定下的解卷绕航向（度）。
+
+        ``publish_yaw_rate`` 用的是 ENU 角速度（正 = 逆时针/左），而
+        ``_heading_unwrapped_deg`` 累积的是 **NED** 航向；ENU = 偏移 − NED，
+        故取负即可（常数偏移在"两次采样之差"里抵消）。
+        """
+        return -self._heading_unwrapped_deg
+
+    def _rot_sample(self, label: str) -> dict:
+        """采一帧"世界系障碍点 + 距离 + 位姿质量"（微转复验用）。"""
+        position = self.position_enu()
+        world = None
+        if position is not None and self.nearest_delta is not None:
+            world = (position[0] + self.nearest_delta[0],
+                     position[1] + self.nearest_delta[1],
+                     position[2] + self.nearest_delta[2])
+        pose_age = (time.monotonic() - self._position_at) if self._position_at else None
+        return {
+            'label': label,
+            'heading_deg': self.heading_enu_unwrapped_deg,
+            'world': world,
+            'dist': self.nearest_dist,
+            'pose_age_s': None if pose_age is None else round(pose_age, 2),
+            'fwd_m': None if not self.clearance else round(self.clearance[0], 2),
+        }
+
+    @staticmethod
+    def _fmt_world(world) -> str:
+        return '无' if world is None else f'({world[0]:+.1f},{world[1]:+.1f},{world[2]:+.1f})'
+
     # ------------------------------------------------------------- 阶段机
 
     def first_phase(self) -> str:
@@ -424,6 +503,8 @@ class ClosedLoopBase(FlightCheckBase):
         self._scan_hits = 0
         self._verify_passed = 0
         self._realign_count = 0
+        self._rot_step = 0
+        self._rot_samples = []
         return True
 
     def enter(self, phase: str) -> None:
@@ -708,6 +789,19 @@ class ClosedLoopBase(FlightCheckBase):
                 self._scan_best = forward_clear
                 if sides_open and self._scan_hits >= self.pre_stable:
                     self.publish_yaw_rate(0.0)
+                    if self.rot_verify:
+                        self.get_logger().info(
+                            f'扫描发现候选障碍（前向 {forward_clear:.2f} m，'
+                            f'左 {self.clearance[1]:.2f} / 右 {self.clearance[2]:.2f}）'
+                            f'→ 停转，做**交权前 ±{self._rot_deg:.0f}° 微转复验**'
+                            f'（真结构在世界系固定；拖影会随姿态改变，服务器侧 2026-10-14 选 B）')
+                        self._rot_step = 0
+                        self._rot_samples = []
+                        self._rot_step_started = time.monotonic()
+                        self._align_heading = (None if math.isnan(self.heading_rad)
+                                               else ned_yaw_to_enu_yaw(self.heading_rad))
+                        self.enter('ROTVERIFY')
+                        return
                     self.get_logger().info(
                         f'扫描发现可用障碍：前向净空连续 {self._scan_hits} 次 ≤ '
                         f'{self.scan_found:.1f} m（最近 {forward_clear:.2f} m），'
@@ -738,6 +832,93 @@ class ClosedLoopBase(FlightCheckBase):
                         '→ 按多点预算收工降落')
                     self.send('land_fast')
                     self.finish()
+            return
+
+        if self.phase == 'ROTVERIFY':
+            # 交权前 ±rot_deg 微转复验（服务器侧 2026-10-14 选 B）：
+            # 真结构在世界系固定 → 左右两个姿态下"世界坐标 + 距离"都近似不变；
+            # 自运动拖影会随姿态改变或消失。它同时把"转场到位后结构不在前向锥里"
+            # 的情形扫进锥内（顺带修 Form A）。
+            self.record_approach()
+            step_elapsed = time.monotonic() - self._rot_step_started
+
+            if self._rot_step in (0, 2, 4):
+                # 静置：等地图刷新、姿态稳定后再采样（也是"位姿质量门"的等待期）
+                self.publish_yaw_rate(0.0)
+                if step_elapsed < self._rot_settle:
+                    return
+                label = {0: 'A', 2: 'B', 4: 'C'}[self._rot_step]
+                pose_age = (time.monotonic() - self._position_at
+                            if self._position_at else None)
+                if pose_age is not None and pose_age > self._rot_pose_age_max:
+                    # 位姿不新鲜：**暂缓判定**（既不当真障碍也不判拖影），等它恢复
+                    if step_elapsed > self._rot_timeout:
+                        self.get_logger().warn(
+                            f'微转复验：位姿 {pose_age:.2f} s 未更新（> '
+                            f'{self._rot_pose_age_max:.2f} s）→ 本轮不判定，回到扫描')
+                        self.enter('SCAN')
+                    else:
+                        self.get_logger().warn(
+                            f'微转复验：位姿陈旧（{pose_age:.2f} s）→ 暂缓判定，等待位姿恢复',
+                            throttle_duration_sec=2.0)
+                    return
+                sample = self._rot_sample(label)
+                self._rot_samples = [s for s in self._rot_samples if s['label'] != label]
+                self._rot_samples.append(sample)
+                if label == 'A':
+                    # 以"候选姿态"为 ±微转的锚点（此时仍是扫描确认障碍时的航向）
+                    self._rot_anchor_deg = self.heading_enu_unwrapped_deg
+                self.get_logger().info(
+                    f'  微转复验采样 {label}：航向 {sample["heading_deg"]:+.1f}°，'
+                    f'世界点 {self._fmt_world(sample["world"])}，距离 '
+                    f'{sample["dist"]:.2f} m，位姿年龄 {sample["pose_age_s"]} s')
+                self._rot_step += 1
+                self._rot_step_started = time.monotonic()
+                return
+
+            if self._rot_step in (1, 3):
+                # 转向目标：先 +rot_deg（步骤 1），再回到 -rot_deg（步骤 3）
+                target = self._rot_anchor_deg + (
+                    self._rot_deg if self._rot_step == 1 else -self._rot_deg)
+                error = target - self.heading_enu_unwrapped_deg
+                if abs(error) > 2.0:
+                    if step_elapsed > self._rot_timeout:
+                        self.get_logger().warn(
+                            f'微转复验：转向超时（误差 {error:+.1f}°）→ 本轮不判定，回到扫描')
+                        self.enter('SCAN')
+                        return
+                    self.publish_yaw_rate(self._rot_rate if error > 0 else -self._rot_rate)
+                    return
+                self.publish_yaw_rate(0.0)
+                self._rot_step += 1
+                self._rot_step_started = time.monotonic()
+                return
+
+            # 步骤 5：判定
+            samples = {s['label']: s for s in self._rot_samples}
+            b, c = samples.get('B'), samples.get('C')
+            if b is None or c is None or b['world'] is None or c['world'] is None:
+                self.get_logger().info(
+                    '微转复验不通过：±两侧至少一侧看不到前向锥内障碍 → 继续扫描')
+                self._scan_hits = 0
+                self.enter('SCAN')
+                return
+            world_gap = math.dist(b['world'], c['world'])
+            dist_gap = abs(b['dist'] - c['dist'])
+            if world_gap <= self._rot_tol and dist_gap <= self._rot_dist_tol:
+                self.get_logger().info(
+                    f'微转复验通过：±{self._rot_deg:.0f}° 两姿态下世界点偏差 '
+                    f'{world_gap:.2f} m、距离差 {dist_gap:.2f} m '
+                    f'（≤ {self._rot_tol:.1f} / {self._rot_dist_tol:.1f} m）→ 真结构，先对准再逼近')
+                self._clearance_history = []
+                self.enter('ALIGN')
+                return
+            self.get_logger().info(
+                f'微转复验不通过：世界点偏差 {world_gap:.2f} m、距离差 {dist_gap:.2f} m '
+                f'（超 {self._rot_tol:.1f} / {self._rot_dist_tol:.1f} m，疑似自运动拖影）'
+                '→ 继续扫描')
+            self._scan_hits = 0
+            self.enter('SCAN')
             return
 
         if self.phase == 'VERIFY':

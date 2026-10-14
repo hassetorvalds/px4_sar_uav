@@ -15,6 +15,50 @@
 
 ---
 
+## [2026-10-14] 选 B：交权前 ±15° 微转复验 + 位姿质量门；脱困上限 B 实飞验证不再越界
+
+### 新增
+
+- **交权前 ±rot_deg 微转复验**（`vlm_closed_loop.py`，服务器侧 2026-10-14 选 B）：
+  SCAN 发现候选 → 静置采样 A → 左转 +15° 采样 B → 转到 −15° 采样 C → 判定
+  "**世界点偏差 ≤1.0 m 且距离差 ≤1.0 m**"才算真结构。真结构在世界系固定，拖影会随姿态变；
+  微转本身还把"到位后不在前向锥里"的结构扫进锥内（顺带修 Form A）。
+  - 新增参数：`rot_verify/rot_deg/rot_rate_deg_s/rot_settle_s/rot_timeout_s/rot_tol_m/`
+    `rot_dist_tol_m/rot_pose_age_max_s`；位姿不新鲜时**暂缓判定**（等待，不判拖影）。
+  - 新 helper：`heading_enu_unwrapped_deg`、`_rot_sample()`、`_fmt_world()`；
+    `_on_map_status` 解析 `nearest_fwd=(dx,dy,dz)@d`（世界系相对坐标）。
+- **位姿质量门**（`vlm_navigator` + `safety` + `px4_interface.state`，服务器侧第三节）：
+  `state.position_age_s()` + 由航向差估计角速度 → 位置陈旧（>0.5 s）或 |yaw_rate|>0.6 rad/s 时
+  **defer（暂缓判定）**：已在保持则维持保持（不动 `stop_streak`、guard 仍 `obstacle`），
+  否则只压速到 stale 级、既不累计也不清零 `stop_streak`。每帧 `guard_detail` 落盘
+  `pose_age_s` 与 `yaw_rate`。参数 `pose_quality_gate/pose_age_max_s/pose_max_yaw_rate`。
+
+### 修复
+
+- **微转复验的符号 bug**：首版用了 NED 解卷绕航向，而 `publish_yaw_rate` 是 ENU 角速度，
+  符号相反 → 越转越远（t15 误差涨到 +193° 后按超时安全退出，未误交权）。
+  改用 ENU 口径（`heading_enu_unwrapped_deg`）后，t16 实测 `+396.5°→+414.7°→+379.6°`（±15–18°）。
+
+### 验证
+
+- 单元测试：`colcon test` **61 passed**。
+- **脱困上限 B 实飞验证（esc3，s1014-205929）**：两次脱困均 **0.91 m / 9.1 s ≤ 1.00 m / 10 s**
+  （旧逻辑为 1.01 m 越界）→ 重试用尽后放弃 → 注入解除后 episode 闭合 1/1。
+- **位姿质量门实飞数据（esc3 交权后 337 帧）**：`pose_age` 最大 0.02 s、
+  `|yaw_rate|` 最大 0.59 rad/s、**`pose_defer` 触发 0 次**（无误触发）。
+- **微转复验（t16，s1014-205602）**：候选前向 1.41 m（世界点 (+0.8,+11.0,+1.4)）→
+  ±15° 两姿态下前向锥内均无点 → 判不通过（方向相关读数）→ 回扫描 → 收工降落。
+  说明新复验比旧的"静止再看一次"更严（旧口径下这类候选曾交权）。
+
+### 已知问题
+
+- **寻障命中率仍是瓶颈**（t15/t16 无 episode）：绝大多数候选是"转一下就消失"的近场读数。
+  已请服务器侧在 A（±10°/放宽锥）/ B（RUN 偏航降到 0.3 的对照轮）/ C（转主线）中定；
+  我倾向先跑 B 对照轮。
+- 位姿门限 0.6 rad/s 与实测峰值 0.59 rad/s 很接近，是否下调待定。
+
+---
+
 ## [2026-10-14] 脱困上限改 B（预判式不越界）；仲裁器落盘归因 + 提到 20 Hz + SITL 冒烟；寻障全表与命中率诊断
 
 ### 变更

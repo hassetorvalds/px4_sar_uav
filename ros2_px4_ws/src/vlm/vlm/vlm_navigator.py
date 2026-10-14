@@ -146,6 +146,12 @@ class VlmNavigator(Node):
         self.declare_parameter('obstacle_side_release_m', 1.2)
         self.declare_parameter('obstacle_max_turn_deg', 60.0)
         self.declare_parameter('obstacle_creep_mps', 0.1)
+        # 位姿质量门（服务器侧 2026-10-14 第三节）：世界系一致性判据只有在位姿可靠时才有意义。
+        # 位置陈旧 / 角速度过大 → **暂缓判定**（既不算真障碍，也不判拖影），等姿态稳定再判；
+        # 否则一次"快速偏航下的位姿滞后"会被误判成拖影（t14 的形态 B 很可能就是这种）。
+        self.declare_parameter('pose_quality_gate', True)
+        self.declare_parameter('pose_age_max_s', 0.5)
+        self.declare_parameter('pose_max_yaw_rate', 0.6)   # rad/s
         self.declare_parameter('obstacle_creep_open_side_m', 1.5)
         self.declare_parameter('obstacle_stop_confirm_frames', 3)
         self.declare_parameter('obstacle_world_tolerance_m', 0.4)
@@ -217,6 +223,9 @@ class VlmNavigator(Node):
         self._escape_max_m = float(self.get_parameter('escape_max_m').value)
         self._escape_max_retries = max(
             int(self.get_parameter('escape_max_retries').value), 0)
+        self._pose_gate = bool(self.get_parameter('pose_quality_gate').value)
+        self._pose_age_max = float(self.get_parameter('pose_age_max_s').value)
+        self._pose_max_yaw = float(self.get_parameter('pose_max_yaw_rate').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -262,6 +271,9 @@ class VlmNavigator(Node):
         self._obstacle_turn_deg = 0.0
         self._obstacle_world = None      # 世界系(ENU)候选障碍点（用于拖影判别）
         self._hold_started_at = None     # 连续处于 obstacle 保持的起点（用于保持超时后撤）
+        self._last_heading = None        # 上一帧航向（用于估计角速度，喂位姿质量门）
+        self._last_heading_at = 0.0
+        self._pose_defer_state = {'pose_age_s': None, 'yaw_rate': None}
         self._escape_started_at = None   # 本次脱困的起点（用于脱困时长/距离上限）
         self._escape_count = 0           # 本段障碍内已脱困次数（用于有限重试）
         self._escape_gave_up = False     # 脱困重试用尽后置位，不再后退
@@ -611,6 +623,31 @@ class VlmNavigator(Node):
             meta['heading_deg'] = round(math.degrees(float(state.heading)) % 360.0, 1)
         return meta
 
+    def _pose_deferred(self, now: float, state) -> bool:
+        """位姿质量门：位置陈旧或角速度过大时返回 True（本帧**暂缓判定**）。
+
+        服务器侧 2026-10-14：真障碍在世界系固定，只有**位姿是准的**才成立；
+        快速偏航时里程计滞后会让反投影点抖动，从而被误判成"拖影"。所以位姿不可靠时
+        既不当真障碍、也不判拖影，等姿态稳定再判。
+        """
+        if not self._pose_gate:
+            return False
+        age = self._monitor.position_age_s()
+        yaw_rate = 0.0
+        if math.isfinite(state.heading):
+            if self._last_heading is not None:
+                dt = now - self._last_heading_at
+                if dt > 1e-3:
+                    yaw_rate = math.remainder(
+                        float(state.heading) - self._last_heading, 2 * math.pi) / dt
+            self._last_heading = float(state.heading)
+            self._last_heading_at = now
+        self._pose_defer_state = {
+            'pose_age_s': None if not math.isfinite(age) else round(age, 2),
+            'yaw_rate': round(yaw_rate, 2),
+        }
+        return age > self._pose_age_max or abs(yaw_rate) > self._pose_max_yaw
+
     def _nearest_world_point(self, state):
         """把地图状态里的最近点（机体系 ENU 偏移）换算成**世界系 ENU 点**。
 
@@ -730,8 +767,12 @@ class VlmNavigator(Node):
         command, map_guard, self._map_holding, detail = apply_map_safety(
             command, self._clearance, age, self._map_holding, self._map_limits,
             turn_deg=self._obstacle_turn_deg, stop_streak=self._stop_streak,
-            world_consistent=self._world_consistent)
+            world_consistent=self._world_consistent, defer=self._pose_deferred(now, state))
         self._stop_streak = int(detail.get('stop_streak', 0))
+        if self._pose_gate:
+            # 把位姿质量落进记录，便于事后把"拖影判定"与"位姿滞后/高角速度"对齐分析
+            detail = dict(detail)
+            detail.update(self._pose_defer_state)
         # 保持超时 → 慢速后撤退开（"绕不开的点"不要贴到窗口结束）。
         # 脱困本身**有界**（时长/距离）且**有限重试**（服务器侧 2026-10-14 第 ④ 条）：
         # 避免从"保持卡死"变成"后退卡死"；重试用尽后交由阶段超时 / max_flight_s / 监督层兜底。
