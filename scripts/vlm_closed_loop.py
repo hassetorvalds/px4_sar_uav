@@ -88,6 +88,11 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('seek_ground_margin_m', 0.5)
         self.declare_parameter('seek_pixel_step', 4)
         self.declare_parameter('seek_max_range_m', 60.0)
+        # 稳健化门限（服务器侧 2026-10-14 补充）：区分"大结构"与"小物件/地面棱"
+        self.declare_parameter('seek_min_points', 40)       # 扇区有效点数下限
+        self.declare_parameter('seek_min_span_deg', 6.0)    # 垂直角跨度下限（墙/建筑跨多行）
+        self.declare_parameter('seek_max_mad_m', 1.5)       # 深度 MAD 上限（大平面离散小）
+        self.declare_parameter('seek_max_candidates', 3)    # 最多产出几个候选点（按中位距离排序）
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
         self.declare_parameter('transit_east_m', 0.0)
@@ -146,6 +151,11 @@ class ClosedLoopBase(FlightCheckBase):
             self.get_parameter('seek_ground_margin_m').value)
         self._seek_step = max(int(self.get_parameter('seek_pixel_step').value), 1)
         self._seek_max_range = float(self.get_parameter('seek_max_range_m').value)
+        self._seek_min_points = int(self.get_parameter('seek_min_points').value)
+        self._seek_min_span = float(self.get_parameter('seek_min_span_deg').value)
+        self._seek_max_mad = float(self.get_parameter('seek_max_mad_m').value)
+        self._seek_max_candidates = max(
+            int(self.get_parameter('seek_max_candidates').value), 1)
         self.clearance = None
 
         self.rows = []
@@ -221,13 +231,17 @@ class ClosedLoopBase(FlightCheckBase):
             return
         forward, left, up = forward[keep], left[keep], up[keep]
         horizontal = np.hypot(forward, left)
-        nearest = int(np.argmin(horizontal))
-        body_bearing = math.atan2(float(left[nearest]), float(forward[nearest]))
-        world_bearing_deg = math.degrees(
-            ned_yaw_to_enu_yaw(self.heading_rad) + body_bearing)
-        sector = int(world_bearing_deg // 30) * 30
-        distance = float(horizontal[nearest])
-        self._seek_samples.setdefault(sector, []).append(distance)
+        body_bearings = np.arctan2(left, forward)
+        vertical = np.degrees(np.arctan2(up, np.maximum(horizontal, 1e-6)))
+        world_bearings = np.degrees(ned_yaw_to_enu_yaw(self.heading_rad)) + np.degrees(
+            body_bearings)
+        sectors = (world_bearings // 30).astype(int) * 30
+        for sector in np.unique(sectors):
+            mask = sectors == sector
+            samples = self._seek_samples.setdefault(int(sector), [])
+            if len(samples) >= 600:          # 限幅，避免长时间扫描吃内存
+                continue
+            samples.extend(zip(horizontal[mask].tolist(), vertical[mask].tolist()))
 
     def _beat(self) -> None:
         msg = String()
@@ -452,18 +466,45 @@ class ClosedLoopBase(FlightCheckBase):
                 self.send('land_fast')
                 self.finish()
                 return
-            ranking = sorted((float(np.median(v)), k) for k, v in self._seek_samples.items())
-            best_depth, best_sector = ranking[0]
-            bearing = math.radians(best_sector + 15.0)
-            distance = min(max(best_depth - self.seek_margin, self.seek_min), self.seek_max)
-            east = distance * math.cos(bearing)
-            north = distance * math.sin(bearing)
-            self._points = [(east, north)]
+            candidates = []
+            for sector, samples in self._seek_samples.items():
+                if not samples:
+                    continue
+                distances = np.array([s[0] for s in samples])
+                verticals = np.array([s[1] for s in samples])
+                median = float(np.median(distances))
+                mad = float(np.median(np.abs(distances - median)))
+                span = float(verticals.max() - verticals.min())
+                count = int(distances.size)
+                qualifies = (count >= self._seek_min_points
+                             and span >= self._seek_min_span
+                             and mad <= self._seek_max_mad)
+                candidates.append({'sector': int(sector), 'median': median, 'mad': mad,
+                                   'span': span, 'count': count, 'ok': qualifies})
+            good = sorted((c for c in candidates if c['ok']), key=lambda c: c['median'])
+            summary = [(c['sector'], round(c['median'], 1), c['count'],
+                        round(c['span'], 1), round(c['mad'], 2), c['ok']) for c in
+                       sorted(candidates, key=lambda c: c['median'])]
+            self.get_logger().info(
+                '深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 合格）：' + str(summary[:6]))
+            if not good:
+                self.get_logger().warn('没有任何扇区同时满足"点数/垂直跨度/MAD"门限 → 收工降落')
+                self.send('land_fast')
+                self.finish()
+                return
+            self._points = []
+            for candidate in good[:self._seek_max_candidates]:
+                bearing = math.radians(candidate['sector'] + 15.0)
+                distance = min(max(candidate['median'] - self.seek_margin, self.seek_min),
+                               self.seek_max)
+                self._points.append((distance * math.cos(bearing), distance * math.sin(bearing)))
             self._point_index = 0
             self.get_logger().info(
-                '深度寻障结果：扇区 ' + str(best_sector) + f'° 中位 {best_depth:.1f} m '
-                f'（其余：{[(d_, s_) for d_, s_ in ranking[1:4]]}）→ 转场点 '
-                f'(东 {east:+.1f}, 北 {north:+.1f})，即距离 {distance:.1f} m')
+                f'深度寻障结果：合格扇区 {len(good)} 个，最优 扇区 {good[0]["sector"]}° '
+                f'中位 {good[0]["median"]:.1f} m（点 {good[0]["count"]}、跨度 '
+                f'{good[0]["span"]:.1f}°、MAD {good[0]["mad"]:.2f} m）→ 生成 '
+                f'{len(self._points)} 个候选转场点：'
+                + str([(round(p[0], 1), round(p[1], 1)) for p in self._points]))
             self.enter('TRANSIT')
             return
 
@@ -556,6 +597,23 @@ class ClosedLoopBase(FlightCheckBase):
                 self._align_heading = (ned_yaw_to_enu_yaw(self.heading_rad)
                                        if self._align_heading is None else self._align_heading)
                 self.enter('ALIGN')
+                return
+            if (self._lost_counter >= self.pre_stable
+                    and self._realign_count >= int(self.get_parameter('realign_max').value)):
+                # 服务器侧建议：re-align 到上限仍未稳定 → **该候选点作废**，换下一个合格扇区，
+                # 而不是带着不确定目标交权（那样成功率不可解释）
+                self.publish_enu_velocity(0.0)
+                self.get_logger().warn(
+                    f'净空回升且重新对准已达上限（{self._realign_count} 次）→ 该候选点作废')
+                if self._next_point():
+                    target_east, target_north = self._current_point()
+                    self.get_logger().info(
+                        f'转场到下一个候选点（东 {target_east:+.0f}, 北 {target_north:+.0f}）')
+                    self.enter('TRANSIT')
+                else:
+                    self.get_logger().warn('候选点用尽（含 SEEK 产出的候选）→ 收工降落')
+                    self.send('land_fast')
+                    self.finish()
                 return
             if forward_clear is not None:
                 self._clearance_history.append(forward_clear)

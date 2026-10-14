@@ -27,6 +27,7 @@ FORWARD_THRESHOLD = 0.05
 
 def main(argv):
     directory = argv[1] if len(argv) > 1 else 'vlm_decisions'
+    min_episode_frames = int(argv[2]) if len(argv) > 2 else 3
     paths = sorted(glob.glob(os.path.join(directory, 'decision_*.json')))
     if not paths:
         print(f'{directory} 下没有 decision_*.json')
@@ -49,7 +50,11 @@ def main(argv):
     if current is not None:
         episodes.append(current)
 
-    print(f'目录 {directory}：{len(records)} 帧，识别到 {len(episodes)} 个障碍 episode')
+    raw_episodes = len(episodes)
+    episodes = [e for e in episodes
+                if e['end'] - e['start'] + 1 >= min_episode_frames]
+    print(f'目录 {directory}：{len(records)} 帧，识别到 {raw_episodes} 个障碍 episode，'
+          f'其中 ≥{min_episode_frames} 帧的 {len(episodes)} 个（单帧闪现不计入 episode）')
     closed = 0
     for order, episode in enumerate(episodes, 1):
         window = records[episode['end'] + 1:episode['end'] + 1 + RECOVERY_WINDOW]
