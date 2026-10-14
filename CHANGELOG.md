@@ -15,6 +15,33 @@
 
 ---
 
+## [2026-10-14] 按服务器侧选择落地两问 (a)：交权 0.8 m + 复验容差 1.5 m（本地暂停收尾）
+
+### 变更
+
+- `vlm_closed_loop.py`：`pre_stop_clearance_m` 默认 **2.0 → 0.8 m**（`run_detour_trial.sh` 里同值），
+  让摆位交权点**贴近保持带**——交权后只需再走 ~0.2 m（VLM 前向 0.12–0.15 m/s ≈ 1.5 s）即可进保持。
+  **保持门限 0.6 m 不动**（服务器侧明确：那是安全参数，不该为跑通流程削弱）。
+- `vlm_closed_loop.py`：`rot_tol_m` / `rot_dist_tol_m` 默认 **1.0 → 1.5 m**（世界系点/距离一致性容差）。
+  依据：1.5 m 对 20 m 外大面是 7.5% 相对误差（仍很紧），而实测假读数漂 3.49 m 照样被拒；
+  复验次数**保持"单次通过即算"**（基元已换成簇质心，稳定性足够）。
+- `run_detour_trial.sh`：`ROT_TOL` 默认 1.5、`pre_stop_clearance_m=0.8`。
+
+### 验证
+
+- 单元测试：`colcon test` **61 passed**；驱动脚本语法检查通过。
+- **未做飞行验证**：服务器侧服务与监控按操作者要求停止，`scripts/preflight.sh` 是 fail-closed
+  （要求远端 `/health` ready），因此**未起飞**；本地同步暂停（停 VLM 隧道 + ROS 栈，
+  保留 PX4 SITL 与 Micro XRCE-DDS Agent）。
+
+### 已知问题
+
+- ①(a)/②(a) 的飞行验证待服务恢复；恢复顺序见 `docs/agent_comm/77_*.md` 与
+  `docs/next-session-handoff.md`。
+- 寻障命中率累计 **1/10**；待交权点收到 0.8 m 后看能否稳定产出 episode。
+
+---
+
 ## [2026-10-14] 簇质心"限定 ②"（漂移 3.49 m→~1.0 m，验证通过）+ 仲裁实飞联调（修接线 bug）
 
 ### 新增

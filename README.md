@@ -278,7 +278,7 @@ Windows 11（宿主）
 | 起飞前 fail-closed 检查 | ✅ | `scripts/preflight.sh` 核对 VLM/offboard_bridge/airsim_camera/local_map/flight_supervisor/PX4/Agent 各 1 + `/fmu/out` 可读 + 地图 frames>0 + 远端 `/health` ready；抓到过多栈实例 |
 | 绕行打分器 | ✅ | `scripts/analyze_detour.py`：episode=连续≥3 帧且含保持态；结束后 20 帧内 ≥5 帧前向非零=闭合；单帧闪现/仅慢速单独计数 |
 | 保持超时脱困 | ✅ | `hold_max_s`(20 s)+`escape_back_mps`(0.10 m/s)，**预判式有界**（`escape_max_s`=10 s / `escape_max_m`=1 m）+ 重试≤1；esc3 实飞两次脱困均 **0.91 m/9.1 s ≤ 1.00 m**（不再越界），用尽后放弃、注入解除即闭合 |
-| 交权前微转复验 | ✅ | `vlm_closed_loop.py`：静置采样 A → +15° 采样 B → −15° 采样 C，判"世界点偏差≤1.0 m 且距离差≤1.0 m"；t16 正确否掉"转一下就消失"的候选（顺带修 Form A，把结构扫进前向锥） |
+| 交权前微转复验 | ✅ | `vlm_closed_loop.py`：静置采样 A → +15° 采样 B → −15° 采样 C，判"世界点偏差/距离差 ≤**1.5 m**"，世界点用**簇质心**；t16 正确否掉"转一下就消失"的候选，c1 在真大面上 0.97 m 通过并交权 |
 | 位姿质量门 | ✅ | `vlm_navigator`+`safety`：位置陈旧(>0.5 s)/角速度过大(**>0.45** rad/s，低于 RUN 上限才有意义) 时 **defer 暂缓判定**（既不算真障碍也不判拖影）；每帧落盘 `pose_age_s`/`yaw_rate`；esc3 交权后 337 帧 0 次误触发 |
 | 宽锥诊断字段 | ✅ | `local_map` 额外发布只读 `nearest_wide=(dx,dy,dz)@d`（`cone_wide_deg=35`），用于区分"真实但偏轴"与"假读数"；不影响任何判定 |
 | 锥内簇质心 | ✅ | `voxel_grid.cluster_centroid_in_cone()`（26 邻域连通聚类）+ `local_map` 只读字段 `nearest_centroid=(dx,dy,dz)@d@size`；世界系复验优先用它——同一大面三次复验偏差 **1.37/1.02/0.97 m**（用"最近点"时为 3.49 m） |

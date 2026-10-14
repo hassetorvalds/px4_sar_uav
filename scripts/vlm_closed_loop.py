@@ -64,7 +64,10 @@ class ClosedLoopBase(FlightCheckBase):
         # 摆位阶段：起飞后先朝当前机头方向慢速前进，直到"前向净空"降到阈值（把飞机送到障碍前）
         self.declare_parameter('pre_position', False)
         self.declare_parameter('pre_speed_mps', 0.2)
-        self.declare_parameter('pre_stop_clearance_m', 2.0)
+        # 交权前的前向净空阈值（服务器侧 2026-10-14 选 a）：贴近保持带 0.6 m，
+        # 让 VLM 交权后再走 ~0.2 m（约 1.5 s）就能进保持——不再"在 1.0 m 处靠几十秒挤"。
+        # 注意：**保持门限 0.6 m 是安全参数，不动**。
+        self.declare_parameter('pre_stop_clearance_m', 0.8)
         self.declare_parameter('pre_timeout_s', 30.0)
         # 本地图偶发单帧近读数（实测见过 1.91 m 一闪而过），摆位判定必须要求**连续稳定**
         self.declare_parameter('pre_stable_samples', 3)
@@ -127,8 +130,10 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('rot_rate_deg_s', 12.0)   # 微转速度（慢，避免位姿滞后）
         self.declare_parameter('rot_settle_s', 2.5)      # 每个姿态静置多久再采样（等地图刷新）
         self.declare_parameter('rot_timeout_s', 15.0)    # 单次转向的时间上限
-        self.declare_parameter('rot_tol_m', 1.0)         # 世界系位置一致性容差
-        self.declare_parameter('rot_dist_tol_m', 1.0)    # 距离一致性容差
+        # 容差 1.5 m（服务器侧 2026-10-14 选 a）：对 20 m 外大面是 7.5% 相对误差，仍很紧；
+        # 而"假读数"实测漂 3.49 m，照样被拒。次数保持"单次通过即算"（基元已换成簇质心）。
+        self.declare_parameter('rot_tol_m', 1.5)         # 世界系位置一致性容差
+        self.declare_parameter('rot_dist_tol_m', 1.5)    # 距离一致性容差
         self.declare_parameter('rot_pose_age_max_s', 0.5)  # 位姿质量门：位置太旧就不判定
 
         self.altitude = float(self.get_parameter('start_altitude_m').value)

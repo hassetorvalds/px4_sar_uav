@@ -22,7 +22,7 @@ log_dir="logs/$(date +%Y-%m-%d)"
 # 微转角与门限可外部覆盖：诊断 A 用 ROT_DEG=10（配 local_map 的宽锥 ±35°）
 # 注意：ROS 参数是 DOUBLE，整数写法（10）会被解析成 INTEGER 而报错 → 这里统一格式化成小数
 rot_deg="$(awk -v v="${ROT_DEG:-15}" 'BEGIN{printf "%.1f", v}')"
-rot_tol="$(awk -v v="${ROT_TOL:-1}" 'BEGIN{printf "%.2f", v}')"
+rot_tol="$(awk -v v="${ROT_TOL:-1.5}" 'BEGIN{printf "%.2f", v}')"
 mkdir -p "$log_dir"
 
 echo "== 试验 ${label}：session=${sid} =="
@@ -72,7 +72,7 @@ python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:
     -p closable_side_m:=2.5 \
     -p rot_verify:=true -p rot_deg:="${rot_deg}" -p rot_rate_deg_s:=12.0 -p rot_settle_s:=2.5 \
     -p rot_tol_m:="${rot_tol}" -p rot_dist_tol_m:="${rot_tol}" -p rot_pose_age_max_s:=0.5 \
-    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=1.0 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
+    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=0.8 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
     -p output_csv:="${log_dir}/${label}_${sid}_detour.csv" \
     > "${log_dir}/${label}_${sid}_driver.log" 2>&1
 

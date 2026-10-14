@@ -1,5 +1,45 @@
 # 下一轮从这里开始（最近更新：暂停于 2026-10-14）
 
+## 〇、2026-10-14 晚：暂停时的准确状态（先读这段）
+
+```text
+为什么停：服务器侧服务与监控**按操作者要求停止**；preflight 是 fail-closed（要远端 /health ready）
+          → 本轮**未起飞**。本地也同步收尾。
+
+已停（本机）：VLM 隧道（scripts/vlm_tunnel.sh status 应为"没有在跑的隧道"）、
+              ROS 栈（bringup + offboard_bridge/airsim_camera/local_map/local_planner/velocity_arbiter）
+仍在跑（本机）：PX4 SITL、Micro XRCE-DDS Agent（PX4 于 21:0x 重启过一次以接上重启后的 AirSim；
+              电池阈值 BAT_LOW/CRIT/EMERGEN_THR 已清零，PX4 日志 /tmp/px4logs/px4.log）
+
+恢复顺序
+  1) 服务器侧起服务（带 VLN_EVAL_TRAJ_TOP1=1 + SESSION_TTL_S/MAX_SESSIONS）→ 确认 /health ready
+  2) scripts/vlm_tunnel.sh start
+  3) 确认 PX4（连 AirSim 4560）+ Agent 在线；脚本 run_px4_sitl.sh 会自动补 MAVLink 手动接管实例
+  4) source scripts/env.sh && bash scripts/bringup.sh camera_rate_hz:=2.5   （含 velocity_arbiter）
+     setsid nohup python3 scripts/flight_supervisor.py --ros-args -p timeout_s:=5.0 -p arm_grace_s:=6.0 &
+  5) **待验证的两项**（服务器侧 2026-10-14 选 a，本轮只落地未飞）：
+     ① pre_stop_clearance_m 1.0 → **0.8 m**（交权点贴近保持带 0.6 m；保持门限不动）
+     ② rot_tol_m / rot_dist_tol_m 1.0 → **1.5 m**（微转复验容差；次数仍是"单次通过即算"）
+     → 各飞一轮：run_detour_trial.sh d1 / d2，看交权后能否较快跨过 0.6 m 进保持、拿到 episode
+  6) 拿到 episode 后按 ③ 双指标连跑统计（analyze_detour.py 支持多轮聚合）
+
+本日已验证的关键能力（都有飞行取证）
+  · 脱困（保持超时）：**有界 + 重试≤1 + 记数**；esc3 两次 0.91 m/9.1 s ≤ 1.00 m，用尽后放弃
+  · 位姿质量门：位置陈旧>0.5 s 或 |yaw|>0.45 rad/s → defer（暂缓判定）；每帧落盘 pose_age/yaw
+  · 交权前 ±15° 微转复验（世界点/距离一致性）；**簇质心**为世界点基元
+    → 同一大面漂移 3.49 m（最近点）→ ~1.0 m（质心），c1 第三次复验 0.97 m 通过并交权
+  · 速度仲裁（velocity_arbiter）：**实飞联调通过**（vlm → avoid 抢占 → 回落 vlm → none）；
+    bridge 速度话题现为 1 发布者（仲裁器）+ 1 订阅者
+  · 全程 0 次误交权、0 次误触发围栏、全部安全落地
+
+本日踩到并修掉的坑（都已进 CHANGELOG）
+  · 微转复验用 NED 解卷绕角 → 方向相反（越转越远）；改 ENU 口径
+  · 仲裁器输入话题与 launch 里发布者话题不一致 → **0 订阅者**，planner 速度被丢
+  · stop_stack.sh 漏清 velocity_arbiter → 曾同时 2 个仲裁器实例
+  · ROT_DEG=10 这种整数写法会被 ROS 当成 INTEGER（参数是 DOUBLE）→ 节点构造即崩（未起飞）
+  · `ros2 topic echo` 默认截断长字符串，核对 `nearest_*` 字段要加 `--full-length`
+```
+
 ## 一、当前状态一览
 
 ```text
