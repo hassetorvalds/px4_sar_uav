@@ -40,6 +40,9 @@ from vlm.safety import parse_clearance_status
 _NEAREST_RE = re.compile(r'nearest_fwd=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\)@([0-9.]+)m')
 _NEAREST_WIDE_RE = re.compile(
     r'nearest_wide=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\)@([0-9.]+)m')
+# 锥内连通簇质心（服务器侧"限定 ②"）：`(dx,dy,dz)@d@size`，优先用于世界系复验
+_NEAREST_CENTROID_RE = re.compile(
+    r'nearest_centroid=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\)@([0-9.]+)m@([0-9]+)')
 
 # 日志行缓冲：外部脚本常靠 grep 日志来判断阶段（例如"等进入 RUN 再开始注入"），
 # 块缓冲会让判断滞后甚至永远不命中（2026-10-12 踩到两次）。
@@ -182,6 +185,9 @@ class ClosedLoopBase(FlightCheckBase):
         self.nearest_at = 0.0
         self.nearest_wide_delta = None   # 宽锥（诊断 A）最近点的 ENU 相对坐标
         self.nearest_wide_dist = float('inf')
+        self.nearest_centroid_delta = None   # 锥内连通簇质心（"限定 ②"）
+        self.nearest_centroid_dist = float('inf')
+        self.nearest_centroid_size = 0
         self._closable_side = float(self.get_parameter('closable_side_m').value)
         self._approach_confirmed = False     # 是否真的逼近到停止阈值（否则不交权）
         self.seek_enabled = bool(self.get_parameter('seek_enabled').value)
@@ -261,6 +267,17 @@ class ClosedLoopBase(FlightCheckBase):
         elif 'nearest_wide=inf' in (msg.data or ''):
             self.nearest_wide_delta = None
             self.nearest_wide_dist = float('inf')
+        # 锥内连通簇质心（优先用于世界系复验）
+        centroid = _NEAREST_CENTROID_RE.search(msg.data or '')
+        if centroid:
+            self.nearest_centroid_delta = (float(centroid.group(1)), float(centroid.group(2)),
+                                           float(centroid.group(3)))
+            self.nearest_centroid_dist = float(centroid.group(4))
+            self.nearest_centroid_size = int(centroid.group(5))
+        elif 'nearest_centroid=inf' in (msg.data or ''):
+            self.nearest_centroid_delta = None
+            self.nearest_centroid_dist = float('inf')
+            self.nearest_centroid_size = 0
 
     def _on_depth_image(self, msg: Image) -> None:
         """SEEK 阶段用：**几何去地面**后取最近结构点的方位与距离。
@@ -456,12 +473,14 @@ class ClosedLoopBase(FlightCheckBase):
     def _rot_sample(self, label: str) -> dict:
         """采一帧"世界系障碍点 + 距离 + 位姿质量"（微转复验用）。"""
         position = self.position_enu()
-        # 诊断 A（服务器侧 2026-10-14）：优先用**宽锥**最近点——这样"真实但被转出窄锥"
-        # 的结构仍会被看到（世界点照样稳定），与"本来就是假的"区分开。
-        delta = self.nearest_wide_delta if self.nearest_wide_delta is not None \
-            else self.nearest_delta
-        dist = (self.nearest_wide_dist if self.nearest_wide_delta is not None
-                else self.nearest_dist)
+        # 世界点优先级（服务器侧 2026-10-14 的"限定 ②"）：**连通簇质心** > 宽锥最近点 > 窄锥最近点。
+        # 质心代表"一个物体"，小姿态变化下比"锥内最近点"稳定得多（后者会在平面上滑移）。
+        if self.nearest_centroid_delta is not None:
+            delta, dist = self.nearest_centroid_delta, self.nearest_centroid_dist
+        elif self.nearest_wide_delta is not None:
+            delta, dist = self.nearest_wide_delta, self.nearest_wide_dist
+        else:
+            delta, dist = self.nearest_delta, self.nearest_dist
         world = None
         if position is not None and delta is not None:
             world = (position[0] + delta[0], position[1] + delta[1], position[2] + delta[2])
@@ -472,6 +491,8 @@ class ClosedLoopBase(FlightCheckBase):
             'world': world,
             'dist': dist,
             'dist_narrow': self.nearest_dist,
+            'dist_wide': self.nearest_wide_dist,
+            'centroid_size': self.nearest_centroid_size,
             'pose_age_s': None if pose_age is None else round(pose_age, 2),
             'fwd_m': None if not self.clearance else round(self.clearance[0], 2),
         }
@@ -888,8 +909,9 @@ class ClosedLoopBase(FlightCheckBase):
                     self._rot_anchor_deg = self.heading_enu_unwrapped_deg
                 self.get_logger().info(
                     f'  微转复验采样 {label}：航向 {sample["heading_deg"]:+.1f}°，'
-                    f'世界点 {self._fmt_world(sample["world"])}，距离(宽锥) '
-                    f'{sample["dist"]:.2f} m [窄锥 {sample["dist_narrow"]:.2f} m]，'
+                    f'世界点 {self._fmt_world(sample["world"])}，距离 '
+                    f'{sample["dist"]:.2f} m [宽锥 {sample["dist_wide"]:.2f} / '
+                    f'窄锥 {sample["dist_narrow"]:.2f} m，簇 {sample["centroid_size"]} 体素]，'
                     f'位姿年龄 {sample["pose_age_s"]} s')
                 self._rot_step += 1
                 self._rot_step_started = time.monotonic()

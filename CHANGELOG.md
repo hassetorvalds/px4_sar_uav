@@ -15,6 +15,44 @@
 
 ---
 
+## [2026-10-14] 簇质心"限定 ②"（漂移 3.49 m→~1.0 m，验证通过）+ 仲裁实飞联调（修接线 bug）
+
+### 新增
+
+- **锥内连通簇质心**（服务器侧建议的"限定 ②"）：`voxel_grid.cluster_centroid_in_cone()`
+  把锥内体素按 **26 邻域连通聚类**，取最近一簇的质心；`local_map` 新增**只读**字段
+  `nearest_centroid=(dx,dy,dz)@d@size`（参数 `cluster_min_points=3`）；
+  `vlm_navigator._nearest_world_point` 与驱动微转复验的世界点**优先用质心**（退回宽锥/窄锥最近点）。
+  动机：`nearest_*` 是"锥内最近点"，在**大平面上会随姿态滑移**，导致"世界点一致"判据对大面失效。
+
+### 修复
+
+- **仲裁接线 bug**（实飞联调时抓到）：`sim_stack.launch.py` 把 `local_planner` 的速度发到
+  `/velocity_arbiter/avoid_cmd`，而仲裁器**默认**听 `/local_planner/velocity_cmd` → 话题不一致、
+  仲裁器 **0 订阅者**，planner 速度被丢弃。已改为在 launch 里显式对齐
+  `avoid_topic/vlm_topic/output_topic`。
+- `scripts/stop_stack.sh` 未清理 `velocity_arbiter` → 曾同时存在 **2 个仲裁器实例**；已加入清理列表。
+
+### 验证
+
+- 单元测试：`colcon test` **61 passed**。
+- **簇质心复验（c1，s1014-212655）**：同一建筑面（约北 22 m、z≈3.3、簇 385–1199 体素）
+  三次复验世界点偏差 **1.37 / 1.02 / 0.97 m** → 第三次通过并交权。
+  对比同一场景用"锥内最近点"时的漂移 **3.49 m**（a2）→ 稳定性提高约 3.5 倍。
+- **交权后仍未进保持**：c1 交权后 1151 帧 guard = ok 194 / duration 45 / obstacle_slow 8 /
+  stale 7；前向净空最小 **0.75 m**（保持门限 0.6 m）→ 只压速、无 episode。
+  根因：摆位交权阈值 1.0 m 与保持门限 0.6 m 之间有 **0.4 m 缺口**，需靠 VLM 自己挪完。
+- **② 仲裁实飞联调（真起飞 2 m 悬停）**：接线核对 bridge 速度话题 = **1 发布者（仲裁器）+ 1 订阅者**；
+  赢家序列（`logs/2026-10-14/arb_live.csv`）：`none → vlm → avoid（抢占，vx 0.87）→ vlm（avoid 过期回落）
+  → none（全过期）`；落地 `arming_state=1`、z≈-0.01 m。
+
+### 已知问题
+
+- 待服务器侧定：①交权距离（1.0 → 0.8 m？）或保持门限；②微转复验容差（1.0 → 1.5 m？）。
+- 命中率累计 **1/10**；`c2` 未交权（408 帧全 dry_run）。
+
+---
+
 ## [2026-10-14] 位姿门阈值修正为 0.45（配对规则）；local_map 加只读宽锥字段；A 诊断轮结果
 
 ### 变更

@@ -12,6 +12,7 @@ set -uo pipefail
 
 patterns=(
     "sim_stack.launch"
+    "px4_interface/velocity_arbiter"
     "px4_interface/offboard_bridge"
     "sensor_bridge/airsim_camera"
     "mapping/local_map"

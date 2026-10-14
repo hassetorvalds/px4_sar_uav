@@ -163,6 +163,71 @@ class VoxelGrid:
             return float('inf')
         return float(distance[in_cone].min())
 
+    def cluster_centroid_in_cone(self, origin_enu, heading_enu: float,
+                                 half_angle_deg: float = 30.0,
+                                 max_distance: float = 6.0,
+                                 vertical_tolerance_m: float = 0.6,
+                                 vertical_down_tolerance_m: float = 0.25,
+                                 min_distance_m: float = 0.0,
+                                 min_cluster_points: int = 3):
+        """锥内**连通聚类**里最近一簇的质心（ENU 相对坐标）。
+
+        为什么要聚类（服务器侧 2026-10-14 建议的"限定 ②"）：
+        "锥内最近点"在大面积平面上会随姿态**在面上滑移**——锥一转，最近点就换位置，
+        于是"世界点一致"判据对大平面天然失效（a2 的候选 2 漂了 3.49 m 就是这么来的）。
+        用**连通簇质心**代表"一个物体"，小姿态变化下就稳定得多。
+
+        返回 ``(centroid_delta, size, distance)``；无合格簇时 ``(None, 0, inf)``。
+        """
+        if not self._voxels:
+            return None, 0, float('inf')
+        origin = np.asarray(origin_enu, dtype=float)
+        cos_limit = math.cos(math.radians(half_angle_deg))
+        forward = np.array([math.cos(heading_enu), math.sin(heading_enu), 0.0], dtype=float)
+
+        in_cone_keys = []
+        for key in self._voxels:
+            delta = np.asarray(self._center(key), dtype=float) - origin
+            distance = float(np.linalg.norm(delta))
+            if distance < max(float(min_distance_m), 1e-6) or distance > max_distance:
+                continue
+            horizontal = float(np.linalg.norm(delta[:2]))
+            cos_angle = (float(delta[:2] @ forward[:2]) / horizontal
+                         if horizontal > 1e-6 else 0.0)
+            if cos_angle < cos_limit:
+                continue
+            if not (-float(vertical_down_tolerance_m) <= delta[2] <= float(vertical_tolerance_m)):
+                continue
+            in_cone_keys.append(key)
+        if not in_cone_keys:
+            return None, 0, float('inf')
+
+        # 26 邻域连通聚类（体素索引空间）
+        remaining = set(in_cone_keys)
+        best = None
+        while remaining:
+            seed = remaining.pop()
+            stack = [seed]
+            members = [seed]
+            while stack:
+                current = stack.pop()
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for dz in (-1, 0, 1):
+                            neighbour = (current[0] + dx, current[1] + dy, current[2] + dz)
+                            if neighbour in remaining:
+                                remaining.discard(neighbour)
+                                stack.append(neighbour)
+                                members.append(neighbour)
+            if len(members) < max(int(min_cluster_points), 1):
+                continue
+            points = np.array([self._center(m) for m in members], dtype=float)
+            delta = points.mean(axis=0) - origin
+            distance = float(np.linalg.norm(delta))
+            if best is None or distance < best[2]:
+                best = (delta, len(members), distance)
+        return best if best is not None else (None, 0, float('inf'))
+
     def nearest_point_in_cone(self, origin_enu, heading_enu: float,
                               half_angle_deg: float = 30.0,
                               max_distance: float = 6.0,

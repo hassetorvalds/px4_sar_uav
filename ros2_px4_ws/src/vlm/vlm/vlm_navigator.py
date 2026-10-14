@@ -656,18 +656,26 @@ class VlmNavigator(Node):
         """把地图状态里的最近点（机体系 ENU 偏移）换算成**世界系 ENU 点**。
 
         用于服务器侧建议的"世界系一致性"判据：自运动拖影逐帧跳，真障碍稳定。
-        拿不到（状态里没有 `nearest_fwd` 或位置无效）时返回 ``None``。
+        优先用**锥内连通簇质心**（`nearest_centroid`，服务器侧 2026-10-14"限定 ②"）：
+        "锥内最近点"在大平面上会随姿态滑移，而簇质心代表"一个物体"，稳定得多；
+        没有质心时退回 `nearest_fwd`。都拿不到（或位置无效）时返回 ``None``。
         """
         text = self._clearance_raw or ''
-        if 'nearest_fwd=(' not in text:
-            return None
         if not self._monitor.position_fresh():
             return None
-        try:
-            body = text.split('nearest_fwd=(')[1].split(')')[0]
-            dx, dy, dz = (float(value) for value in body.split(','))
-        except (IndexError, ValueError):
+        delta = None
+        for marker in ('nearest_centroid=(', 'nearest_fwd=('):
+            if marker in text:
+                try:
+                    body = text.split(marker)[1].split(')')[0]
+                    delta = tuple(float(value) for value in body.split(','))
+                except (IndexError, ValueError):
+                    delta = None
+                if delta is not None:
+                    break
+        if delta is None:
             return None
+        dx, dy, dz = delta
         east, north, up = ned_to_enu(state.x, state.y, state.z)
         return (east + dx, north + dy, up + dz)
 

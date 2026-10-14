@@ -50,7 +50,14 @@ def generate_launch_description():
         # 速度仲裁：把多路速度指令按优先级合并成一路喂给 offboard_bridge
         Node(package='px4_interface', executable='velocity_arbiter',
              name='velocity_arbiter', output='screen',
-             parameters=[{'priority': 'avoid,vlm'}],
+             parameters=[{
+                 'priority': 'avoid,vlm',
+                 # 输入话题必须与下面两个发布者的 velocity_topic 一致（否则仲裁器收不到，
+                 # 速度指令会被直接丢掉——2026-10-14 实测踩过：0 个订阅者）
+                 'avoid_topic': '/velocity_arbiter/avoid_cmd',
+                 'vlm_topic': '/velocity_arbiter/vlm_cmd',
+                 'output_topic': '/offboard_bridge/velocity_setpoint',
+             }],
              condition=arbiter_if),
         # 传感器层：AirSim 相机/深度/点云
         Node(package='sensor_bridge', executable='airsim_camera',

@@ -35,6 +35,8 @@ class LocalMap(Node):
         self.declare_parameter('cone_max_distance', 6.0)
         # 诊断用宽锥（服务器侧 2026-10-14 建议 A）：只多发布一个 nearest_wide，不影响原有判定
         self.declare_parameter('cone_wide_deg', 35.0)
+        # 锥内连通簇质心的最小体素数（服务器侧"限定 ②"）：太小会锁到零散噪声
+        self.declare_parameter('cluster_min_points', 3)
         self.declare_parameter('cone_vertical_tolerance_m', 0.6)
         # 向下的竖直窗要**更紧**，否则贴地/低空时地面点会被算成"正前方障碍"
         self.declare_parameter('cone_down_tolerance_m', 0.25)
@@ -46,6 +48,7 @@ class LocalMap(Node):
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._cone_deg = float(self.get_parameter('cone_deg').value)
         self._cone_wide_deg = float(self.get_parameter('cone_wide_deg').value)
+        self._cluster_min_points = int(self.get_parameter('cluster_min_points').value)
         self._cone_max = float(self.get_parameter('cone_max_distance').value)
         self._cone_vertical = float(
             self.get_parameter('cone_vertical_tolerance_m').value)
@@ -146,6 +149,7 @@ class LocalMap(Node):
             forward = left = right = float('inf')
             nearest_text = 'nearest_fwd=inf'      # 还没收到 PX4 位置时也要有值（否则报错）
             wide_text = 'nearest_wide=inf'
+            centroid_text = 'nearest_centroid=inf'
         else:
             forward, left, right = self._grid.clearance_profile(
                 ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
@@ -176,11 +180,24 @@ class LocalMap(Node):
             wide_text = ('nearest_wide=inf' if wide_delta is None else
                          'nearest_wide=(%.2f,%.2f,%.2f)@%.2fm'
                          % (wide_delta[0], wide_delta[1], wide_delta[2], wide_d))
+            # 锥内**连通簇质心**（服务器侧 2026-10-14 建议的"限定 ②"）：
+            # 用"物体的质心"代替"锥内最近点"，避免最近点在大平面上随姿态滑移。
+            cluster_delta, cluster_size, cluster_dist = self._grid.cluster_centroid_in_cone(
+                ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
+                half_angle_deg=self._cone_deg, max_distance=self._cone_max,
+                vertical_tolerance_m=self._cone_vertical,
+                vertical_down_tolerance_m=self._cone_down,
+                min_distance_m=self._min_range,
+                min_cluster_points=self._cluster_min_points)
+            centroid_text = ('nearest_centroid=inf' if cluster_delta is None else
+                             'nearest_centroid=(%.2f,%.2f,%.2f)@%.2fm@%d'
+                             % (cluster_delta[0], cluster_delta[1], cluster_delta[2],
+                                cluster_dist, cluster_size))
         status = String()
         status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
                        f'nearest_forward_m={forward:.2f} '
                        f'left_m={left:.2f} right_m={right:.2f} '
-                       f'{nearest_text} {wide_text} '
+                       f'{nearest_text} {wide_text} {centroid_text} '
                        f'dropped_near={self._dropped_near} dropped_min_m={self._dropped_min_m:.2f}')
         self._status_pub.publish(status)
 
