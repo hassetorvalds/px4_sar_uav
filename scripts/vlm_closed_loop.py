@@ -82,9 +82,12 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('seek_min_m', 8.0)
         self.declare_parameter('seek_max_m', 30.0)
         self.declare_parameter('depth_topic', '/airsim_camera/depth')
-        # 深度统计只取"地平线以上"的行带：把地面排除掉，否则中位深度会被地面压低
-        # （2026-10-14 实测：同一扇区在含地面时 23.6 m、纯上方行带时 10.9 m）
-        self.declare_parameter('seek_row_fraction', 0.35)
+        # 几何去地面（服务器侧 2026-10-14 建议）：把深度像素反投影成机体 3D 点，
+        # **只保留机体上方**的点（地面被精确剔除，且随俯仰自动适应），再取最近点的方位/距离。
+        self.declare_parameter('seek_hfov_deg', 90.0)
+        self.declare_parameter('seek_ground_margin_m', 0.5)
+        self.declare_parameter('seek_pixel_step', 4)
+        self.declare_parameter('seek_max_range_m', 60.0)
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
         self.declare_parameter('transit_east_m', 0.0)
@@ -138,8 +141,11 @@ class ClosedLoopBase(FlightCheckBase):
         self.seek_min = float(self.get_parameter('seek_min_m').value)
         self.seek_max = float(self.get_parameter('seek_max_m').value)
         self._seek_samples = {}
-        self._seek_row_fraction = float(
-            self.get_parameter('seek_row_fraction').value)
+        self._seek_hfov = float(self.get_parameter('seek_hfov_deg').value)
+        self._seek_ground_margin = float(
+            self.get_parameter('seek_ground_margin_m').value)
+        self._seek_step = max(int(self.get_parameter('seek_pixel_step').value), 1)
+        self._seek_max_range = float(self.get_parameter('seek_max_range_m').value)
         self.clearance = None
 
         self.rows = []
@@ -179,21 +185,49 @@ class ClosedLoopBase(FlightCheckBase):
             self.clearance = parsed
 
     def _on_depth_image(self, msg: Image) -> None:
-        """SEEK 阶段用：按方位扇区累计"上 55% 行 + 中心列带"的有效深度。"""
+        """SEEK 阶段用：**几何去地面**后取最近结构点的方位与距离。
+
+        做法（服务器侧 2026-10-14 建议）：
+        1. 深度像素按相机内参（HFOV + 宽高比推 VFOV）反投影成机体 FLU 点；
+        2. 只保留 ``up > -(高度 - ground_margin)`` 的点 —— 地面被精确剔除，且不依赖行带比例；
+        3. 取水平最近的保留点，记录"世界方位扇区 ← 该点距离（取各帧最小值）"。
+        """
         if self.phase != 'SEEK' or msg.encoding != '32FC1':
             return
         depth = np.frombuffer(msg.data, dtype=np.float32)
         if depth.size < int(msg.width) * int(msg.height):
             return
-        image = depth.reshape(int(msg.height), int(msg.width))
-        height, width = image.shape
-        patch = image[0:int(height * self._seek_row_fraction),
-                      int(width * 0.35):int(width * 0.65)]
-        valid = patch[np.isfinite(patch) & (patch > 0.1) & (patch < 500.0)]
-        if valid.size == 0:
+        height, width = int(msg.height), int(msg.width)
+        image = depth.reshape(height, width)[::self._seek_step, ::self._seek_step]
+        rows, cols = image.shape
+        valid = np.isfinite(image) & (image > 0.1) & (image < 500.0)
+        if not np.any(valid):
             return
-        sector = int(math.degrees(ned_yaw_to_enu_yaw(self.heading_rad)) // 30) * 30
-        self._seek_samples.setdefault(sector, []).append(float(np.median(valid)))
+        ys, xs = np.mgrid[0:height:self._seek_step, 0:width:self._seek_step]
+        x_norm = xs[valid] / max(width - 1, 1)
+        y_norm = ys[valid] / max(height - 1, 1)
+        depth_m = image[valid]
+        tan_h = math.tan(math.radians(self._seek_hfov) / 2.0)
+        aspect = width / max(height, 1)
+        tan_v = tan_h / aspect
+        forward = depth_m
+        left = -(x_norm - 0.5) * 2.0 * depth_m * tan_h
+        up = (0.5 - y_norm) * 2.0 * depth_m * tan_v
+        if self.px4_z is None:
+            return
+        altitude = abs(float(self.px4_z))
+        keep = (up > -(altitude - self._seek_ground_margin)) & (forward < self._seek_max_range)
+        if not np.any(keep):
+            return
+        forward, left, up = forward[keep], left[keep], up[keep]
+        horizontal = np.hypot(forward, left)
+        nearest = int(np.argmin(horizontal))
+        body_bearing = math.atan2(float(left[nearest]), float(forward[nearest]))
+        world_bearing_deg = math.degrees(
+            ned_yaw_to_enu_yaw(self.heading_rad) + body_bearing)
+        sector = int(world_bearing_deg // 30) * 30
+        distance = float(horizontal[nearest])
+        self._seek_samples.setdefault(sector, []).append(distance)
 
     def _beat(self) -> None:
         msg = String()
