@@ -271,6 +271,13 @@ Windows 11（宿主）
 | 状态测量脚本 | ✅ | `scripts/px4_state_snapshot.py` 连续采样，替换会读到无效值的 `topic echo --once` |
 | 竖直指令与收敛验证 | ✅ | 上/下速度指令符号正确；大偏角起步完整收敛（1207→533 px 后死区锁定，偏航归零） |
 | 人工接管（键盘→MAVLink） | ✅ | F9 接管切 POSCTL、F10 交还切 OFFBOARD；摇杆前飞实测位移 1.23 m；任务 PAUSED→恢复当前航点 |
+| VLM 远端闭环（LightNav-0） | ✅ | 经 SSH 隧道把图像流/文本指令发到服务器、导航指令回传；接口 v2、`meta.frame_seq` 严格递增、`waypoints` 优先、竖直分量恒 0（高度交飞控）、深度本机采 |
+| 自动寻障（SEEK） | ✅ | 深度图定方位 → 几何去地面（点数≥40 / 垂跨度≥6° / MAD≤1.5 m / 中位距离排序，多候选）→ 转场 → 二次复验 → 对准 → 逼近 |
+| 实时避障绕行 | ✅ | 真实障碍上多轮"压速 → 三帧确认 → 保持 + 朝宽侧转向 + creep → 视野打开 → 恢复前进"；`enable` 原子交权（交权瞬间解除 dry_run、重置围栏原点） |
+| 落地三位一体安全 | ✅ | 机载看门狗 → 驱动阶段超时 + `max_flight_s=600` → 监督层 `flight_supervisor.py`（心跳停 5 s 或阶段卡死按 `phase_budgets` → `land_fast`）；多次实测触发、全部安全落地 |
+| 起飞前 fail-closed 检查 | ✅ | `scripts/preflight.sh` 核对 VLM/offboard_bridge/airsim_camera/local_map/flight_supervisor/PX4/Agent 各 1 + `/fmu/out` 可读 + 地图 frames>0 + 远端 `/health` ready；抓到过多栈实例 |
+| 绕行打分器 | ✅ | `scripts/analyze_detour.py`：episode=连续≥3 帧且含保持态；结束后 20 帧内 ≥5 帧前向非零=闭合；单帧闪现/仅慢速单独计数 |
+| 保持超时脱困（未飞） | ⏳ | `vlm_navigator` `hold_max_s`(20 s)+`escape_back_mps`(0.10 m/s)：保持超时→慢速后退+朝宽侧偏航（guard=`obstacle_escape`）；已过单测，待实飞验证 |
 
 完整链路已打通：
 

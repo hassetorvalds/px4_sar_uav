@@ -15,6 +15,48 @@
 
 ---
 
+## [2026-10-14] 修复后批次 t6–t10 统计；保持超时"脱困"行为（`hold_max_s`/`escape_back_mps`）
+
+### 新增
+
+- `vlm_navigator` 新增 **保持超时脱困**：`hold_max_s`（默认 **20 s**）+ `escape_back_mps`（默认 **0.10 m/s**）。
+  连续处于 `obstacle` 保持超过 `hold_max_s` 仍未释放时（常见于**两侧都紧的大墙面**——释放条件要求
+  所选侧 ≥ `obstacle_side_release_m`=1.2 m，贴墙时永不满足），改为**慢速后退 + 朝宽侧偏航**
+  （guard 记为 `obstacle_escape`），让障碍重新进入视野/脱困，而不是贴到窗口结束。
+  - 位置：`ros2_px4_ws/src/vlm/vlm/vlm_navigator.py`；命令复用同一 `BodyVelocity`，`duration_s` 保留。
+  - 触发仅限 `map_guard == 'obstacle'`；离开 obstacle 即清零 `_hold_started_at`。
+
+### 验证
+
+- 单元测试：build + `colcon test`（vlm 包）**41 passed**（含上一条新增的阶段状态机静态单测）。
+- 修复后批次 **③ 连跑 5 次（t6–t10，全新 session + preflight 全通过）**：
+
+```text
+t6  s1014-185233  无 episode（候选复验未过 → 未交权）
+t7  s1014-185519  无 episode
+t8  s1014-185813  episode 1 个：208 帧(≈90 s)持续保持、0 帧恢复 → 0/1 ❌ FAIL
+t9  s1014-192356  无 episode
+t10 s1014-192652  无 episode（另有 1 个单帧闪现，单独计数）
+```
+
+  5 轮全部 preflight 通过、**0 次盲交权、0 次误触发围栏、全部安全落地**。
+  与修复前（t1–t5：轮级 4/5、episode 6 个）对比，**仅 1/5 轮真正交权**——正是"**无确认不交权**"生效的结果。
+
+### 已知问题
+
+- `hold_max_s`/`escape_back_mps` 行为**尚未实飞验证**（已实现、已过单测；t8 用例即为其目标场景）。
+- **寻障排序**现按"中位距离最小"（t7 最佳扇区 3.8 m / MAD 1.49，紧贴阈值），可能偏向近处杂波；
+  待服务器侧定口径后决定是否改为"结构质量优先（低 MAD）+ 中位距离下限"。
+- "无 episode"轮次是否计入成功率**尚无定论**，建议同时报"绕行闭合率"与"寻障命中率"。
+
+### 变更
+
+- `docs/agent_comm/`：归档服务器侧来信 `65_reply_from_server_regression_ok_and_phase_advice.md`
+  （回归对账干净、认可两 bug 定位、建议按阶段分配超时 + 阶段状态机单测，均已实现）；
+  新增待转达回信 `64_reply_conservative_batch_and_hold_escape.md`；索引与进度速览同步。
+
+---
+
 ## [2026-10-14] 按阶段分配卡死预算 + 阶段状态机静态单测（含有效性验证）；"作废换点"分支已实飞覆盖
 
 ### 变更（按服务器侧 2026-10-14 两条建议）

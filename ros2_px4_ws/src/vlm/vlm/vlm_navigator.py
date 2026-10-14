@@ -129,6 +129,12 @@ class VlmNavigator(Node):
         self.declare_parameter('obstacle_stop_m', 0.6)
         self.declare_parameter('obstacle_release_m', 0.9)
         self.declare_parameter('obstacle_avoid_yaw_rate', 0.15)
+        # 保持超时后"后撤退开"（服务器侧"可闭合"原则的延伸）：
+        # 若持续处于 obstacle 保持超过 hold_max_s 仍未释放，说明这是个"绕不开"的点
+        # （常见于两侧都紧的大墙面），此时慢速后退 + 朝宽侧偏航，让障碍重新进入视野/脱困，
+        # 而不是一直贴到窗口结束（2026-10-14 t8 实测保持 208 帧、约 90 s）。
+        self.declare_parameter('hold_max_s', 20.0)
+        self.declare_parameter('escape_back_mps', 0.10)
         self.declare_parameter('obstacle_side_release_m', 1.2)
         self.declare_parameter('obstacle_max_turn_deg', 60.0)
         self.declare_parameter('obstacle_creep_mps', 0.1)
@@ -197,6 +203,8 @@ class VlmNavigator(Node):
             size=int(self.get_parameter('obstacle_track_size').value),
             tolerance_m=self._world_tolerance)
         self._yaw_lock_s = float(self.get_parameter('yaw_lock_s').value)
+        self._hold_max_s = float(self.get_parameter('hold_max_s').value)
+        self._escape_back_mps = float(self.get_parameter('escape_back_mps').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -241,6 +249,7 @@ class VlmNavigator(Node):
         self._obstacle_entry_heading = None   # 进入避障时的航向（用于累积转角）
         self._obstacle_turn_deg = 0.0
         self._obstacle_world = None      # 世界系(ENU)候选障碍点（用于拖影判别）
+        self._hold_started_at = None     # 连续处于 obstacle 保持的起点（用于保持超时后撤）
         self._world_consistent = True    # 必须是实例属性：未解锁/慢响应路径也会读它（今天踩过）
         self._obstacle_warned = False
         self._last_guard_detail = {}
@@ -708,6 +717,25 @@ class VlmNavigator(Node):
             turn_deg=self._obstacle_turn_deg, stop_streak=self._stop_streak,
             world_consistent=self._world_consistent)
         self._stop_streak = int(detail.get('stop_streak', 0))
+        # 保持超时 → 慢速后撤退开（"绕不开的点"不要贴到窗口结束）
+        if map_guard == 'obstacle':
+            if self._hold_started_at is None:
+                self._hold_started_at = now
+            elif now - self._hold_started_at > self._hold_max_s:
+                side = detail.get('avoid_side') or 'left'
+                yaw = self._map_limits.avoid_yaw_rate * (1.0 if side == 'left' else -1.0)
+                command = BodyVelocity(
+                    -abs(self._escape_back_mps), 0.0, 0.0, yaw, command.duration_s)
+                detail = dict(detail)
+                detail['escape'] = True
+                detail['hold_s'] = round(now - self._hold_started_at, 1)
+                self.get_logger().warn(
+                    f'保持已持续 {now - self._hold_started_at:.0f} s（> {self._hold_max_s:.0f} s）'
+                    f'仍未释放 → 后退 {self._escape_back_mps:.2f} m/s 并朝{side}偏航（脱困）',
+                    throttle_duration_sec=5.0)
+                map_guard = 'obstacle_escape'
+        else:
+            self._hold_started_at = None
         self._last_guard_detail = detail
         if map_guard == 'obstacle' and not self._obstacle_warned:
             self.get_logger().warn(

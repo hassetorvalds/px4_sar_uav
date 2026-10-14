@@ -80,6 +80,8 @@
 | `61_reply_from_server_w1_alert_and_fixes.md` | 服务器→ | 2026-10-14 | **W1 首次真实告警**：会话堆积致显存 +4132 MiB（已加 SESSION_TTL_S/MAX_SESSIONS 回收）；确认开 `VLN_EVAL_TRAJ_TOP1=1`；5 次连跑对账干净；同意 trial4 诊断并补三点；**服务与监控现停止** | 已收到 |
 | `62_reply_from_server_service_up_with_top1.md` | 服务器→ | 2026-10-14 | 服务已恢复且两项改动生效（`TRAJ_TOP1` 约束词表 768 act/1300 apos/1297 opos/1003 posxy；会话回收 TTL900/MAX8）；认可三条修复；**GPU0 又出现第三方作业（2208 MiB）→ 基线 ~13792 MiB，按噪声处理**；随时可飞 | 已收到 |
 | `63_reply_regression_found_two_bugs_and_watchdog.md` | →服务器 | 2026-10-14 | 回归抓到两个 bug（**ALIGN 缩进死代码把驱动卡死 11 分钟**、缺 `import time`）已修；新增"卡阶段兜底"（监督层 phase_stuck_s=180 + 驱动 max_flight_s=600）；更正"5 次统计不受影响"；dry_run/不交权已由记录验证 | 待转达 |
+| `64_reply_conservative_batch_and_hold_escape.md` | →服务器 | 2026-10-14 | 修复后批次 t6–t10 统计（**仅 1/5 轮交权**，正是"无确认不交权"生效）；t8 暴露"绕不开的点会保持 90 s 到窗口结束" → 新增 `hold_max_s`+`escape_back_mps` 脱困（待飞验证）；请其对**寻障排序**（结构质量 vs 最近）与**"无 episode"是否计入成功率**定口径 | **待转达** |
+| `65_reply_from_server_regression_ok_and_phase_advice.md` | 服务器→ | 2026-10-14 | 回归对账干净（0×503/0×500/0 重置、会话回收 1 次正常、TRAJ_TOP1 生效）；认可两个 bug 定位；建议**阶段超时按阶段分配** + **阶段状态机单测**（均已实现）；认可后续计划；⚠️ 提醒 GPU0 仍有第三方作业 | 已收到 |
 | `39_reply_from_server_track_and_scene_path.md` | 服务器→ | 2026-10-13 | c13/c14/c15 对账干净；补两点（短时 track 取代链式比较、几何门限 + 容差随距离放大）；**主推路径 ①**：用 AirSim 真值选有限跨度障碍（不要让服务端给坐标） | 已收到 |
 
 ## 历史路径说明
@@ -162,7 +164,18 @@ Step C（闭环飞行）      ✅ C1 只偏航：航向 −102.8°（方向正�
                         ✅ 本地环境已恢复；**回归抓到 2 个真 bug**（ALIGN 缩进死代码→驱动卡死 11 min、
                            缺 import time）并修复；新增"卡阶段兜底"（监督层 phase_stuck_s / 驱动 max_flight_s）
                         ✅ 回归验证：0 次 enable（无确认不交权）、375 帧全 guard=dry_run、按预算收工降落
-                        ⏳ 补覆盖"逼近超时→作废换点"分支 → ③ 连跑 ≥5 次 → ② 与 planner 仲裁
+                        ✅ "逼近超时/净空回升→作废换点"分支实飞覆盖（regE184900：候选 3 复验通过→逼近中
+                           净空回升→re-align 上限→作废→收工降落；332 帧全 dry_run、0 次 enable）
+                        ✅ 阶段超时**按阶段分配**（phase_budgets：ALIGN 15 s、SEEK 45 s、TRANSIT 90 s…）+
+                           阶段状态机**静态单测**（死代码检测 + 分支必须能推进，最小复现验证有效）→ vlm 41 passed
+                        ✅ 修复后批次 ③ 连跑 5 次（t6–t10，全新 session + preflight 全通过）：
+                           仅 **1/5 轮真正交权**（"无确认不交权"生效）；t6/t7/t9/t10 均**无 episode**（候选复验未过）
+                        ⚠️ t8 暴露新问题：贴两侧都紧的墙面时"释放要选侧 ≥1.2 m"永不满足 → **保持 208 帧
+                           （≈90 s）到窗口结束**（0 帧恢复，0/1 FAIL）
+                        ✅ 已实现（**待飞验证**）：`hold_max_s`（默认 20 s）+ `escape_back_mps`（0.10 m/s）——
+                           保持超时则**慢速后退 + 朝宽侧偏航**脱困（guard=`obstacle_escape`）
+                        ⏳ 飞验 `obstacle_escape` → 待服务器侧定"寻障排序/成功率口径" → ③ 按口径连跑统计
+                           → ② VLM 与 local_planner 速度话题仲裁（两者都写同一 velocity_setpoint，同跑会抢）
 ```
 
 ## 服务器侧提供的版本标识（归档）
