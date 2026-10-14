@@ -52,10 +52,17 @@ class FlightSupervisor(Node):
         # 若不给宽限，会拿"上一轮遗留的旧心跳时间"直接判超时并在起飞瞬间发 land_fast
         # （2026-10-13 实测：c16 起飞时心跳被判定"已停 712.9 s"→ 桥接切速度模式下降 → 爬升超时）
         self.declare_parameter('arm_grace_s', 6.0)
+        # 卡阶段兜底：心跳里带阶段名（"ALIGN t=658.4"），同一阶段持续过久即降落。
+        # 背景（2026-10-14）：驱动因缩进 bug 卡在 ALIGN 658 s，但心跳一直在发 →
+        # "心跳停"判据兜不住；阶段不再变化才是那种情形的信号。
+        self.declare_parameter('phase_stuck_s', 180.0)
 
         self.timeout_s = float(self.get_parameter('timeout_s').value)
         self.repeat_s = float(self.get_parameter('repeat_s').value)
         self.arm_grace_s = float(self.get_parameter('arm_grace_s').value)
+        self.phase_stuck_s = float(self.get_parameter('phase_stuck_s').value)
+        self.current_phase = None
+        self.phase_since = None
         self.last_heartbeat = None
         self.armed = False
         self.armed_since = None
@@ -76,6 +83,10 @@ class FlightSupervisor(Node):
 
     def _on_heartbeat(self, msg: String) -> None:
         self.last_heartbeat = time.monotonic()
+        phase = str(msg.data).split(' ')[0].strip() or None
+        if phase != self.current_phase:
+            self.current_phase = phase
+            self.phase_since = self.last_heartbeat
 
     def _on_status(self, msg: VehicleStatus) -> None:
         self.armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
@@ -91,6 +102,12 @@ class FlightSupervisor(Node):
                 f'检测到解锁：给驱动 {self.arm_grace_s:.0f} s 宽限期再开始判心跳')
         if now - self.armed_since < self.arm_grace_s:
             return                      # 宽限期内不判（避免拿旧心跳时间误触发）
+        # 卡阶段兜底
+        if (self.phase_since is not None
+                and now - self.phase_since > self.phase_stuck_s):
+            self._send_land('阶段 {0} 已持续 {1:.0f} s（> {2:.0f} s）'.format(
+                self.current_phase, now - self.phase_since, self.phase_stuck_s))
+            return
         # 宽限期结束时若还没有任何心跳，就从"本进程启动"算起，而不是沿用上一轮的旧时间
         baseline = self.last_heartbeat if self.last_heartbeat is not None \
             else self.armed_since
@@ -100,12 +117,17 @@ class FlightSupervisor(Node):
         if now - self.last_land_sent < self.repeat_s:
             return
         self.last_land_sent = now
+        self._send_land(f'心跳已停 {age:.1f} s（> {self.timeout_s:.0f} s）且飞机已解锁')
+
+    def _send_land(self, reason: str) -> None:
+        now = time.monotonic()
+        if now - self.last_land_sent < self.repeat_s:
+            return
+        self.last_land_sent = now
         msg = String()
         msg.data = 'land_fast'
         self.command_pub.publish(msg)
-        self.get_logger().error(
-            f'心跳已停 {age:.1f} s（> {self.timeout_s:.0f} s）且飞机已解锁 → '
-            '监督层下发 land_fast')
+        self.get_logger().error(f'监督层下发 land_fast：{reason}')
 
 
 def main() -> int:

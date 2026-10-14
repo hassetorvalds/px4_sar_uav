@@ -24,6 +24,7 @@ import json
 import math
 import os
 import sys
+import time
 
 import rclpy
 from flight_check import FlightCheckBase
@@ -49,6 +50,8 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('decision_topic', '/vlm_navigator/decision')
         self.declare_parameter('output_csv', 'logs/c1_closed_loop.csv')
         self.declare_parameter('land_at_end', True)
+        # 全局飞行时限（兜底）：到点无论处于哪个阶段都收工降落
+        self.declare_parameter('max_flight_s', 600.0)
         # 摆位阶段：起飞后先朝当前机头方向慢速前进，直到"前向净空"降到阈值（把飞机送到障碍前）
         self.declare_parameter('pre_position', False)
         self.declare_parameter('pre_speed_mps', 0.2)
@@ -107,6 +110,8 @@ class ClosedLoopBase(FlightCheckBase):
         self.run_s = float(self.get_parameter('run_s').value)
         self.output_csv = str(self.get_parameter('output_csv').value)
         self.land_at_end = bool(self.get_parameter('land_at_end').value)
+        self.max_flight_s = float(self.get_parameter('max_flight_s').value)
+        self._flight_started = None
         self.pre_position = bool(self.get_parameter('pre_position').value)
         self.pre_speed = float(self.get_parameter('pre_speed_mps').value)
         self.pre_stop = float(self.get_parameter('pre_stop_clearance_m').value)
@@ -419,6 +424,8 @@ class ClosedLoopBase(FlightCheckBase):
     def enter(self, phase: str) -> None:
         """进入 RUN（交权）时通知提前跑着的 VLM 节点解除 dry_run。"""
         super().enter(phase)
+        if phase == 'ARM' and self._flight_started is None:
+            self._flight_started = time.monotonic()
         if phase == 'RUN':
             msg = String()
             msg.data = 'enable'
@@ -426,6 +433,14 @@ class ClosedLoopBase(FlightCheckBase):
             self.get_logger().info('已向 VLM 节点发送 enable（解除 dry_run）')
 
     def on_phase(self) -> None:
+        # 全局时限兜底：任何阶段卡住/超预算都收工降落（阶段级超时之外的第二道闸）
+        if (self._flight_started is not None
+                and time.monotonic() - self._flight_started > self.max_flight_s):
+            self.get_logger().warn(
+                f'全局飞行时限 {self.max_flight_s:.0f} s 到点（当前阶段 {self.phase}）→ 收工降落')
+            self.send('land_fast')
+            self.finish()
+            return
         if self.phase == 'CLIMB':
             if self.climb_to(self.altitude):
                 if self.pre_position:
@@ -563,12 +578,15 @@ class ClosedLoopBase(FlightCheckBase):
                         self.send('land_fast')
                         self.finish()
                     return
-                    self.get_logger().info(
-                        f'对准完成（误差 {math.degrees(error):+.1f}°，宽侧净空 '
-                        f'{side_max if side_max is None else round(side_max, 2)} m）→ 开始以 '
-                        f'{self.pre_speed:.2f} m/s 逼近')
-                    self._approach_confirmed = False
-                    self.enter('APPROACH')
+                # 对准完成且（若已知）至少一侧开阔 → 进入逼近
+                # 注意：以下三行必须与 `if side_max ...` 同级——曾经因缩进被塞进内层
+                # `return` 之后变成死代码，导致"对准成功也永远卡在 ALIGN"（2026-10-14 回归抓到）
+                self.get_logger().info(
+                    f'对准完成（误差 {math.degrees(error):+.1f}°，宽侧净空 '
+                    f'{side_max if side_max is None else round(side_max, 2)} m）→ 开始以 '
+                    f'{self.pre_speed:.2f} m/s 逼近')
+                self._approach_confirmed = False
+                self.enter('APPROACH')
                 return
             if self.elapsed() > float(self.get_parameter('align_timeout_s').value):
                 self.publish_yaw_rate(0.0)
