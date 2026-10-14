@@ -28,7 +28,9 @@ import sys
 import rclpy
 from flight_check import FlightCheckBase
 from geometry_msgs.msg import Twist
+import numpy as np
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
+from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from vlm.safety import parse_clearance_status
 
@@ -72,6 +74,17 @@ class ClosedLoopBase(FlightCheckBase):
         # 可闭合门限（服务器侧 2026-10-13 补充）：对准后、逼近前要求至少一侧 ≥ 该余量，
         # 否则即使障碍可复现也只会"保持不闭合"（大片墙面），应换下一个 scan_point
         self.declare_parameter('closable_side_m', 2.5)
+        # 自动寻障（服务器侧 2026-10-14 建议 ①）：本趟飞行先深度扫测定方位，再自动转场
+        self.declare_parameter('seek_enabled', False)
+        self.declare_parameter('seek_yaw_rate_deg_s', 15.0)
+        self.declare_parameter('seek_s', 26.0)
+        self.declare_parameter('seek_margin_m', 3.0)
+        self.declare_parameter('seek_min_m', 8.0)
+        self.declare_parameter('seek_max_m', 30.0)
+        self.declare_parameter('depth_topic', '/airsim_camera/depth')
+        # 深度统计只取"地平线以上"的行带：把地面排除掉，否则中位深度会被地面压低
+        # （2026-10-14 实测：同一扇区在含地面时 23.6 m、纯上方行带时 10.9 m）
+        self.declare_parameter('seek_row_fraction', 0.35)
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
         self.declare_parameter('transit_east_m', 0.0)
@@ -117,6 +130,16 @@ class ClosedLoopBase(FlightCheckBase):
         self._verify_rounds = max(int(self.get_parameter('verify_rounds').value), 1)
         self._verify_passed = 0
         self._closable_side = float(self.get_parameter('closable_side_m').value)
+        self.seek_enabled = bool(self.get_parameter('seek_enabled').value)
+        self.seek_yaw_rate = math.radians(
+            float(self.get_parameter('seek_yaw_rate_deg_s').value))
+        self.seek_s = float(self.get_parameter('seek_s').value)
+        self.seek_margin = float(self.get_parameter('seek_margin_m').value)
+        self.seek_min = float(self.get_parameter('seek_min_m').value)
+        self.seek_max = float(self.get_parameter('seek_max_m').value)
+        self._seek_samples = {}
+        self._seek_row_fraction = float(
+            self.get_parameter('seek_row_fraction').value)
         self.clearance = None
 
         self.rows = []
@@ -134,6 +157,8 @@ class ClosedLoopBase(FlightCheckBase):
         self.create_subscription(
             String, str(self.get_parameter('map_status_topic').value),
             self._on_map_status, 10)
+        self.create_subscription(
+            Image, str(self.get_parameter('depth_topic').value), self._on_depth_image, 2)
         # 心跳：独立监督进程（flight_supervisor.py）据此判断"驱动是否还活着"
         self.declare_parameter('heartbeat_topic', '/flight_heartbeat')
         self.heartbeat_pub = self.create_publisher(
@@ -152,6 +177,23 @@ class ClosedLoopBase(FlightCheckBase):
         parsed = parse_clearance_status(msg.data)
         if parsed is not None:
             self.clearance = parsed
+
+    def _on_depth_image(self, msg: Image) -> None:
+        """SEEK 阶段用：按方位扇区累计"上 55% 行 + 中心列带"的有效深度。"""
+        if self.phase != 'SEEK' or msg.encoding != '32FC1':
+            return
+        depth = np.frombuffer(msg.data, dtype=np.float32)
+        if depth.size < int(msg.width) * int(msg.height):
+            return
+        image = depth.reshape(int(msg.height), int(msg.width))
+        height, width = image.shape
+        patch = image[0:int(height * self._seek_row_fraction),
+                      int(width * 0.35):int(width * 0.65)]
+        valid = patch[np.isfinite(patch) & (patch > 0.1) & (patch < 500.0)]
+        if valid.size == 0:
+            return
+        sector = int(math.degrees(ned_yaw_to_enu_yaw(self.heading_rad)) // 30) * 30
+        self._seek_samples.setdefault(sector, []).append(float(np.median(valid)))
 
     def _beat(self) -> None:
         msg = String()
@@ -338,7 +380,12 @@ class ClosedLoopBase(FlightCheckBase):
         if self.phase == 'CLIMB':
             if self.climb_to(self.altitude):
                 if self.pre_position:
-                    if self.transit_enabled or self._points:
+                    if self.seek_enabled:
+                        self.get_logger().info(
+                            f'到达 {self.altitude:.1f} m，先做**深度自动寻障**：'
+                            f'{math.degrees(self.seek_yaw_rate):.1f}°/s × {self.seek_s:.0f} s')
+                        self.enter('SEEK')
+                    elif self.transit_enabled or self._points:
                         self.get_logger().info(
                             f'多点扫描配置：{len(self._points)} 个候选点 {self._points}'
                             if self._points else '转场配置：无候选点列表（用 transit_east/north）')
@@ -357,6 +404,33 @@ class ClosedLoopBase(FlightCheckBase):
                     self.enter('RUN')
             elif self.elapsed() > self.phase_timeout:
                 self.fail('爬升超时')
+            return
+
+        if self.phase == 'SEEK':
+            # 深度自动寻障：慢转一圈，边转边按扇区累计中位深度
+            self.publish_yaw_rate(self.seek_yaw_rate)
+            self.record_approach()
+            if self.elapsed() <= self.seek_s:
+                return
+            self.publish_yaw_rate(0.0)
+            if not self._seek_samples:
+                self.get_logger().warn('深度寻障：整圈都没有有效回波 → 收工降落')
+                self.send('land_fast')
+                self.finish()
+                return
+            ranking = sorted((float(np.median(v)), k) for k, v in self._seek_samples.items())
+            best_depth, best_sector = ranking[0]
+            bearing = math.radians(best_sector + 15.0)
+            distance = min(max(best_depth - self.seek_margin, self.seek_min), self.seek_max)
+            east = distance * math.cos(bearing)
+            north = distance * math.sin(bearing)
+            self._points = [(east, north)]
+            self._point_index = 0
+            self.get_logger().info(
+                '深度寻障结果：扇区 ' + str(best_sector) + f'° 中位 {best_depth:.1f} m '
+                f'（其余：{[(d_, s_) for d_, s_ in ranking[1:4]]}）→ 转场点 '
+                f'(东 {east:+.1f}, 北 {north:+.1f})，即距离 {distance:.1f} m')
+            self.enter('TRANSIT')
             return
 
         if self.phase in ('TRANSIT', 'DESCEND'):
