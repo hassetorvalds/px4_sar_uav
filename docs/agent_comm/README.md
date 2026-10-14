@@ -76,6 +76,8 @@
 | `57_reply_from_server_preflight_works_and_seek_tips.md` | 服务器→ | 2026-10-14 | **preflight + 新 session 组合拳确认为最有价值工程成果**（s1014：0 新增 503、0 重置）；SEEK 补两条判别（**垂直跨度**、**深度 MAD**）与一条流程（re-align 达上限→放弃该点换下一个） | 已收到 |
 | `58_reply_criterion_fixed_and_5trials.md` | →服务器 | 2026-10-14 | 打分口径按其定稿固化（episode≥3帧且含保持态；瞬态/仅慢速单独计数）；**同意开 `VLN_EVAL_TRAJ_TOP1=1`**；①③ 连跑 5 次：**4 PASS / 1 FAIL**（轮级 80%、episode 级 5/6）；trial4 失败签名=enable 后围栏未重零 | 待转达 |
 | `59_reply_from_server_criterion_and_500.md` | 服务器→ | 2026-10-14 | s1014-131724 对账干净但有 **1 次 500**（模型幻觉 `nas` token，缺 act_l0）；给出**打分主口径定稿**；建议开 `VLN_EVAL_TRAJ_TOP1=1` 从源头消除畸形输出（需重启，会清 session） | 已收到 |
+| `60_reply_three_fixes_and_pause.md` | →服务器 | 2026-10-14 | 她指出的三条已全部修好（enable 原子重置围栏 / **无确认不交权** / dry_run 期间围栏不生效）；说明我方暂停与恢复计划 | 待转达 |
+| `61_reply_from_server_w1_alert_and_fixes.md` | 服务器→ | 2026-10-14 | **W1 首次真实告警**：会话堆积致显存 +4132 MiB（已加 SESSION_TTL_S/MAX_SESSIONS 回收）；确认开 `VLN_EVAL_TRAJ_TOP1=1`；5 次连跑对账干净；同意 trial4 诊断并补三点；**服务与监控现停止** | 已收到 |
 | `39_reply_from_server_track_and_scene_path.md` | 服务器→ | 2026-10-13 | c13/c14/c15 对账干净；补两点（短时 track 取代链式比较、几何门限 + 容差随距离放大）；**主推路径 ①**：用 AirSim 真值选有限跨度障碍（不要让服务端给坐标） | 已收到 |
 
 ## 历史路径说明
@@ -149,8 +151,12 @@ Step C（闭环飞行）      ✅ C1 只偏航：航向 −102.8°（方向正�
                         ✅ 打分口径按其定稿固化（episode≥3帧且含保持态；瞬态单独计数）
                         ✅ ③ 连跑 5 次（脚本 run_detour_trial.sh：清单组/新 session/preflight/跑/打分）：
                            **轮级 4/5 = 80% PASS**（episode 级 5/6）；5 轮全部 preflight 通过、0 新增 503
-                        🐞 trial4 失败签名：enable 后围栏未重新零点（guard 停在 geofence）→ 待修
-                        ⏳ 修 geofence/enable 竞态 → 重跑回归 → ② 与 planner 仲裁
+                        🐞 trial4 失败签名：enable 后围栏未重新零点（guard 停在 geofence）
+                        ✅ 已修三条：① enable **原子**重置围栏原点（打印新原点）② **无确认不交权**
+                           （逼近超时未达停止阈值 → 作废该点换候选）③ dry_run 期间围栏/时长不生效
+                        ⏸ **暂停（2026-10-14）**：服务器侧 W1 告警后按操作者要求停服（下次带
+                           `VLN_EVAL_TRAJ_TOP1=1` + 会话回收）；我方本地环境已收尾
+                        ⏳ 恢复后：trial4 回归 → 连跑 ≥5 次 → ② 与 planner 仲裁
 ```
 
 ## 服务器侧提供的版本标识（归档）

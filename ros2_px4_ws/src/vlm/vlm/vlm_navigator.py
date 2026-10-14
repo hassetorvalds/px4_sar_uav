@@ -342,10 +342,21 @@ class VlmNavigator(Node):
         if token in ('1', 'true', 'enable', 'go', 'live'):
             if self._dry_run:
                 self._dry_run = False
-                self._guard_started_at = None      # 以"接管时刻"为安全包络起点
-                self._guard_origin = None          # 围栏原点也重置到交权点（服务器侧建议）
+                # **原子**重置：以"enable 这一刻"的位姿作为围栏原点与包络起点，
+                # 不留"下一帧再建"的窗口（否则首个 post-enable 帧会按旧原点判定——
+                # 2026-10-14 trial4 的 geofence 就是这样出现的）
+                now = time.monotonic()
+                state = self._monitor.snapshot()
+                origin = ((state.x, state.y) if self._monitor.position_fresh() else None)
+                with self._lock:
+                    self._guard_started_at = now
+                    self._guard_origin = origin
                 self._guard_expired = False
-                self.get_logger().warn('收到 enable：解除 dry_run，开始实飞（安全包络重新计时）')
+                origin_text = ('未知' if origin is None
+                               else f'({origin[0]:.2f}, {origin[1]:.2f}) NED')
+                self.get_logger().warn(
+                    f'收到 enable：解除 dry_run；围栏原点**原子重置**为当前位姿 {origin_text}，'
+                    '安全包络重新计时')
         elif token in ('0', 'false', 'disable', 'hold'):
             if not self._dry_run:
                 self._dry_run = True
@@ -621,6 +632,12 @@ class VlmNavigator(Node):
     - ``duration``：飞行时长达到 ``run_duration_s``，强制归零悬停；
     - ``geofence``：距起点超过 ``geofence_max_distance_m``，强制归零悬停。
         """
+        if self._dry_run:
+            # 未交权（dry_run）：**不执行**时长/围栏包络——此时由摆位脚本控制飞机，
+            # 按"起降点旧原点"判 geofence 会污染记录（服务器侧 2026-10-14 指出）。
+            self._last_guard_detail = {'reason': 'dry_run'}
+            return command, 'dry_run', {'reason': 'dry_run'}
+
         command = BodyVelocity(
             command.forward * self._forward_scale,
             command.left * self._lateral_scale,

@@ -15,6 +15,47 @@
 
 ---
 
+## [2026-10-14] 修服务器侧指出的三条（enable 原子重置围栏 / 无确认不交权 / dry_run 不执法）+ 暂停收尾
+
+### 修复
+
+```text
+1) enable **原子**重置围栏原点：`_on_enable` 直接用"enable 那一刻"的 PX4 位姿写入 `_guard_origin`
+   （不再置空等下一帧），同一锁内重置 `_guard_started_at`；日志打印"围栏原点原子重置为当前位姿 (x,y) NED"。
+   → 消除 trial4 那种"首个 post-enable 帧按旧原点判 geofence"的窗口。
+2) **无确认不交权**：逼近超时且从未到达停止阈值（没有二次复验确认的障碍）→ **不交权**，
+   作废该候选点 → 回 SEEK 取下一个候选；候选用尽则收工降落。
+   （此前"超时仍交权"会让 VLM 对着空处绕行又撞围栏，双重失败。）
+3) dry_run 期间**围栏/时长包络不生效**：`_guard_command` 开头 dry_run 短路（guard='dry_run'），
+   此时由摆位脚本控制飞机，记录不再被"起降点旧原点"污染。
+```
+
+### 服务器侧两项改动（已知晓，恢复时生效）
+
+```text
+· W1 首次真实告警（gpu_mem +4132 MiB）：每趟新 session 是对的，但服务端**旧会话未回收**导致堆积；
+  已加会话回收 SESSION_TTL_S=900 / MAX_SESSIONS=8（LRU），下轮生效；
+· VLN_EVAL_TRAJ_TOP1=1：下次启动带上，从源头消除 0.1% 的畸形 500（nas token + 缺 act_l0）。
+```
+
+### 暂停与环境收尾（用户暂离）
+
+```text
+已停：VLM 节点、flight_supervisor、ROS 栈、PX4、Micro XRCE-DDS Agent、SSH 隧道（逐项核对）
+未动：Windows 侧 UE4/AirSim
+接续清单已更新 docs/next-session-handoff.md（含恢复命令、preflight 纪律、下一轮第一件事）
+```
+
+### 验证
+
+```text
+colcon build vlm  ✅ 成功
+单元测试          ✅ vlm 39 passed
+本轮未飞（服务器侧服务已停）
+```
+
+---
+
 ## [2026-10-14] 打分口径定稿 + ③ 连跑 5 次（4/5 PASS）+ 试验脚本化 + trial4 失败签名
 
 ### 打分口径（服务器侧 2026-10-14 定稿，已固化进 `analyze_detour.py`）

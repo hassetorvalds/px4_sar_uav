@@ -138,6 +138,7 @@ class ClosedLoopBase(FlightCheckBase):
         self._verify_rounds = max(int(self.get_parameter('verify_rounds').value), 1)
         self._verify_passed = 0
         self._closable_side = float(self.get_parameter('closable_side_m').value)
+        self._approach_confirmed = False     # 是否真的逼近到停止阈值（否则不交权）
         self.seek_enabled = bool(self.get_parameter('seek_enabled').value)
         self.seek_yaw_rate = math.radians(
             float(self.get_parameter('seek_yaw_rate_deg_s').value))
@@ -562,11 +563,12 @@ class ClosedLoopBase(FlightCheckBase):
                         self.send('land_fast')
                         self.finish()
                     return
-                self.get_logger().info(
-                    f'对准完成（误差 {math.degrees(error):+.1f}°，宽侧净空 '
-                    f'{side_max if side_max is None else round(side_max, 2)} m）→ 开始以 '
-                    f'{self.pre_speed:.2f} m/s 逼近')
-                self.enter('APPROACH')
+                    self.get_logger().info(
+                        f'对准完成（误差 {math.degrees(error):+.1f}°，宽侧净空 '
+                        f'{side_max if side_max is None else round(side_max, 2)} m）→ 开始以 '
+                        f'{self.pre_speed:.2f} m/s 逼近')
+                    self._approach_confirmed = False
+                    self.enter('APPROACH')
                 return
             if self.elapsed() > float(self.get_parameter('align_timeout_s').value):
                 self.publish_yaw_rate(0.0)
@@ -622,6 +624,7 @@ class ClosedLoopBase(FlightCheckBase):
                       and all(value <= self.pre_stop for value in self._clearance_history))
             if stable:
                 self.publish_enu_velocity(0.0)
+                self._approach_confirmed = True
                 self.get_logger().info(
                     f'摆位完成：前向净空连续 {self.pre_stable} 次 ≤ {self.pre_stop:.1f} m'
                     f'（最近 {[round(v, 2) for v in self._clearance_history]}），'
@@ -630,10 +633,20 @@ class ClosedLoopBase(FlightCheckBase):
                 return
             if self.elapsed() > self.pre_timeout:
                 self.publish_enu_velocity(0.0)
+                # 服务器侧 2026-10-14：**没到过停止阈值 = 目标不确定 → 不交权**，
+                # 作废该候选点、回 SEEK 选下一个（否则 VLM 对着"空"去绕行，双重失败）
                 self.get_logger().warn(
-                    f'摆位超时（{self.pre_timeout:.0f} s，前向净空 {forward_clear}），'
-                    '仍在当前位置交出控制权')
-                self.enter('RUN')
+                    f'摆位超时（{self.pre_timeout:.0f} s，前向净空 {forward_clear}）'
+                    '且未到达停止阈值 → **不交权**，作废该候选点')
+                if self._next_point():
+                    target_east, target_north = self._current_point()
+                    self.get_logger().info(
+                        f'转场到下一个候选点（东 {target_east:+.0f}, 北 {target_north:+.0f}）')
+                    self.enter('TRANSIT')
+                else:
+                    self.get_logger().warn('候选点用尽 → 收工降落（不交权）')
+                    self.send('land_fast')
+                    self.finish()
                 return
             self.publish_enu_velocity(self.pre_speed)
             self.record_approach()

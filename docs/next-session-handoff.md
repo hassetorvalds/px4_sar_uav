@@ -1,4 +1,4 @@
-# 下一轮从这里开始（暂停于 2026-10-13 晚）
+# 下一轮从这里开始（最近更新：暂停于 2026-10-14）
 
 ## 一、当前状态一览
 
@@ -13,9 +13,22 @@
   运维：stop_stack.sh（父子同停）、flight_supervisor.py（心跳落地，含解锁宽限期）、
         vlm_tunnel.sh、analyze_stepB / analyze_yaw_sweep / vlm_session_to_csv
 
+2026-10-14 的进展（重要）
+  · **完整绕行跑通**（m4，手工目标点）：真实障碍上两轮"保持→朝宽侧转向→视野打开→恢复前进"，
+    打分 4/4 = 100%、服务端 0×503
+  · **自动链路成型**：depth_seek/几何去地面 SEEK（四重门限：点数/垂直跨度/MAD/中位）
+    → 多候选转场 → 二次复验 → 对准 → 逼近 → 交权 → 绕行
+  · **纪律脚本化**：`scripts/preflight.sh`（fail-closed，7 项各 1 + 链路 + 地图 + 远端 health）
+    + 每趟**全新 session id** → 连续多轮 0 新增 503 / 0 会话重置
+  · **③ 连跑 5 次**：轮级 4/5 = 80%，episode 级 5/6 = 83%（判据：episode ≥3 帧且含保持态；
+    结束后 20 帧内 ≥5 帧前向非零 = 闭合）
+  · 一键试验：`scripts/run_detour_trial.sh [标签]`（清节点→新 session→单组 VLM→preflight→跑→打分）
+  · `scripts/analyze_detour.py`：按定稿口径打分（含瞬态/仅慢速单独计数）
+
 待完成
-  ① 多点自动扫描找"可复现障碍" → 完整"保持→绕行→恢复"（代码已就绪，未飞）
-  ② C3 集成：VLM 与 local_planner 都写同一速度话题，需要仲裁（否则互相抢）
+  ① trial4 回归：三条修复后（enable 原子重置围栏 / 无确认不交权 / dry_run 不执法）重跑同一布局
+  ③ 连跑 ≥5 次统计（用 run_detour_trial.sh）
+  ② C3 集成：VLM 与 local_planner 都写同一速度话题，需要仲裁（安全/规划层覆盖 VLM、同帧同坐标系）
   ③ 降落偏差（AUTO_LAND 估计器发散）仍用 land_fast 规避；长期方案待定
 
 标注（诚实）
@@ -27,9 +40,12 @@
 
 ```text
 1) 服务端（由服务器操作者执行）
+   # 2026-10-14 之后启动请带上两项改动：
+   #   ① VLN_EVAL_TRAJ_TOP1=1（把生成约束到动作词表，消除 0.1% 畸形 500）
+   #   ② 会话回收 SESSION_TTL_S=900 / MAX_SESSIONS=8（避免会话堆积把显存推过 +4 GiB 告警线）
    source /home/sol/miniforge3/etc/profile.d/conda.sh && conda activate lightnav
    cd /home/sol/lightnav-workspace
-   setsid nohup python server_http.py --model_path /home/sol/lightnav-workspace/LightNav-0/checkpoints/LightNav-0 > server_http.log 2>&1 &
+   VLN_EVAL_TRAJ_TOP1=1 setsid nohup python server_http.py --model_path /home/sol/lightnav-workspace/LightNav-0/checkpoints/LightNav-0 > server_http.log 2>&1 &
    curl -s 127.0.0.1:18080/health      # 期望 ready:true
 
 2) WSL 侧隧道
@@ -49,16 +65,8 @@
 5) 落地监督层
    setsid nohup python3 scripts/flight_supervisor.py --ros-args -p timeout_s:=5.0 -p arm_grace_s:=6.0 &
 
-6) VLM 节点（**必须带 timeout**，且只一个）
-   timeout -s INT 400 ros2 run vlm vlm_navigator --ros-args \
-     -p provider:=remote_http -p dry_run:=true -p session_id:=cN -p geofence_max_distance_m:=12.0 ...
-
-7) 驱动（多点扫描 + 对准 + 逼近 + 交权）
-   python3 scripts/vlm_closed_loop.py --ros-args -p pre_position:=true -p pre_scan:=true \
-     -p scan_points:="0,15;12,0;0,-15;-12,0" -p verify_s:=2.5 -p verify_rounds:=2 \
-     -p align_tolerance_deg:=8.0 -p pre_speed_mps:=0.10 -p pre_stop_clearance_m:=1.2 \
-     -p output_csv:=logs/2026-10-14/detour.csv
-   # 交权时脚本会自动向 /vlm_navigator/enable 发 enable（解除 dry_run 并重置包络/围栏原点）
+6) 直接跑"一键试验"（含清节点、新 session、单组 VLM、preflight、寻障+绕行、打分）
+   bash scripts/run_detour_trial.sh trialN
 ```
 
 ## 三、起飞前检查清单（务必逐条）
