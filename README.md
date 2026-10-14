@@ -279,7 +279,8 @@ Windows 11（宿主）
 | 绕行打分器 | ✅ | `scripts/analyze_detour.py`：episode=连续≥3 帧且含保持态；结束后 20 帧内 ≥5 帧前向非零=闭合；单帧闪现/仅慢速单独计数 |
 | 保持超时脱困 | ✅ | `hold_max_s`(20 s)+`escape_back_mps`(0.10 m/s)，**预判式有界**（`escape_max_s`=10 s / `escape_max_m`=1 m）+ 重试≤1；esc3 实飞两次脱困均 **0.91 m/9.1 s ≤ 1.00 m**（不再越界），用尽后放弃、注入解除即闭合 |
 | 交权前微转复验 | ✅ | `vlm_closed_loop.py`：静置采样 A → +15° 采样 B → −15° 采样 C，判"世界点偏差≤1.0 m 且距离差≤1.0 m"；t16 正确否掉"转一下就消失"的候选（顺带修 Form A，把结构扫进前向锥） |
-| 位姿质量门 | ✅ | `vlm_navigator`+`safety`：位置陈旧(>0.5 s)/角速度过大(>0.6 rad/s) 时 **defer 暂缓判定**（既不算真障碍也不判拖影）；每帧落盘 `pose_age_s`/`yaw_rate`；esc3 交权后 337 帧 0 次误触发 |
+| 位姿质量门 | ✅ | `vlm_navigator`+`safety`：位置陈旧(>0.5 s)/角速度过大(**>0.45** rad/s，低于 RUN 上限才有意义) 时 **defer 暂缓判定**（既不算真障碍也不判拖影）；每帧落盘 `pose_age_s`/`yaw_rate`；esc3 交权后 337 帧 0 次误触发 |
+| 宽锥诊断字段 | ✅ | `local_map` 额外发布只读 `nearest_wide=(dx,dy,dz)@d`（`cone_wide_deg=35`），用于区分"真实但偏轴"与"假读数"；不影响任何判定 |
 | 寻障排序（结构质量） | ✅ | SEEK 合格判据：点数≥40 / 垂跨度≥6° / MAD≤1.0 / **中位距离≥6 m**，取最近的合格大结构；打印**全扇区表**（t12–t14 每轮筛出 4/8/6 个合格扇区 → 证明门限不是瓶颈） |
 | 双指标打分 | ✅ | `scripts/analyze_detour.py`：绕行闭合率（闭合/有 episode 轮次）+ 寻障命中率（有 episode/总轮次）+ 无 episode 单独计数，支持多轮聚合 |
 | 速度指令仲裁 | ✅ | `px4_interface/velocity_arbiter.py`：多路速度指令按优先级合并（默认 `avoid` > `vlm`），过期逐级回落、全部过期不发（交 bridge 保持位置）；20 Hz（同 bridge）+ `log_csv` 落盘赢家与两路 age；SITL 冒烟实测 `avoid→vlm→none`（未两回路同飞） |
