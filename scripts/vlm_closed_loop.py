@@ -503,14 +503,29 @@ class ClosedLoopBase(FlightCheckBase):
                              and span >= self._seek_min_span
                              and mad <= self._seek_max_mad
                              and median >= self._seek_min_median)
+                fails = []
+                if count < self._seek_min_points:
+                    fails.append(f'点<{self._seek_min_points}')
+                if span < self._seek_min_span:
+                    fails.append(f'跨度<{self._seek_min_span}°')
+                if mad > self._seek_max_mad:
+                    fails.append(f'MAD>{self._seek_max_mad}')
+                if median < self._seek_min_median:
+                    fails.append(f'中位<{self._seek_min_median}m')
                 candidates.append({'sector': int(sector), 'median': median, 'mad': mad,
-                                   'span': span, 'count': count, 'ok': qualifies})
+                                   'span': span, 'count': count, 'ok': qualifies,
+                                   'fail': '/'.join(fails) or '—'})
             good = sorted((c for c in candidates if c['ok']), key=lambda c: c['median'])
+            # 打印**全部扇区**（不只是前几个）：便于判断"是门限太严，还是场景真没有结构"
+            # （服务器侧 2026-10-14 第五节建议）。
             summary = [(c['sector'], round(c['median'], 1), c['count'],
-                        round(c['span'], 1), round(c['mad'], 2), c['ok']) for c in
+                        round(c['span'], 1), round(c['mad'], 2),
+                        'OK' if c['ok'] else c['fail']) for c in
                        sorted(candidates, key=lambda c: c['median'])]
             self.get_logger().info(
-                '深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 合格）：' + str(summary[:6]))
+                f'深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 判定）'
+                f'[门限：点≥{self._seek_min_points}/跨度≥{self._seek_min_span}°/'
+                f'MAD≤{self._seek_max_mad}/中位≥{self._seek_min_median}m]：' + str(summary))
             if not good:
                 self.get_logger().warn(
                     f'没有任何扇区同时满足"点数≥{self._seek_min_points}/垂跨度≥'

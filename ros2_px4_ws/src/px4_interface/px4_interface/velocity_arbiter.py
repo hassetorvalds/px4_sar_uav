@@ -30,6 +30,7 @@ ros2 run px4_interface velocity_arbiter --ros-args \
 
 from __future__ import annotations
 
+import os
 import time
 
 import rclpy
@@ -93,7 +94,12 @@ class VelocityArbiter(Node):
         self.declare_parameter('output_topic', '/offboard_bridge/velocity_setpoint')
         self.declare_parameter('avoid_timeout_s', DEFAULT_TIMEOUTS['avoid'])
         self.declare_parameter('vlm_timeout_s', DEFAULT_TIMEOUTS['vlm'])
-        self.declare_parameter('publish_rate_hz', 10.0)
+        # 与 offboard_bridge 同频（20 Hz）：过期判定必须跑在**控制率**上才准
+        # （服务器侧 2026-10-14 对仲裁器的第 2 点）。
+        self.declare_parameter('publish_rate_hz', 20.0)
+        # 归因落盘：每行 t / 赢家 / 各来源的 age（服务器侧 2026-10-14 第 1 点）。
+        # 空字符串 = 不落盘。
+        self.declare_parameter('log_csv', '')
 
         self._priority = [
             name.strip() for name in
@@ -116,11 +122,21 @@ class VelocityArbiter(Node):
 
         self._cmd_pub = self.create_publisher(Twist, output_topic, 10)
         self._active = None
+        self._log_path = str(self.get_parameter('log_csv').value).strip()
+        self._log_file = None
+        self._last_log_at = 0.0
+        if self._log_path:
+            os.makedirs(os.path.dirname(self._log_path) or '.', exist_ok=True)
+            new = not os.path.exists(self._log_path)
+            self._log_file = open(self._log_path, 'a', encoding='utf-8')
+            if new:
+                self._log_file.write('t,winner,age_avoid_s,age_vlm_s,forward,left,up,yaw_rate\n')
         self.create_timer(1.0 / rate_hz, self._on_timer)
 
         self.get_logger().info(
             f'velocity_arbiter 启动：优先级 {self._priority}，'
-            f'超时 {self._timeouts}，输出 {output_topic} @ {rate_hz:.1f} Hz')
+            f'超时 {self._timeouts}，输出 {output_topic} @ {rate_hz:.1f} Hz'
+            + (f'，落盘 {self._log_path}' if self._log_file else ''))
 
     def _on_cmd(self, name: str, msg: Twist) -> None:
         velocity = (float(msg.linear.x), float(msg.linear.y), float(msg.linear.z))
@@ -130,6 +146,7 @@ class VelocityArbiter(Node):
         now = time.monotonic()
         name, velocity, yaw_rate = select_command(
             self._sources, now, priority=self._priority, timeouts=self._timeouts)
+        self._log(now, name, velocity, yaw_rate)
 
         if name is None:
             # 全部过期：不发布，交由 offboard_bridge 的速度超时保持位置。
@@ -141,13 +158,36 @@ class VelocityArbiter(Node):
             return
 
         if name != self._active:
-            self.get_logger().info(f'速度控制权 → {name}')
+            self.get_logger().info(
+                f'速度控制权 → {name}（age avoid={self._age("avoid", now)} '
+                f'vlm={self._age("vlm", now)} s）')
             self._active = name
 
         msg = Twist()
         msg.linear.x, msg.linear.y, msg.linear.z = (float(v) for v in velocity)
         msg.angular.z = yaw_rate
         self._cmd_pub.publish(msg)
+
+    def _age(self, name, now):
+        entry = self._sources.get(name)
+        return 'n/a' if entry is None else f'{now - entry[2]:.2f}'
+
+    def _log(self, now, name, velocity, yaw_rate) -> None:
+        """落盘"本周期谁赢 + 各来源 age"（换赢家时必写，其余最多 2 Hz）。"""
+        if self._log_file is None:
+            return
+        if name == self._active and now - self._last_log_at < 0.5:
+            return
+        self._last_log_at = now
+
+        def age_of(source):
+            entry = self._sources.get(source)
+            return 'n/a' if entry is None else f'{now - entry[2]:.3f}'
+
+        self._log_file.write(
+            f'{now:.3f},{name or "none"},{age_of("avoid")},{age_of("vlm")},'
+            f'{velocity[0]:.4f},{velocity[1]:.4f},{velocity[2]:.4f},{yaw_rate:.4f}\n')
+        self._log_file.flush()
 
 
 def main(args=None) -> None:

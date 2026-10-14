@@ -138,6 +138,8 @@ class VlmNavigator(Node):
         # 脱困也要有界（服务器侧 2026-10-14 第 ④ 条）：避免从"保持卡死"变成"后退卡死"；
         # 到达上限后结束脱困、恢复常规判断；同一段障碍里最多再重试 escape_max_retries 次，
         # 之后放弃脱困，交由驱动阶段超时 / max_flight_s / 监督层兜底落地。
+        # 上限采用**预判式**（服务器侧 2026-10-14 选 B）：判断"本周期再加一段后退是否会越界"，
+        # 会越界就本帧不再发后退——使边界与速度、控制周期无关（改 escape_back_mps 也不会越界）。
         self.declare_parameter('escape_max_s', 10.0)
         self.declare_parameter('escape_max_m', 1.0)
         self.declare_parameter('escape_max_retries', 1)
@@ -758,13 +760,18 @@ class VlmNavigator(Node):
             if self._escape_started_at is not None:
                 elapsed = now - self._escape_started_at
                 travelled = abs(self._escape_back_mps) * elapsed
-                if elapsed > self._escape_max_s or travelled >= self._escape_max_m:
-                    # 到达时长/距离上限 → 结束本轮脱困，回到常规"保持在位"判断
+                # 预判：把本周期（到下一次指令）的后退也算进去，越界就本帧不再后退
+                step = max(float(getattr(command, 'duration_s', 0.0)), 0.0)
+                projected_t = elapsed + step
+                projected_m = abs(self._escape_back_mps) * projected_t
+                if projected_t >= self._escape_max_s or projected_m >= self._escape_max_m:
+                    # 已达（或再发一帧就会越过）时长/距离上限 → 结束本轮脱困
                     self._escape_started_at = None
                     self._hold_started_at = now
                     self.get_logger().warn(
-                        f'脱困已达上限（{elapsed:.1f} s / {travelled:.2f} m）→ 结束后退，'
-                        f'恢复常规保持判断')
+                        f'脱困已达上限（已后退 {travelled:.2f} m / {elapsed:.1f} s；'
+                        f'上限 {self._escape_max_m:.2f} m / {self._escape_max_s:.0f} s，'
+                        f'预判本周期会越界）→ 结束后退，恢复常规保持判断')
                 else:
                     side = detail.get('avoid_side') or 'left'
                     yaw = self._map_limits.avoid_yaw_rate * (

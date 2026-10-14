@@ -278,9 +278,9 @@ Windows 11（宿主）
 | 起飞前 fail-closed 检查 | ✅ | `scripts/preflight.sh` 核对 VLM/offboard_bridge/airsim_camera/local_map/flight_supervisor/PX4/Agent 各 1 + `/fmu/out` 可读 + 地图 frames>0 + 远端 `/health` ready；抓到过多栈实例 |
 | 绕行打分器 | ✅ | `scripts/analyze_detour.py`：episode=连续≥3 帧且含保持态；结束后 20 帧内 ≥5 帧前向非零=闭合；单帧闪现/仅慢速单独计数 |
 | 保持超时脱困 | ✅ | `vlm_navigator` `hold_max_s`(20 s)+`escape_back_mps`(0.10 m/s)，且**有界**（`escape_max_s`=10 s / `escape_max_m`=1 m）+ 重试≤1；esc2 实飞实测两次有界脱困（10.1 s/1.01 m、10.0 s/1.00 m）后放弃、注入解除即闭合 |
-| 寻障排序（结构质量） | ✅ | SEEK 合格判据：点数≥40 / 垂跨度≥6° / MAD≤1.0 / **中位距离≥6 m**，取最近的合格大结构（t11 实飞未误触发） |
+| 寻障排序（结构质量） | ✅ | SEEK 合格判据：点数≥40 / 垂跨度≥6° / MAD≤1.0 / **中位距离≥6 m**，取最近的合格大结构；打印**全扇区表**（t12–t14 每轮筛出 4/8/6 个合格扇区 → 证明门限不是瓶颈） |
 | 双指标打分 | ✅ | `scripts/analyze_detour.py`：绕行闭合率（闭合/有 episode 轮次）+ 寻障命中率（有 episode/总轮次）+ 无 episode 单独计数，支持多轮聚合 |
-| 速度指令仲裁 | ✅ | `px4_interface/velocity_arbiter.py`：多路速度指令按优先级合并（默认几何避障 `avoid` > 语义导航 `vlm`），过期来源逐级回落、全部过期则不发（交由 bridge 保持位置）；`sim_stack.launch.py` `with_arbiter:=true` 接入（未实飞） |
+| 速度指令仲裁 | ✅ | `px4_interface/velocity_arbiter.py`：多路速度指令按优先级合并（默认 `avoid` > `vlm`），过期逐级回落、全部过期不发（交 bridge 保持位置）；20 Hz（同 bridge）+ `log_csv` 落盘赢家与两路 age；SITL 冒烟实测 `avoid→vlm→none`（未两回路同飞） |
 
 完整链路已打通：
 
