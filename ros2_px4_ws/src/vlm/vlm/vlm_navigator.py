@@ -151,7 +151,11 @@ class VlmNavigator(Node):
         # 否则一次"快速偏航下的位姿滞后"会被误判成拖影（t14 的形态 B 很可能就是这种）。
         self.declare_parameter('pose_quality_gate', True)
         self.declare_parameter('pose_age_max_s', 0.5)
-        self.declare_parameter('pose_max_yaw_rate', 0.6)   # rad/s
+        # 门限必须**低于** RUN 的实际角速度上限才有意义（服务器侧 2026-10-14 指出：
+        # 之前 0.6 > RUN 的 max_yaw_rate 0.5 → 门在 RUN 期间永不触发，等于死区）。
+        # 配对规则：RUN max_yaw_rate=0.3 时用 0.45（留 0.15 余量）；若 RUN 仍 0.5，
+        # 门限必须明显更低（否则会贴着门限反复 defer）。
+        self.declare_parameter('pose_max_yaw_rate', 0.45)   # rad/s
         self.declare_parameter('obstacle_creep_open_side_m', 1.5)
         self.declare_parameter('obstacle_stop_confirm_frames', 3)
         self.declare_parameter('obstacle_world_tolerance_m', 0.4)
