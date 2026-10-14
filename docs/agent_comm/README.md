@@ -82,6 +82,8 @@
 | `63_reply_regression_found_two_bugs_and_watchdog.md` | →服务器 | 2026-10-14 | 回归抓到两个 bug（**ALIGN 缩进死代码把驱动卡死 11 分钟**、缺 `import time`）已修；新增"卡阶段兜底"（监督层 phase_stuck_s=180 + 驱动 max_flight_s=600）；更正"5 次统计不受影响"；dry_run/不交权已由记录验证 | 待转达 |
 | `64_reply_conservative_batch_and_hold_escape.md` | →服务器 | 2026-10-14 | 修复后批次 t6–t10 统计（**仅 1/5 轮交权**，正是"无确认不交权"生效）；t8 暴露"绕不开的点会保持 90 s 到窗口结束" → 新增 `hold_max_s`+`escape_back_mps` 脱困（待飞验证）；请其对**寻障排序**（结构质量 vs 最近）与**"无 episode"是否计入成功率**定口径 | **待转达** |
 | `65_reply_from_server_regression_ok_and_phase_advice.md` | 服务器→ | 2026-10-14 | 回归对账干净（0×503/0×500/0 重置、会话回收 1 次正常、TRAJ_TOP1 生效）；认可两个 bug 定位；建议**阶段超时按阶段分配** + **阶段状态机单测**（均已实现）；认可后续计划；⚠️ 提醒 GPU0 仍有第三方作业 | 已收到 |
+| `66_reply_from_server_structural_ranking_and_dual_metric.md` | 服务器→ | 2026-10-14 | 对账（回收触发 9 次；regC 262×503=回归期一次残留并发，t6–t10 干净）；**①同意**按"结构质量筛 + 中位距离下限（≥6 m）"取最近合格大结构；**②同意**双指标（无 episode 不计 FAIL，单独计数）；**④**认可脱困并补三条（有界、重试≤1、记 avoid_side/次数） | 已收到 |
+| `67_reply_escape_flight_verified_and_dual_metric.md` | →服务器 | 2026-10-14 | ①③④ 已按口径落地；**脱困在飞行中验证通过**（esc2：两次有界脱困 10.1 s/1.01 m、10.0 s/1.00 m → 放弃；44 帧 forward=-0.10；闭合 1/1）；t6–t10 双指标回算（闭合 0/1、命中 1/5）；补报速度仲裁；请其定"1 cm 量化超出"收 A 还是 B | **待转达** |
 | `39_reply_from_server_track_and_scene_path.md` | 服务器→ | 2026-10-13 | c13/c14/c15 对账干净；补两点（短时 track 取代链式比较、几何门限 + 容差随距离放大）；**主推路径 ①**：用 AirSim 真值选有限跨度障碍（不要让服务端给坐标） | 已收到 |
 
 ## 历史路径说明
@@ -176,8 +178,15 @@ Step C（闭环飞行）      ✅ C1 只偏航：航向 −102.8°（方向正�
                            保持超时则**慢速后退 + 朝宽侧偏航**脱困（guard=`obstacle_escape`）
                         ✅ ② 速度指令仲裁已实现（`velocity_arbiter`：优先级 avoid>vlm、逐级回落、全部过期不发；
                            单测 20 passed + 运行时冒烟通过；`sim_stack.launch.py` `with_arbiter` 接入）——**未实飞**
-                        ⏳ 飞验 `obstacle_escape` → 待服务器侧定"寻障排序/成功率口径" → ③ 按口径连跑统计
-                           → 带硬件联调仲裁（确认两回路同跑时只有一个来源在输出）
+                        ✅ 服务器侧已定口径（66）：① 寻障＝质量门限(点数/跨度/MAD≤1.0)+中位距离≥6 m 取最近；
+                           ② 双指标（闭合率=闭合/有 episode 轮次，寻障命中率=有 episode/总轮次，无 episode 单独计数）；
+                           ④ 脱困有界（`escape_max_s/m`）+ 重试≤1 + 记 `avoid_side`/次数
+                        ✅ ①③④ 已按口径实现（驱动 SEEK 门限、analyze_detour 双指标、navigator 脱困有界+重试）
+                        ✅ t11 实飞（410 帧，无 episode、全程安全落地）：新门限不误触发（未验证"选到真结构"）
+                        ✅ **脱困实飞验证通过**（esc2：飞行中注入"两侧都紧的墙"→ 两次有界脱困
+                           （10.1 s/1.01 m、10.0 s/1.00 m）→ 重试用尽放弃 → 注入解除后 episode 闭合 1/1）
+                           44 帧 forward 全为 -0.10 m/s、escape_index 1/2、avoid_side=left 已入记录
+                        ⏳ 按新门限连跑统计（寻障命中率是当前瓶颈）→ 带硬件联调速度仲裁
 ```
 
 ## 服务器侧提供的版本标识（归档）

@@ -94,7 +94,11 @@ class ClosedLoopBase(FlightCheckBase):
         # 稳健化门限（服务器侧 2026-10-14 补充）：区分"大结构"与"小物件/地面棱"
         self.declare_parameter('seek_min_points', 40)       # 扇区有效点数下限
         self.declare_parameter('seek_min_span_deg', 6.0)    # 垂直角跨度下限（墙/建筑跨多行）
-        self.declare_parameter('seek_max_mad_m', 1.5)       # 深度 MAD 上限（大平面离散小）
+        self.declare_parameter('seek_max_mad_m', 1.0)       # 深度 MAD 上限（大平面离散小）
+        # 结构质量门限 + 中位距离下限（服务器侧 2026-10-14 ①）：
+        # 先按"点数/垂跨度/MAD"筛出**真结构**，再取中位距离 ≥ 下限里**最近的**，
+        # 避免锁到近处杂波（如 3.8 m 小物），同时保证留出绕行空间（围栏 12 m、停止 0.6 m）。
+        self.declare_parameter('seek_min_median_m', 6.0)
         self.declare_parameter('seek_max_candidates', 3)    # 最多产出几个候选点（按中位距离排序）
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
@@ -160,6 +164,7 @@ class ClosedLoopBase(FlightCheckBase):
         self._seek_min_points = int(self.get_parameter('seek_min_points').value)
         self._seek_min_span = float(self.get_parameter('seek_min_span_deg').value)
         self._seek_max_mad = float(self.get_parameter('seek_max_mad_m').value)
+        self._seek_min_median = float(self.get_parameter('seek_min_median_m').value)
         self._seek_max_candidates = max(
             int(self.get_parameter('seek_max_candidates').value), 1)
         self.clearance = None
@@ -492,9 +497,12 @@ class ClosedLoopBase(FlightCheckBase):
                 mad = float(np.median(np.abs(distances - median)))
                 span = float(verticals.max() - verticals.min())
                 count = int(distances.size)
+                # 质量门限（点数/垂跨度/MAD）+ 中位距离下限：只有"够大、够平、够远"的
+                # 扇区才算合格候选（服务器侧 2026-10-14 ①：最近的**合格大结构**）。
                 qualifies = (count >= self._seek_min_points
                              and span >= self._seek_min_span
-                             and mad <= self._seek_max_mad)
+                             and mad <= self._seek_max_mad
+                             and median >= self._seek_min_median)
                 candidates.append({'sector': int(sector), 'median': median, 'mad': mad,
                                    'span': span, 'count': count, 'ok': qualifies})
             good = sorted((c for c in candidates if c['ok']), key=lambda c: c['median'])
@@ -504,7 +512,10 @@ class ClosedLoopBase(FlightCheckBase):
             self.get_logger().info(
                 '深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 合格）：' + str(summary[:6]))
             if not good:
-                self.get_logger().warn('没有任何扇区同时满足"点数/垂直跨度/MAD"门限 → 收工降落')
+                self.get_logger().warn(
+                    f'没有任何扇区同时满足"点数≥{self._seek_min_points}/垂跨度≥'
+                    f'{self._seek_min_span}°/MAD≤{self._seek_max_mad}/中位≥'
+                    f'{self._seek_min_median} m"门限 → 收工降落（先看上面的统计定位是哪一项）')
                 self.send('land_fast')
                 self.finish()
                 return

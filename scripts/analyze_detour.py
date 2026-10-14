@@ -4,14 +4,21 @@
 判据（写死，保证可比）：
 
 ```text
-障碍 episode   guard 连续处于 obstacle / obstacle_slow 的一段
+障碍 episode   guard 连续处于 obstacle / obstacle_slow / obstacle_escape 的一段
 闭合           episode 结束后 N=20 帧内，出现 ≥5 帧 post_filter.forward > 0.05
               （即"绕开后前向真的恢复了"）
-成功率        闭合 episode 数 / 总 episode 数；要求 100% 才算这一趟成功
+主指标        绕行闭合率 = 闭合 episode 数 / **有 episode 的轮次**；要求 100%
+副指标        寻障命中率 = 有 episode 的轮次 / 总轮次
+另报          "无 episode"的轮次单独计数（既不隐藏、也不算 FAIL）
 ```
 
+双指标口径来自服务器侧 2026-10-14 回信 ②：**"没找到可绕障碍"与"绕行逻辑是否
+正确"是两种能力**，混进同一个分母会把"没找到障碍"错判成"绕行不会"。
+
 用法：
-    python3 scripts/analyze_detour.py vlm_decisions_m4
+    python3 scripts/analyze_detour.py vlm_decisions_m4                 # 单轮（含双指标）
+    python3 scripts/analyze_detour.py vlm_decisions_t6 vlm_decisions_t7 ...  # 多轮聚合
+    python3 scripts/analyze_detour.py --min-frames 3 vlm_decisions_a vlm_decisions_b
 """
 
 import glob
@@ -19,33 +26,32 @@ import json
 import os
 import sys
 
-OBSTACLE_GUARDS = ('obstacle', 'obstacle_slow')
+OBSTACLE_GUARDS = ('obstacle', 'obstacle_slow', 'obstacle_escape')
 RECOVERY_WINDOW = 20
 RECOVERY_FRAMES_NEEDED = 5
 FORWARD_THRESHOLD = 0.05
 MIN_EPISODE_FRAMES = 3           # 单帧闪现不算 episode（服务器侧 2026-10-14 定稿）
-HOLD_GUARD = 'obstacle'          # episode 必须**至少含 1 帧保持态**，否则只是"减速"不算绕行
+# episode 必须**至少含 1 帧保持态**，否则只是"减速"不算绕行；脱困帧也算保持态。
+HOLD_GUARDS = ('obstacle', 'obstacle_escape')
 
 
-def main(argv):
-    directory = argv[1] if len(argv) > 1 else 'vlm_decisions'
-    min_episode_frames = int(argv[2]) if len(argv) > 2 else MIN_EPISODE_FRAMES
+def analyze_round(directory, min_episode_frames):
+    """分析单轮，返回 (合格 episode 列表, 闭合数, 记录, 统计字符串列表)。"""
     paths = sorted(glob.glob(os.path.join(directory, 'decision_*.json')))
     if not paths:
-        print(f'{directory} 下没有 decision_*.json')
-        return 1
+        return None
     records = [json.load(open(p, encoding='utf-8')) for p in paths]
     records.sort(key=lambda r: r.get('frame_seq') or 0)
 
     episodes = []
     current = None
-    for index, record in enumerate(records):
+    for position, record in enumerate(records):
         guard = record.get('guard')
         if guard in OBSTACLE_GUARDS:
             if current is None:
-                current = {'start': index, 'end': index}
+                current = {'start': position, 'end': position}
             else:
-                current['end'] = index
+                current['end'] = position
         elif current is not None:
             episodes.append(current)
             current = None
@@ -57,45 +63,95 @@ def main(argv):
     slow_only = 0
     for episode in episodes:
         frames = records[episode['start']:episode['end'] + 1]
-        length = len(frames)
-        has_hold = any(f.get('guard') == HOLD_GUARD for f in frames)
-        if length < min_episode_frames:
+        if len(frames) < min_episode_frames:
             continue
-        if not has_hold:
+        if not any(f.get('guard') in HOLD_GUARDS for f in frames):
             slow_only += 1          # 只减速、从不保持/转向 → 不算绕行 episode，单独计数
             continue
         qualified.append(episode)
-    print(f'目录 {directory}：{len(records)} 帧，识别到 {raw_episodes} 个障碍区间；'
-          f'主口径 episode（≥{min_episode_frames} 帧且含保持态）{len(qualified)} 个，'
-          f'仅慢速区间 {slow_only} 个（不计分）')
-    episodes = qualified
+
+    lines = [f'目录 {directory}：{len(records)} 帧，识别到 {raw_episodes} 个障碍区间；'
+             f'主口径 episode（≥{min_episode_frames} 帧且含保持态）{len(qualified)} 个，'
+             f'仅慢速区间 {slow_only} 个（不计分）']
     closed = 0
-    for order, episode in enumerate(episodes, 1):
+    for order, episode in enumerate(qualified, 1):
         window = records[episode['end'] + 1:episode['end'] + 1 + RECOVERY_WINDOW]
         forward_frames = sum(
             1 for r in window
             if ((r.get('post_filter') or {}).get('forward') or 0.0) > FORWARD_THRESHOLD)
-        yaws = {(r.get('guard_detail') or {}).get('avoid_side') for r in
-                records[episode['start']:episode['end'] + 1]}
-        sides = {s for s in yaws if s}
+        sides = {(r.get('guard_detail') or {}).get('avoid_side')
+                 for r in records[episode['start']:episode['end'] + 1]}
+        sides = {s for s in sides if s}
+        escapes = [r for r in records[episode['start']:episode['end'] + 1]
+                   if r.get('guard') == 'obstacle_escape']
         ok = forward_frames >= RECOVERY_FRAMES_NEEDED
         closed += int(ok)
         first = records[episode['start']]
         clearance = first.get('clearance') or [float('nan')]
-        print(f'  episode {order}: seq {first.get("frame_seq")}–'
-              f'{records[episode["end"]].get("frame_seq")}'
-              f'（{episode["end"] - episode["start"] + 1} 帧，起始净空 {clearance[0]:.2f} m，'
-              f'避让侧 {sides or "—"}）→ 恢复窗口内前向非零 {forward_frames} 帧 '
-              f'{"✅ 闭合" if ok else "❌ 未闭合"}')
+        lines.append(
+            f'  episode {order}: seq {first.get("frame_seq")}–'
+            f'{records[episode["end"]].get("frame_seq")}'
+            f'（{episode["end"] - episode["start"] + 1} 帧，起始净空 {clearance[0]:.2f} m，'
+            f'避让侧 {sides or "—"}，脱困帧 {len(escapes)}）→ 恢复窗口内前向非零 '
+            f'{forward_frames} 帧 {"✅ 闭合" if ok else "❌ 未闭合"}')
+    transients = raw_episodes - len(qualified) - slow_only
+    lines.append(f'另有 {transients} 个单帧闪现区间（探测瞬态，不计分）')
+    return {'qualified': len(qualified), 'closed': closed, 'lines': lines}
 
-    transients = raw_episodes - len(episodes) - slow_only
-    print(f'另有 {transients} 个单帧闪现区间（探测瞬态，不计分）')
-    if episodes:
-        rate = closed / len(episodes)
-        print(f'\n闭合率 {closed}/{len(episodes)} = {rate * 100:.0f}% '
-              f'→ {"PASS（本轮算成功）" if closed == len(episodes) else "FAIL"}')
+
+def main(argv):
+    min_episode_frames = MIN_EPISODE_FRAMES
+    directories = []
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if arg in ('-n', '--min-frames'):
+            index += 1
+            min_episode_frames = int(argv[index])
+        elif arg.isdigit():          # 兼容旧用法：位置参数里的数字当 min_episode_frames
+            min_episode_frames = int(arg)
+        else:
+            directories.append(arg)
+        index += 1
+    if not directories:
+        directories = ['vlm_decisions']
+
+    rounds_total = 0
+    rounds_with_episode = 0
+    total_episodes = 0
+    total_closed = 0
+    for directory in directories:
+        result = analyze_round(directory, min_episode_frames)
+        if result is None:
+            print(f'{directory} 下没有 decision_*.json')
+            continue
+        print('\n'.join(result['lines']))
+        rounds_total += 1
+        if result['qualified']:
+            rounds_with_episode += 1
+            total_episodes += result['qualified']
+            total_closed += result['closed']
+            rate = result['closed'] / result['qualified']
+            print(f'本轮闭合率 {result["closed"]}/{result["qualified"]} = {rate * 100:.0f}% '
+                  f'→ {"PASS（本轮算成功）" if result["closed"] == result["qualified"] else "FAIL"}')
+        else:
+            print('本轮没有主口径 episode（没遇到"保持态"障碍）→ 计入无 episode 轮次')
+
+    print('\n==== 双指标汇总（服务器侧 2026-10-14 ②） ====')
+    if rounds_total <= 0:
+        print('没有可分析的轮次')
+        return 1
+    if total_episodes:
+        closure = total_closed / total_episodes
+        print(f'主指标 · 绕行闭合率 = {total_closed}/{total_episodes} = {closure * 100:.0f}% '
+              f'→ {"PASS（要求 100%）" if total_closed == total_episodes else "FAIL"}')
     else:
-        print('\n主口径没有 episode（本轮没遇到"保持态"障碍）→ 不计分')
+        print('主指标 · 绕行闭合率 = 无 episode，无法评估')
+    hit = rounds_with_episode / rounds_total
+    print(f'副指标 · 寻障命中率 = 有 episode 轮次 {rounds_with_episode}/{rounds_total} '
+          f'= {hit * 100:.0f}%')
+    print(f'另报   · 无 episode 轮次 {rounds_total - rounds_with_episode}/{rounds_total}'
+          f'（既不隐藏、也不算 FAIL）')
     return 0
 
 

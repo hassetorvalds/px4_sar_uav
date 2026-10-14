@@ -48,7 +48,26 @@ SCENARIO_TURN = [
     (6.0, None),                 # 陈旧 → stale
 ]
 
-SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN}
+# escape：验证"保持超时脱困"（服务器侧 2026-10-14 第 ④ 条）
+# 关键：**两侧都紧**（l=r=0.4 < side_release 1.2）→ 保持永不释放 →
+#      20 s 触发第 1 次脱困（有界 10 s/1 m）→ 再 20 s 触发第 2 次 → 用尽后放弃。
+SCENARIO_ESCAPE = [
+    (6.0, None),                 # 陈旧 → stale
+    (8.0, (3.0, 3.0, 3.0)),      # 放行 → ok
+    (75.0, (0.45, 0.4, 0.4)),    # 两侧都紧的墙：保持 → 脱困 → 脱困 → 放弃
+    (8.0, (3.0, 3.0, 3.0)),      # 放开 → 障碍解除（复位）
+    (6.0, None),                 # 陈旧 → stale
+]
+
+# escape_flight：交权后立刻进入"两侧都紧的墙"，用于在**真实飞行中**逼出脱困链路
+SCENARIO_ESCAPE_FLIGHT = [
+    (75.0, (0.45, 0.4, 0.4)),    # 保持 → 20 s 后脱困(≤10 s/1 m) → 再 20 s 二次脱困 → 放弃
+    (10.0, (3.0, 3.0, 3.0)),     # 放开 → 障碍解除
+    (5.0, None),                 # 陈旧
+]
+
+SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN,
+             'escape': SCENARIO_ESCAPE, 'escape_flight': SCENARIO_ESCAPE_FLIGHT}
 
 
 class ClearanceInjector(Node):

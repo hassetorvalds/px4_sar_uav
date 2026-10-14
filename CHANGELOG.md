@@ -15,6 +15,58 @@
 
 ---
 
+## [2026-10-14] 按服务器侧口径落地 ①寻障排序 / ②双指标 / ④脱困有界；脱困**实飞验证通过**
+
+### 新增
+
+- `scripts/inject_clearance.py`：新增 `escape`（地面）与 `escape_flight`（飞行中）两个注入场景——
+  "两侧都紧的墙"（`f=0.45, l=r=0.4`），用于逼出保持超时脱困。
+- `scripts/run_escape_trial.sh`：**脱困的飞行中验证脚本**。只爬升 2 m 即交权，交权瞬间开始注入
+  障碍，跑完自动打分。
+  - 缘由（重要更正）：安全层只在 **armed + OFFBOARD** 时生效，地面注入被 `vlm_navigator`
+    短路成 `guard=idle`（实测 clearance 已收到但 guard 恒为 idle）——所以脱困**必须真飞**才能验证。
+
+### 变更
+
+- **① 寻障排序**（服务器侧 2026-10-14 ①）：`vlm_closed_loop.py` 的 SEEK 合格判据加
+  **中位距离下限** `seek_min_median_m=6.0`，`seek_max_mad_m` 由 1.5 **收紧到 1.0**；
+  合格扇区里仍取中位距离最小者（"最近的合格大结构"）。
+- **② 双指标**（服务器侧 ②）：`scripts/analyze_detour.py` 改为**多轮聚合**并输出
+  `绕行闭合率`（闭合 episode / 有 episode 轮次）、`寻障命中率`（有 episode 轮次 / 总轮次）、
+  `无 episode 轮次`（单独计数，既不算 FAIL 也不隐藏）；episode 判据加入 `obstacle_escape`。
+- **④ 脱困有界 + 有限重试**（服务器侧 ④）：`vlm_navigator` 新增 `escape_max_s=10.0`、
+  `escape_max_m=1.0`、`escape_max_retries=1`；脱困到时/到距即结束并恢复常规判断，
+  同一段障碍最多再重试 1 次（共 2 次），用尽后报 ERROR "不再后退，交由阶段超时 / max_flight_s /
+  监督层兜底"；`guard_detail` 记录 `escape_index` 与 `avoid_side`；障碍解除即复位计数。
+
+### 验证
+
+- 单元测试：`colcon test` **61 passed**（vlm 41 + px4_interface 20）。
+- t11 真机（自动寻障流程，s1014-195414）：preflight 全过、410 帧、无 episode、全程安全落地
+  → 新门限未误触发（尚未验证"门限能选中真结构"）。
+- **脱困实飞（esc2，s1014-200658，注入"两侧都紧的墙"）**：
+
+```text
+保持 >20 s → 第 1/2 次脱困 → 10.1 s / 1.01 m 到时结束（有界生效）
+再保持 20 s → 第 2/2 次脱困 → 10.0 s / 1.00 m 到时结束
+→ 重试用尽：不再后退（交监督层兜底）
+注入解除 → 恢复前进 → episode 闭合 1/1 = 100%
+44 帧 obstacle_escape：forward 全为 -0.100 m/s；escape_index 1:22 / 2:22；avoid_side=left
+guard 分布：stale 140 / obstacle 119 / dry_run 63 / obstacle_escape 44 / ok 24 / duration 13
+落地：arming_state=1、z≈-0.02 m（已落地并上锁）
+```
+
+- 双指标回算 t6–t10：闭合率 0/1、寻障命中率 1/5、无 episode 4/5（与手算一致）。
+
+### 已知问题
+
+- `escape_max_m` 实测超出上限 1 cm（10.1 s / 1.01 m）：时间×速度的量化误差。已请服务器侧在
+  "允许 1 帧量化超出"（A）与"距离一到即归零"（B）之间选一个。
+- **寻障命中率 1/5 仍是主瓶颈**：新门限只是"不误触发"，能否提升命中待多轮统计。
+- 速度仲裁（`velocity_arbiter`）**尚未与 AirSim/PX4 一起实飞**。
+
+---
+
 ## [2026-10-14] 新增速度指令仲裁（②）：`local_planner` 与 `vlm_navigator` 不再抢同一话题
 
 ### 新增
