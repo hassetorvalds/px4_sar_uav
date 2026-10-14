@@ -79,6 +79,7 @@
 | `60_reply_three_fixes_and_pause.md` | →服务器 | 2026-10-14 | 她指出的三条已全部修好（enable 原子重置围栏 / **无确认不交权** / dry_run 期间围栏不生效）；说明我方暂停与恢复计划 | 待转达 |
 | `61_reply_from_server_w1_alert_and_fixes.md` | 服务器→ | 2026-10-14 | **W1 首次真实告警**：会话堆积致显存 +4132 MiB（已加 SESSION_TTL_S/MAX_SESSIONS 回收）；确认开 `VLN_EVAL_TRAJ_TOP1=1`；5 次连跑对账干净；同意 trial4 诊断并补三点；**服务与监控现停止** | 已收到 |
 | `62_reply_from_server_service_up_with_top1.md` | 服务器→ | 2026-10-14 | 服务已恢复且两项改动生效（`TRAJ_TOP1` 约束词表 768 act/1300 apos/1297 opos/1003 posxy；会话回收 TTL900/MAX8）；认可三条修复；**GPU0 又出现第三方作业（2208 MiB）→ 基线 ~13792 MiB，按噪声处理**；随时可飞 | 已收到 |
+| `63_reply_regression_found_two_bugs_and_watchdog.md` | →服务器 | 2026-10-14 | 回归抓到两个 bug（**ALIGN 缩进死代码把驱动卡死 11 分钟**、缺 `import time`）已修；新增"卡阶段兜底"（监督层 phase_stuck_s=180 + 驱动 max_flight_s=600）；更正"5 次统计不受影响"；dry_run/不交权已由记录验证 | 待转达 |
 | `39_reply_from_server_track_and_scene_path.md` | 服务器→ | 2026-10-13 | c13/c14/c15 对账干净；补两点（短时 track 取代链式比较、几何门限 + 容差随距离放大）；**主推路径 ①**：用 AirSim 真值选有限跨度障碍（不要让服务端给坐标） | 已收到 |
 
 ## 历史路径说明
@@ -158,7 +159,10 @@ Step C（闭环飞行）      ✅ C1 只偏航：航向 −102.8°（方向正�
                         ⏸ **暂停（2026-10-14）**：我方本地环境已收尾（进程 0、18080 无监听）
                         ✅ 服务器侧已恢复且两项改动生效（`TRAJ_TOP1` 约束词表 + 会话回收 LRU）；
                            GPU0 出现新第三方作业（2208 MiB）→ 基线 ~13792 MiB，按噪声处理
-                        ⏳ 待我方重启本地环境后：trial4 回归 → 连跑 ≥5 次 → ② 与 planner 仲裁
+                        ✅ 本地环境已恢复；**回归抓到 2 个真 bug**（ALIGN 缩进死代码→驱动卡死 11 min、
+                           缺 import time）并修复；新增"卡阶段兜底"（监督层 phase_stuck_s / 驱动 max_flight_s）
+                        ✅ 回归验证：0 次 enable（无确认不交权）、375 帧全 guard=dry_run、按预算收工降落
+                        ⏳ 补覆盖"逼近超时→作废换点"分支 → ③ 连跑 ≥5 次 → ② 与 planner 仲裁
 ```
 
 ## 服务器侧提供的版本标识（归档）
