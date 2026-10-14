@@ -23,11 +23,13 @@ OBSTACLE_GUARDS = ('obstacle', 'obstacle_slow')
 RECOVERY_WINDOW = 20
 RECOVERY_FRAMES_NEEDED = 5
 FORWARD_THRESHOLD = 0.05
+MIN_EPISODE_FRAMES = 3           # 单帧闪现不算 episode（服务器侧 2026-10-14 定稿）
+HOLD_GUARD = 'obstacle'          # episode 必须**至少含 1 帧保持态**，否则只是"减速"不算绕行
 
 
 def main(argv):
     directory = argv[1] if len(argv) > 1 else 'vlm_decisions'
-    min_episode_frames = int(argv[2]) if len(argv) > 2 else 3
+    min_episode_frames = int(argv[2]) if len(argv) > 2 else MIN_EPISODE_FRAMES
     paths = sorted(glob.glob(os.path.join(directory, 'decision_*.json')))
     if not paths:
         print(f'{directory} 下没有 decision_*.json')
@@ -51,10 +53,22 @@ def main(argv):
         episodes.append(current)
 
     raw_episodes = len(episodes)
-    episodes = [e for e in episodes
-                if e['end'] - e['start'] + 1 >= min_episode_frames]
-    print(f'目录 {directory}：{len(records)} 帧，识别到 {raw_episodes} 个障碍 episode，'
-          f'其中 ≥{min_episode_frames} 帧的 {len(episodes)} 个（单帧闪现不计入 episode）')
+    qualified = []
+    slow_only = 0
+    for episode in episodes:
+        frames = records[episode['start']:episode['end'] + 1]
+        length = len(frames)
+        has_hold = any(f.get('guard') == HOLD_GUARD for f in frames)
+        if length < min_episode_frames:
+            continue
+        if not has_hold:
+            slow_only += 1          # 只减速、从不保持/转向 → 不算绕行 episode，单独计数
+            continue
+        qualified.append(episode)
+    print(f'目录 {directory}：{len(records)} 帧，识别到 {raw_episodes} 个障碍区间；'
+          f'主口径 episode（≥{min_episode_frames} 帧且含保持态）{len(qualified)} 个，'
+          f'仅慢速区间 {slow_only} 个（不计分）')
+    episodes = qualified
     closed = 0
     for order, episode in enumerate(episodes, 1):
         window = records[episode['end'] + 1:episode['end'] + 1 + RECOVERY_WINDOW]
@@ -74,10 +88,14 @@ def main(argv):
               f'避让侧 {sides or "—"}）→ 恢复窗口内前向非零 {forward_frames} 帧 '
               f'{"✅ 闭合" if ok else "❌ 未闭合"}')
 
+    transients = raw_episodes - len(episodes) - slow_only
+    print(f'另有 {transients} 个单帧闪现区间（探测瞬态，不计分）')
     if episodes:
         rate = closed / len(episodes)
         print(f'\n闭合率 {closed}/{len(episodes)} = {rate * 100:.0f}% '
               f'→ {"PASS（本轮算成功）" if closed == len(episodes) else "FAIL"}')
+    else:
+        print('\n主口径没有 episode（本轮没遇到"保持态"障碍）→ 不计分')
     return 0
 
 

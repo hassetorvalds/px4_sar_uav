@@ -15,6 +15,48 @@
 
 ---
 
+## [2026-10-14] 打分口径定稿 + ③ 连跑 5 次（4/5 PASS）+ 试验脚本化 + trial4 失败签名
+
+### 打分口径（服务器侧 2026-10-14 定稿，已固化进 `analyze_detour.py`）
+
+```text
+episode = 连续 ≥3 帧 **且至少含 1 帧 obstacle（保持态）**
+closed  = episode 结束后 20 帧内出现 ≥5 帧前向非零
+成功率  = closed / episode，要求 100%；单帧闪现与"仅慢速"区间单独计数报告（不计分、不隐藏）
+复核：m4 = 3/3 = 100%；s1014-131724 = 3/3 = 100%
+```
+
+### 新增：`scripts/run_detour_trial.sh`（把纪律脚本化）
+
+一次试验 = 按 PID 清理 VLM 节点 → **全新 session id** → 启动唯一一组 VLM（dry_run+timeout）
+→ `scripts/preflight.sh` **fail-closed**（不合格直接不飞）→ 自动寻障+完整绕行 → `analyze_detour.py` 打分。
+
+### ③ 连跑 5 次结果（每轮 preflight 全 OK，服务端 0 新增 503 / 0 重置）
+
+```text
+trial1 s1014-132843  episode 1（13 帧,left）        → 1/1 ✅
+trial2 s1014-133329  episode 2（12 帧 left,5 帧 right）→ 2/2 ✅
+trial3 s1014-133723  episode 1（10 帧,left）        → 1/1 ✅
+trial4 s1014-134227  episode 1（14 帧,left+right）  → **0/1 ❌**
+trial5 s1014-134634  episode 1（14 帧,left）        → 1/1 ✅
+轮级 4/5 = 80%；episode 级 5/6 = 83%
+```
+
+### trial4 失败签名（下一步修）
+
+```text
+该轮摆位"逼近超时"（净空 3.4~3.8 m 反复）后仍交权；交权前后 guard 长时间停在 **geofence**
+（seq61 13:42:58 → seq256 13:47:07），即 **enable 之后围栏未按预期重新零点** →
+下一步：把 enable 的围栏重置做成原子操作并打印"新原点 + 当帧漂移"，再重跑回归。
+```
+
+### 其它
+
+- 服务器侧建议开 `VLN_EVAL_TRAJ_TOP1=1`（约束生成到动作词表，消除本轮的 1 次畸形 500：
+  `nas` 文本 token + 缺 `<act_l0_*>`）；**我们已回复同意**（重启代价为零，每趟都用新 session）。
+
+---
+
 ## [2026-10-14] 稳健化 SEEK（四重门限 + 多候选 + 作废换点）：自动链路一趟跑出三段闭合绕行
 
 ### 变更（按服务器侧 2026-10-14 的两条判别 + 一条流程）

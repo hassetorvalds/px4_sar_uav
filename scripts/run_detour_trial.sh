@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# 一次"自动寻障 → 完整绕行"试验（把纪律脚本化：清节点 → 新 session → 单节点 → preflight → 跑 → 打分）
+#
+# 用法：
+#   scripts/run_detour_trial.sh [标签]        # 标签只用于日志文件名
+#
+# 设计要点（服务器侧 2026-10-14 要求）：
+#   1) 起飞前按 PID 清掉所有 VLM 节点，再启动**唯一一组**；
+#   2) 每次试验都用**全新 session_id**（复用会触发服务端会话重置）；
+#   3) `scripts/preflight.sh` fail-closed，任何一项不合格就不飞；
+#   4) 跑完自动用 analyze_detour.py 按定稿口径打分。
+set -uo pipefail
+
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${_dir}/env.sh" >/dev/null 2>&1
+cd "${PX4_SAR_ROOT}"
+
+label="${1:-trial}"
+sid="s$(date +%m%d-%H%M%S)"
+log_dir="logs/$(date +%Y-%m-%d)"
+mkdir -p "$log_dir"
+
+echo "== 试验 ${label}：session=${sid} =="
+# 1) 按 PID 清理陈旧 VLM 节点（避免"残留节点抢占爬升"这类并发）
+for pid in $(pgrep -f "install/vlm/lib/vlm/vlm_navigator" 2>/dev/null); do
+    kill "$pid" 2>/dev/null
+done
+sleep 3
+
+# 2) 启动唯一一组 VLM 节点（dry_run + timeout，交权时由驱动脚本发 enable）
+rm -rf "vlm_decisions_${sid}"
+timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
+    -p provider:=remote_http -p instruction:="go to the collapsed building ahead" -p dry_run:=true \
+    -p image_topic:=/airsim_camera/image -p depth_topic:=/airsim_camera/depth \
+    -p vlm_rate_hz:=2.2 -p remote_timeout_s:=3.0 -p warmup_frames:=8 \
+    -p base_velocity:=0.3 -p max_speed:=0.3 -p forward_scale:=1.0 -p lateral_scale:=1.0 \
+    -p max_lateral_speed:=0.3 -p max_yaw_rate:=0.5 -p yaw_lock_s:=0.0 \
+    -p run_duration_s:=95.0 -p geofence_max_distance_m:=15.0 \
+    -p avoidance_enabled:=true -p map_stale_s:=1.5 -p stale_forward_limit_mps:=0.1 \
+    -p obstacle_slow_start_m:=1.2 -p obstacle_stop_m:=0.6 -p obstacle_release_m:=0.9 \
+    -p obstacle_side_release_m:=1.2 -p obstacle_stop_confirm_frames:=3 \
+    -p obstacle_world_tolerance_m:=0.4 -p obstacle_candidate_max_m:=4.0 -p obstacle_track_size:=3 \
+    -p obstacle_max_turn_deg:=60.0 -p obstacle_creep_mps:=0.05 -p obstacle_creep_open_side_m:=1.5 \
+    -p obstacle_avoid_yaw_rate:=0.15 -p hold_on_slow_response_ms:=800.0 -p max_consecutive_errors:=3 \
+    -p output_dir:="vlm_decisions_${sid}" -p session_id:="${sid}" -p record_frames:=false \
+    > "${log_dir}/${label}_${sid}_vlm.log" 2>&1 &
+sleep 18
+
+# 3) fail-closed 起飞前检查
+if ! "${_dir}/preflight.sh"; then
+    echo "preflight 不合格 → **不飞**（试验 ${label} 中止）"
+    exit 1
+fi
+
+# 4) 自动寻障 + 完整绕行
+python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=115.0 \
+    -p seek_enabled:=true -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
+    -p seek_margin_m:=3.0 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
+    -p seek_min_points:=40 -p seek_min_span_deg:=6.0 -p seek_max_mad_m:=1.5 -p seek_max_candidates:=3 \
+    -p transit_altitude_m:=3.5 -p transit_timeout_s:=120.0 \
+    -p pre_position:=true -p pre_scan:=true -p scan_yaw_rate_deg_s:=15.0 -p scan_found_m:=4.0 \
+    -p scan_side_open_m:=1.5 -p scan_max_s:=25.0 -p verify_s:=2.5 -p verify_rounds:=2 \
+    -p align_tolerance_deg:=8.0 -p align_timeout_s:=10.0 -p align_yaw_rate:=0.4 -p realign_max:=3 \
+    -p closable_side_m:=2.5 \
+    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=1.0 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
+    -p output_csv:="${log_dir}/${label}_${sid}_detour.csv" \
+    > "${log_dir}/${label}_${sid}_driver.log" 2>&1
+
+# 5) 定稿口径打分
+echo "---- 试验 ${label}（session=${sid}）打分 ----"
+python3 scripts/analyze_detour.py "vlm_decisions_${sid}" | tail -12
+echo "取证：${log_dir}/${label}_${sid}_{vlm,driver}.log"

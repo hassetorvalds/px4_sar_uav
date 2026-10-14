@@ -74,6 +74,8 @@
 | `55_reply_from_server_m5_reconcile_and_geofix.md` | 服务器→ | 2026-10-14 | m5 对账：并发**第三次**（m4 残留 401×503 抢占 m5、m5 同 id 重跑触发第 2 次会话重置）；建议**几何去地面**（反投影+只留地面以上点）；要求**把并发防护脚本化（fail-closed）**；认可打分器 | 已收到 |
 | `56_reply_robust_seek_success.md` | →服务器 | 2026-10-14 | 稳健化 SEEK 生效（四重门限：点数/垂跨度/MAD/中位）→ 自动链路一趟跑出**三段闭合绕行**；请其定打分口径（含单帧=75% FAIL，episode≥3 帧=100% PASS） | 待转达 |
 | `57_reply_from_server_preflight_works_and_seek_tips.md` | 服务器→ | 2026-10-14 | **preflight + 新 session 组合拳确认为最有价值工程成果**（s1014：0 新增 503、0 重置）；SEEK 补两条判别（**垂直跨度**、**深度 MAD**）与一条流程（re-align 达上限→放弃该点换下一个） | 已收到 |
+| `58_reply_criterion_fixed_and_5trials.md` | →服务器 | 2026-10-14 | 打分口径按其定稿固化（episode≥3帧且含保持态；瞬态/仅慢速单独计数）；**同意开 `VLN_EVAL_TRAJ_TOP1=1`**；①③ 连跑 5 次：**4 PASS / 1 FAIL**（轮级 80%、episode 级 5/6）；trial4 失败签名=enable 后围栏未重零 | 待转达 |
+| `59_reply_from_server_criterion_and_500.md` | 服务器→ | 2026-10-14 | s1014-131724 对账干净但有 **1 次 500**（模型幻觉 `nas` token，缺 act_l0）；给出**打分主口径定稿**；建议开 `VLN_EVAL_TRAJ_TOP1=1` 从源头消除畸形输出（需重启，会清 session） | 已收到 |
 | `39_reply_from_server_track_and_scene_path.md` | 服务器→ | 2026-10-13 | c13/c14/c15 对账干净；补两点（短时 track 取代链式比较、几何门限 + 容差随距离放大）；**主推路径 ①**：用 AirSim 真值选有限跨度障碍（不要让服务端给坐标） | 已收到 |
 
 ## 历史路径说明
@@ -144,7 +146,11 @@ Step C（闭环飞行）      ✅ C1 只偏航：航向 −102.8°（方向正�
                         ✅ 稳健化 SEEK（点数 ≥40 + 垂跨度 ≥6° + MAD ≤1.5 m + 中位排序）+
                            多候选点 + re-align 上限换点：**自动链路一趟跑出三段闭合绕行**
                            （s1014-131724；打分：含单帧 3/4=75%、episode≥3 帧 3/3=100%）
-                        ⏳ 待服务器侧定打分口径 → ③ 连跑 ≥5 次统计 → ② 与 planner 仲裁
+                        ✅ 打分口径按其定稿固化（episode≥3帧且含保持态；瞬态单独计数）
+                        ✅ ③ 连跑 5 次（脚本 run_detour_trial.sh：清单组/新 session/preflight/跑/打分）：
+                           **轮级 4/5 = 80% PASS**（episode 级 5/6）；5 轮全部 preflight 通过、0 新增 503
+                        🐞 trial4 失败签名：enable 后围栏未重新零点（guard 停在 geofence）→ 待修
+                        ⏳ 修 geofence/enable 竞态 → 重跑回归 → ② 与 planner 仲裁
 ```
 
 ## 服务器侧提供的版本标识（归档）
