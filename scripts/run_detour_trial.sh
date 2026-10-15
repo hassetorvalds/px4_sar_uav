@@ -48,7 +48,7 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p obstacle_blind_zone_m:=0.5 \
     -p obstacle_side_release_m:=1.2 -p obstacle_stop_confirm_frames:=3 \
     -p obstacle_world_tolerance_m:=0.4 -p obstacle_candidate_max_m:=4.0 -p obstacle_track_size:=3 \
-    -p obstacle_max_turn_deg:=60.0 -p obstacle_creep_mps:=0.05 -p obstacle_creep_open_side_m:=1.5 \
+    -p obstacle_max_turn_deg:=60.0 -p obstacle_creep_mps:=0.05 \
     -p obstacle_avoid_yaw_rate:=0.15 -p hold_on_slow_response_ms:=800.0 -p max_consecutive_errors:=3 \
     -p hold_max_s:=20.0 -p escape_back_mps:=0.10 -p escape_max_s:=10.0 -p escape_max_m:=1.0 \
     -p escape_max_retries:=1 \
@@ -69,6 +69,8 @@ python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:
     -p seek_min_points:=40 -p seek_min_span_deg:=6.0 -p seek_max_mad_m:=1.0 \
     -p seek_min_median_m:=6.0 -p seek_max_candidates:=3 \
     -p transit_altitude_m:=3.5 -p transit_timeout_s:=120.0 \
+    -p transit_speed_mps:=1.0 -p transit_stop_clearance_m:=1.0 \
+    -p obstacle_creep_open_side_m:=2.0 -p obstacle_creep_budget_m:=0.5 -p obstacle_creep_budget_s:=10.0 \
     -p pre_position:=true -p pre_scan:=true -p scan_yaw_rate_deg_s:=15.0 -p scan_found_m:=4.0 \
     -p scan_side_open_m:=1.5 -p scan_max_s:=25.0 -p verify_s:=2.5 -p verify_rounds:=2 \
     -p align_tolerance_deg:=8.0 -p align_timeout_s:=10.0 -p align_yaw_rate:=0.4 -p realign_max:=3 \

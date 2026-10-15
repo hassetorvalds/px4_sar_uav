@@ -118,6 +118,17 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('transit_north_m', 0.0)
         self.declare_parameter('transit_altitude_m', 3.5)
         self.declare_parameter('transit_timeout_s', 45.0)
+        # ⚠️ 转场限速 + 前方净空硬停（2026-10-15，用户报"高速撞障碍"后加）：
+        # 位置目标点式转场会被 PX4 以巡航速度全速执行；改成"每周期只推进一点点"的追踪点，
+        # 并把速度压到人控级别，前方净空过低时就地停住。
+        self.declare_parameter('transit_speed_mps', 1.0)
+        self.declare_parameter('transit_stop_clearance_m', 1.0)
+        # 固定起始世界位姿（服务器侧 2026-10-15 要求 ②）：
+        # 不要调 AirSim reset()（会断 lockstep）；改为**每轮起飞后用位置控制飞到固定世界位姿**
+        # 再开始 SEEK，使各轮起点一致、命中率可横向比较。坐标用 AirSim 世界系（NED，米）。
+        self.declare_parameter('start_pose_enabled', False)
+        self.declare_parameter('start_world_north_m', 0.0)
+        self.declare_parameter('start_world_east_m', 0.0)
         # 交权瞬间通知 VLM 节点解除 dry_run（节点提前以 dry_run 跑，消除 ~30 s 启动时间差）
         self.declare_parameter('vlm_enable_topic', '/vlm_navigator/enable')
         self.declare_parameter('map_status_topic', '/local_map/status')
@@ -160,6 +171,15 @@ class ClosedLoopBase(FlightCheckBase):
         self.transit_north = float(self.get_parameter('transit_north_m').value)
         self.transit_altitude = float(self.get_parameter('transit_altitude_m').value)
         self.transit_timeout = float(self.get_parameter('transit_timeout_s').value)
+        self.transit_speed = float(self.get_parameter('transit_speed_mps').value)
+        self.transit_stop_clearance = float(
+            self.get_parameter('transit_stop_clearance_m').value)
+        self._transit_step_at = 0.0
+        self.start_pose_enabled = bool(self.get_parameter('start_pose_enabled').value)
+        self._start_world = (
+            float(self.get_parameter('start_world_north_m').value),
+            float(self.get_parameter('start_world_east_m').value))
+        self._start_pose_done = False
         self.enable_pub = self.create_publisher(
             String, str(self.get_parameter('vlm_enable_topic').value), 10)
         self._scan_hits = 0
@@ -463,6 +483,28 @@ class ClosedLoopBase(FlightCheckBase):
             return None
         return ned_to_enu(self.px4_x, self.px4_y, self.px4_z)
 
+    def _local_target_for_world_pose(self):
+        """把"AirSim 世界系目标位姿"换成**本机局部 ENU 目标**（用于固定起始位姿）。
+
+        局部目标 = 当前局部 ENU + (世界目标 − 世界当前)。这样既不动 lockstep、也不调 reset()，
+        每轮都能把飞机摆到同一个世界坐标（服务器侧 2026-10-15 要求 ②）。
+        拿不到 AirSim 位姿时返回 ``None``（调用方跳过并记 WARN）。
+        """
+        current_local = self.position_enu()
+        if current_local is None:
+            return None
+        client = getattr(self, 'client', None)
+        if client is None:
+            return None
+        try:
+            world = client.simGetVehiclePose().position      # AirSim 世界系（NED）
+        except Exception:                                    # noqa: BLE001 - 拿不到就跳过
+            return None
+        # AirSim 世界 NED → 我们的 ENU 差量：东 = +y, 北 = +x
+        d_east = self._start_world[1] - float(world.y_val)
+        d_north = self._start_world[0] - float(world.x_val)
+        return (current_local[0] + d_east, current_local[1] + d_north)
+
     # ------------------------------------------------ 微转复验（服务器侧 B）
 
     @property
@@ -573,6 +615,21 @@ class ClosedLoopBase(FlightCheckBase):
             return
         if self.phase == 'CLIMB':
             if self.climb_to(self.altitude):
+                # 固定起始世界位姿（服务器侧 ②）：起飞后先用位置控制飞到目标世界位姿，
+                # 再进入常规流程。局部目标 = 当前局部坐标 + (世界目标 − 世界当前)。
+                if self.start_pose_enabled and not self._start_pose_done:
+                    self._start_pose_done = True
+                    target = self._local_target_for_world_pose()
+                    if target is not None:
+                        self.get_logger().info(
+                            f'固定起始位姿：先飞到世界 (北 {self._start_world[0]:+.1f}, '
+                            f'东 {self._start_world[1]:+.1f}) → 局部 ENU '
+                            f'({target[0]:+.1f}, {target[1]:+.1f})')
+                        self._points = [target]
+                        self._point_index = 0
+                        self.enter('TRANSIT')
+                        return
+                    self.get_logger().warn('固定起始位姿：拿不到 AirSim 世界位姿 → 跳过')
                 if self.pre_position:
                     if self.seek_enabled:
                         self.get_logger().info(
@@ -678,9 +735,44 @@ class ClosedLoopBase(FlightCheckBase):
         if self.phase in ('TRANSIT', 'DESCEND'):
             altitude = self.transit_altitude if self.phase == 'TRANSIT' else self.altitude
             target_east, target_north = self._current_point()
-            self.publish_target_enu(target_east, target_north, altitude)
-            self.record_approach()
+            # ⚠️ 2026-10-15：**必须限速 + 前方净空硬停**。
+            # 用户现场看到多次"高速撞上障碍物"：转场以前直接发**最终位置点**，PX4 会用自身巡航速度
+            # （MPC_XY_CRUISE≈3 m/s、上限 12 m/s）全速冲过去，路径中间隔着建筑就是高速撞击
+            # （d9 数据里 0.5 s 位移 36 m 就是这种"位置目标点式"转场）。现在改为**追踪点**：
+            # 每个周期只把目标推进 min(限速×dt, 剩余距离)，并在前方净空过低时**就地停住**。
             current = self.position_enu()
+            if current is None:
+                self.publish_target_enu(target_east, target_north, altitude)
+                self.record_approach()
+                return
+            dx = target_east - current[0]
+            dy = target_north - current[1]
+            remaining = math.hypot(dx, dy)
+            now = time.monotonic()
+            dt = min(max(now - self._transit_step_at, 0.0), 0.5) if self._transit_step_at else 0.2
+            self._transit_step_at = now
+            step = min(self.transit_speed * dt, max(remaining, 0.0))
+            if remaining > 1e-3:
+                nx = current[0] + dx / remaining * step
+                ny = current[1] + dy / remaining * step
+            else:
+                nx, ny = target_east, target_north
+            # 前方净空硬停：转场路径上贴着障碍时不再推进（避免"盲飞"撞上去）
+            forward_clear = self.clearance[0] if self.clearance else None
+            if (forward_clear is not None and forward_clear <= self.transit_stop_clearance
+                    and remaining > 0.5):
+                self.publish_target_enu(current[0], current[1], altitude)
+                self.get_logger().warn(
+                    f'转场前方净空 {forward_clear:.2f} m ≤ {self.transit_stop_clearance:.1f} m '
+                    f'（距目标还有 {remaining:.1f} m）→ **就地停住**，不再盲飞',
+                    throttle_duration_sec=3.0)
+                self.record_approach()
+                if self.elapsed() > self.transit_timeout:
+                    self.get_logger().warn(f'{self.phase} 因前方障碍超时 → 就地继续')
+                    self.enter('SCAN' if self.pre_scan else 'APPROACH')
+                return
+            self.publish_target_enu(nx, ny, altitude)
+            self.record_approach()
             close = (current is not None
                      and abs(current[0] - target_east) < 0.5
                      and abs(current[1] - target_north) < 0.5

@@ -11,6 +11,7 @@
 import json
 import math
 import os
+import re
 import threading
 import time
 
@@ -21,6 +22,9 @@ from px4_interface.state import Px4StateMonitor
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
+
+# local_map 状态串里的"净空地板值"（fwd_floor_m=0.45）：上报值等于它即"触底"
+_FLOOR_RE = re.compile(r'fwd_floor_m=([0-9.]+)')
 
 from .pointing import (
     BodyVelocity,
@@ -155,6 +159,10 @@ class VlmNavigator(Node):
         # 盲区底线（0=关）：地图 min_range 过滤（0.45 m）使净空读数在 0.45 m 触底——
         # "看不见"≠"没有障碍"。净空 ≤ 该值时**一律归零前向**（保持态也不再 creep），保留偏航。
         self.declare_parameter('obstacle_blind_zone_m', 0.5)
+        # creep 预算（服务器侧 2026-10-15 要求 ③b）：单次保持内累计 creep 距离/时间上限，
+        # 超了就不再前推（只转不推），避免"朝障碍无条件蹭"
+        self.declare_parameter('obstacle_creep_budget_m', 0.5)
+        self.declare_parameter('obstacle_creep_budget_s', 10.0)
         # 位姿质量门（服务器侧 2026-10-14 第三节）：世界系一致性判据只有在位姿可靠时才有意义。
         # 位置陈旧 / 角速度过大 → **暂缓判定**（既不算真障碍，也不判拖影），等姿态稳定再判；
         # 否则一次"快速偏航下的位姿滞后"会被误判成拖影（t14 的形态 B 很可能就是这种）。
@@ -244,6 +252,8 @@ class VlmNavigator(Node):
         self._pose_gate = bool(self.get_parameter('pose_quality_gate').value)
         self._pose_age_max = float(self.get_parameter('pose_age_max_s').value)
         self._pose_max_yaw = float(self.get_parameter('pose_max_yaw_rate').value)
+        self._creep_budget_m = float(self.get_parameter('obstacle_creep_budget_m').value)
+        self._creep_budget_s = float(self.get_parameter('obstacle_creep_budget_s').value)
         self._output_dir = str(self.get_parameter('output_dir').value)
         vlm_rate = max(float(self.get_parameter('vlm_rate_hz').value), 0.05)
         command_rate = max(float(self.get_parameter('command_rate_hz').value), 1.0)
@@ -289,6 +299,10 @@ class VlmNavigator(Node):
         self._obstacle_turn_deg = 0.0
         self._obstacle_world = None      # 世界系(ENU)候选障碍点（用于拖影判别）
         self._hold_started_at = None     # 连续处于 obstacle 保持的起点（用于保持超时后撤）
+        self._creep_used_m = 0.0         # 本段保持内累计 creep 距离（预算闸，服务器侧 ③b）
+        self._creep_since = None         # 本段保持内首次 creep 的时刻
+        self._creep_last_at = 0.0
+        self._map_floor_m = None         # 地图上报的净空地板上限（用于识别"触底"）
         self._last_heading = None        # 上一帧航向（用于估计角速度，喂位姿质量门）
         self._last_heading_at = 0.0
         self._pose_defer_state = {'pose_age_s': None, 'yaw_rate': None}
@@ -419,10 +433,14 @@ class VlmNavigator(Node):
     def _on_map_status(self, msg: String) -> None:
         """缓存局部地图的三向净空（用于 C3 安全层；解析失败按"未知"处理）。"""
         parsed = parse_clearance_status(msg.data)
+        # 净空地板上限（local_map 的 fwd_floor_m）：用于识别"触底"（≤该值 = 未知，不是余量）
+        match = _FLOOR_RE.search(msg.data or '')
+        floor = float(match.group(1)) if match else None
         with self._lock:
             self._clearance = parsed
             self._clearance_stamp = time.monotonic()
             self._clearance_raw = msg.data        # 原始状态串（含最近点坐标，便于归因）
+            self._map_floor_m = floor
 
     def _depth_at(self, x_norm: float, y_norm: float):
         """在归一化像素处取本机深度（小窗口中位数，抗噪）。"""
@@ -641,6 +659,37 @@ class VlmNavigator(Node):
             meta['heading_deg'] = round(math.degrees(float(state.heading)) % 360.0, 1)
         return meta
 
+    def _at_min_range(self) -> bool:
+        """净空读数是否**触底**（等于地图 min_range 过滤值）。
+
+        触底的含义是"≤ 该值，未知"，不是"还有这么多余量"（服务器侧 2026-10-15）。
+        触底时按盲区同等待遇：一律不前推。
+        """
+        if self._clearance is None or self._map_floor_m is None:
+            return False
+        return float(self._clearance[0]) <= float(self._map_floor_m) + 0.02
+
+    def _creep_allowed(self, now: float) -> bool:
+        """保持态 creep 的**预算闸**（服务器侧 2026-10-15 要求 ③b）。"""
+        if self._creep_budget_m > 0.0 and self._creep_used_m >= self._creep_budget_m:
+            return False
+        if (self._creep_budget_s > 0.0 and self._creep_since is not None
+                and now - self._creep_since >= self._creep_budget_s):
+            return False
+        return True
+
+    def _note_creep(self, detail: dict, now: float) -> None:
+        """累计本段保持内的 creep 用量，并把预算状态写进记录。"""
+        creep = detail.get('creep_mps')
+        if isinstance(creep, (int, float)) and creep > 0.0:
+            if self._creep_since is None:
+                self._creep_since = now
+            dt = (now - self._creep_last_at) if self._creep_last_at else 1.0
+            self._creep_used_m += float(creep) * max(float(dt), 0.0)
+            self._creep_last_at = now
+        detail['creep_used_m'] = round(self._creep_used_m, 2)
+        detail['creep_budget_ok'] = self._creep_allowed(now)
+
     def _pose_deferred(self, now: float, state) -> bool:
         """位姿质量门：位置陈旧或角速度过大时返回 True（本帧**暂缓判定**）。
 
@@ -793,12 +842,19 @@ class VlmNavigator(Node):
         command, map_guard, self._map_holding, detail = apply_map_safety(
             command, self._clearance, age, self._map_holding, self._map_limits,
             turn_deg=self._obstacle_turn_deg, stop_streak=self._stop_streak,
-            world_consistent=self._world_consistent, defer=self._pose_deferred(now, state))
+            world_consistent=self._world_consistent, defer=self._pose_deferred(now, state),
+            at_min_range=self._at_min_range(),
+            creep_allowed=self._creep_allowed(now))
         self._stop_streak = int(detail.get('stop_streak', 0))
+        self._note_creep(detail, now)
         if self._pose_gate:
             # 把位姿质量落进记录，便于事后把"拖影判定"与"位姿滞后/高角速度"对齐分析
             detail = dict(detail)
             detail.update(self._pose_defer_state)
+        # 把"是否触底/是否盲区/creep 用量"落盘（服务器侧 2026-10-15 要求）
+        detail = dict(detail)
+        detail['at_min_range'] = self._at_min_range()
+        detail['map_floor_m'] = self._map_floor_m
         # 保持超时 → 慢速后撤退开（"绕不开的点"不要贴到窗口结束）。
         # 脱困本身**有界**（时长/距离）且**有限重试**（服务器侧 2026-10-14 第 ④ 条）：
         # 避免从"保持卡死"变成"后退卡死"；重试用尽后交由阶段超时 / max_flight_s / 监督层兜底。
@@ -857,6 +913,9 @@ class VlmNavigator(Node):
             self._escape_started_at = None
             self._escape_count = 0
             self._escape_gave_up = False
+            self._creep_used_m = 0.0     # 障碍解除：creep 预算重新计
+            self._creep_since = None
+            self._creep_last_at = 0.0
         self._last_guard_detail = detail
         if map_guard == 'obstacle' and not self._obstacle_warned:
             self.get_logger().warn(

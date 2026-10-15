@@ -50,7 +50,9 @@ class MapSafetyLimits:
     side_release_m: float = 1.2          # 所选侧也要恢复到该净空才解除（迟滞）
     max_turn_deg: float = 60.0           # 相对进入避障时的航向，累积转角上限（防死角打转）
     creep_mps: float = 0.1               # 较宽侧明显开阔时的小前向（绕行用，0 = 关闭）
-    creep_open_side_m: float = 1.5       # "明显开阔"的判定净空
+    # "明显开阔"的判定净空（服务器侧 2026-10-15 要求 ③a：creep 只在所选侧 ≥2.0 m 时才给——
+    # 安全前提是"侧向确实有空间可以蹭过去"，而不是"当前净空还没触底"）
+    creep_open_side_m: float = 2.0
     # 压速带（stop_m ~ slow_start_m）里的**前向下限**（0 = 关闭）。
     # 为什么需要（2026-10-15 实测）：压速是按净空线性缩放，净空越接近 stop_m 前向越趋近 0，
     # 于是"越想靠近越不走"，飞机长期停在 0.6~0.9 m 之间，永远跨不进保持带 → 拿不到 episode。
@@ -138,7 +140,8 @@ def parse_clearance_status(text: str):
 
 def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bool,
                      limits: MapSafetyLimits, turn_deg: float = 0.0, stop_streak: int = 0,
-                     world_consistent: bool = True, defer: bool = False):
+                     world_consistent: bool = True, defer: bool = False,
+                     at_min_range: bool = False, creep_allowed: bool = True):
     """对命令施加地图安全层。
 
     返回 ``(新命令, guard, 新 holding, 细节dict)``：
@@ -155,6 +158,10 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
     - ``defer``：**位姿质量不足**（位置陈旧 / 角速度过大）时置位——此时世界系判据不可靠，
       因此**暂缓判定**：既不当真障碍，也不判拖影（服务器侧 2026-10-14）。已在保持就维持保持，
       否则只压速、既不累计也不清零 ``stop_streak``，等位姿恢复后再判。
+    - ``at_min_range``：地图上报的净空**触底**（等于 ``min_range`` 过滤值）时置位——
+      它的含义是"≤该值，未知"，不是"有这么多余量"（服务器侧 2026-10-15）。与盲区同等待遇。
+    - ``creep_allowed``：保持态"朝宽侧 creep"的**预算闸**（服务器侧 2026-10-15 要求 ③b）：
+      由上层按"单次保持内累计 creep 距离/时间"判定，超预算就传 False（只转不推）。
     """
     if not limits.enabled:
         return command, 'map_off', holding, {}
@@ -216,9 +223,10 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
         yaw = limits.avoid_yaw_rate if left_c >= right_c else -limits.avoid_yaw_rate
         side = 'left' if left_c >= right_c else 'right'
         side_clear = max(left_c, right_c)
-        creep = limits.creep_mps if (limits.creep_mps > 0.0
+        creep = limits.creep_mps if (limits.creep_mps > 0.0 and creep_allowed
                                      and side_clear >= limits.creep_open_side_m) else 0.0
-        blind = (limits.blind_zone_m > 0.0 and forward_c <= limits.blind_zone_m)
+        blind = ((limits.blind_zone_m > 0.0 and forward_c <= limits.blind_zone_m)
+                 or at_min_range)
         if blind:
             creep = 0.0          # 已贴到盲区：不再前推，只保留偏航（继续朝宽侧转）
         capped = abs(turn_deg) >= limits.max_turn_deg
@@ -245,7 +253,8 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
                 and scaled < limits.slow_min_forward_mps):
             scaled = min(limits.slow_min_forward_mps, command.forward)
             floored = True
-        blind = (limits.blind_zone_m > 0.0 and forward_c <= limits.blind_zone_m)
+        blind = ((limits.blind_zone_m > 0.0 and forward_c <= limits.blind_zone_m)
+                 or at_min_range)
         if blind:
             scaled = 0.0         # 盲区内一律不前推（含刚被抬起的下限）
             floored = False

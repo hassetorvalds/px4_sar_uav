@@ -49,6 +49,30 @@
   · 用户自行 push 到 GitHub（本轮提交见 git log）
 ```
 
+### 2026-10-15 追加（同日稍晚）：**"高速撞障碍"真凶已定位并加固**
+
+```text
+真凶：**转场用位置目标点、没有任何限速** → PX4 以巡航速度（3–12 m/s）冲向 20–25 m 外的目标，
+      路径中间隔着建筑就是高速撞击（d9 数据：0.5 s 内局部坐标跳 36 m = 位置阶跃签名）。
+      SCAN/ALIGN/APPROACH/RUN 都是速度指令（0.15–0.3 m/s），不存在这个问题。
+
+已落地（**均未飞验**；服务器侧服务现已停止）
+  1) 转场限速 + 前方净空硬停：transit_speed_mps=1.0、transit_stop_clearance_m=1.0
+     （每周期只推进 min(限速×dt, 剩余)；净空≤1.0 m 且距目标远 → 就地停住）
+  2) 盲区覆盖所有前向路径（creep / 前向下限 / VLM forward）+ 触底标志
+     local_map 新增 fwd_floor_m=；navigator 落盘 at_min_range / map_floor_m
+  3) creep 双闸：creep_open_side_m 1.5→2.0；预算 creep_budget_m=0.5 / _s=10（超了只转不推）
+  4) 固定起始世界位姿（不调 reset()）：start_pose_enabled/start_world_north/east，
+     起飞后用 AirSim 只读位姿算差值、复用限速转场飞过去
+
+恢复后验证顺序
+  1) esc 式注入（2 m 悬停 + f=0.45, l=r=0.4）→ 期望前向恒 0、偏航保留 → 20 s 后脱困后撤；
+     边界：f=0.55（应仍 creep）、VLM 显式 forward>0（应被盲区压成 0）
+  2) 一轮常规试验：确认转场段地速 ≤1.0 m/s、"就地停住"日志
+  3) 再按 ③ 连跑统计
+待用户/服务器确认：转场限速 1.0 是否合适、固定起始点用哪个世界坐标、creep 预算 0.5 m/10 s
+```
+
 ```text
 为什么停：服务器侧服务与监控**按操作者要求停止**；preflight 是 fail-closed（要远端 /health ready）
           → 本轮**未起飞**。本地也同步收尾。

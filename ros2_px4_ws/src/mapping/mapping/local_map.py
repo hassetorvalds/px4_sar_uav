@@ -198,6 +198,9 @@ class LocalMap(Node):
                        f'nearest_forward_m={forward:.2f} '
                        f'left_m={left:.2f} right_m={right:.2f} '
                        f'{nearest_text} {wide_text} {centroid_text} '
+                       # 净空读数的**地板值**：上报值等于它时表示"触底（≤该值，未知）"，
+                       # 不是"还有这么多余量"（服务器侧 2026-10-15 要求落盘区分）
+                       f'fwd_floor_m={self._min_range:.2f} '
                        f'dropped_near={self._dropped_near} dropped_min_m={self._dropped_min_m:.2f}')
         self._status_pub.publish(status)
 
