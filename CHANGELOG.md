@@ -15,6 +15,33 @@
 
 ---
 
+## [2026-10-15] 本机环境：Windows 保留端口挡住 AirSim 的 45000（已修，**待撤销**）
+
+### 新增
+
+- `scripts/win_port_exclusion.sh`（`status` / `apply` / `revert`）：处理"Windows 保留端口段
+  压住 AirSim `ApiServerPort`"这一本机环境问题；`status` 会打印保留段并做**真实 bind 测试**
+  （试完立即释放），`apply`/`revert` 通过 UAC 提权执行 netsh 增删。README 第 **4.6** 节
+  记录了现象/根因/证据/撤销步骤。
+
+### 已知问题（环境）
+
+- 启动 AirSim 报 `Error at startup: bind: <…权限不允许…>`。根因**不是 AirSim**：
+  Hyper-V/WSL 每次开机在 Windows 上随机预留一段 TCP 端口，本轮 `44986–45085` 正好覆盖
+  `ApiServerPort=45000` → 没人占用也绑不上。证据：
+
+```text
+netsh int ipv4 show excludedportrange protocol=tcp  → 44986–45085（覆盖 45000）
+Windows 直接 bind：45000 = FAIL（权限不允许）；45600 = OK
+UE4 日志：Waiting for TCP connection on port 4560（它自己绑上的）→ 随后才弹 bind 错误
+          ⇒ 失败的是 45000（RPC），不是 4560
+```
+
+- 处置（用户选择方案 1）：`scripts/win_port_exclusion.sh apply` 把 45000 设为持久静态保留。
+  **⚠️ 这是临时环境改动：实验结束、用户确认后必须 `scripts/win_port_exclusion.sh revert` 撤销。**
+
+---
+
 ## [2026-10-14] 按服务器侧选择落地两问 (a)：交权 0.8 m + 复验容差 1.5 m（本地暂停收尾）
 
 ### 变更

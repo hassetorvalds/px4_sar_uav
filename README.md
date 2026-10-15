@@ -417,6 +417,57 @@ scripts/run_offboard.sh        # 终端 3
 scripts/check_stack.sh         # 终端 4：链路检查
 ```
 
+## 4.6 本机环境临时改动（⚠️ **待撤销**）：Windows 保留端口占用 AirSim 的 45000
+
+> 记录于 2026-10-15。**这是对 Windows 主机的临时环境改动，不是项目代码的一部分；
+> 实验结束、经用户确认后必须执行下面的 `revert` 撤销。**
+
+**现象与根因**：启动 AirSim 报
+`Error at startup: bind: <…以一种访问权限不允许的方式做了一个访问套接字的尝试…>`。
+根因不是 AirSim——Hyper-V/WSL 每次开机在 Windows 上**随机预留一段 TCP 端口**
+（本轮为 `44986–45085`），正好压到 AirSim `settings.json` 的 `ApiServerPort: 45000`，
+于是"没人占用也绑不上"。证据（非破坏性实验，试完立即释放）：
+
+```text
+netsh int ipv4 show excludedportrange protocol=tcp   →  44986–45085（覆盖 45000）
+Windows 上直接 bind：45000 = FAIL（权限不允许）；45600 = OK
+AirSim 日志：Waiting for TCP connection on port 4560  ← 4560 是它自己绑上的，没问题
+             随后才弹 bind 错误 → 失败的是 45000（RPC）
+```
+
+**处置（用户选择方案 1；需管理员/UAC）**：把 45000 变成**持久静态保留**，
+使随机预留段不再抢它。项目已把它脚本化，避免手打命令：
+
+```bash
+scripts/win_port_exclusion.sh status   # 只看：保留段 + 真实 bind 测试
+scripts/win_port_exclusion.sh apply    # 修：UAC 里点"是"（内部 = net stop winnat
+                                       #   → netsh add excludedportrange 45000 → net start winnat）
+```
+
+等价的手工命令（管理员 CMD）：
+
+```text
+net stop winnat
+netsh int ipv4 add excludedportrange protocol=tcp startport=45000 numberofports=1
+net start winnat
+```
+
+**撤销（用户确认实验结束后执行，务必做）**：
+
+```bash
+scripts/win_port_exclusion.sh revert   # UAC 确认；内部 = net stop winnat
+                                       #   → netsh delete excludedportrange 45000 → net start winnat
+```
+
+等价手工命令：`netsh int ipv4 delete excludedportrange protocol=tcp startport=45000 numberofports=1`。
+撤销后复查 `scripts/win_port_exclusion.sh status` 应看不到 45000 这条静态保留
+（此时若又被随机段压到、`bind` 再失败属正常，重启或再 apply 即可）。
+
+**替代方案（未采用）**：把 AirSim `ApiServerPort` 改成已验证可绑定的端口（如 45600），
+并同步改 WSL 侧默认值（`airsim_camera.py` / `flight_check.py` / `list_scene_objects.py` /
+`test_vlm_pipeline.sh` / `sim_stack.launch.py` 的 `airsim_port`）。零管理员权限，
+但随机预留段每次开机都会变、将来可能再撞别的端口。
+
 ## 5.1 从远程仓库克隆与重建
 
 远程仓库：`https://github.com/hassetorvalds/px4_sar_uav.git`

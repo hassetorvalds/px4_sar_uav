@@ -2,6 +2,11 @@
 
 ## 〇、2026-10-14 晚：暂停时的准确状态（先读这段）
 
+> ⚠️ **2026-10-15 待撤销的环境改动**：为让 AirSim 启动（Windows 保留段 44986–45085 压住了
+> `ApiServerPort=45000`），在 Windows 上把 45000 设成了**持久静态保留**
+> （`scripts/win_port_exclusion.sh apply`，详见 README 第 4.6 节）。
+> **实验结束、用户确认后必须执行 `scripts/win_port_exclusion.sh revert` 撤销。**
+
 ```text
 为什么停：服务器侧服务与监控**按操作者要求停止**；preflight 是 fail-closed（要远端 /health ready）
           → 本轮**未起飞**。本地也同步收尾。
