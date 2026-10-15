@@ -155,6 +155,10 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('transit_echo_delta_tol_m', 0.08)
         self.declare_parameter('transit_echo_ignore_s', 5.0)
         self.declare_parameter('transit_floor_band_m', 0.08)         # 贴着地板多近算"可疑"
+        # 回波判别要有界（服务器侧 2026-10-15）：单次转场最多判别 N 次 / 累计后退 ≤ 上限，
+        # 避免"贴着面反复后退"
+        self.declare_parameter('transit_echo_max_probes', 2)
+        self.declare_parameter('transit_echo_max_back_total_m', 0.5)
         # 交权瞬间通知 VLM 节点解除 dry_run（节点提前以 dry_run 跑，消除 ~30 s 启动时间差）
         self.declare_parameter('vlm_enable_topic', '/vlm_navigator/enable')
         self.declare_parameter('map_status_topic', '/local_map/status')
@@ -218,6 +222,12 @@ class ClosedLoopBase(FlightCheckBase):
         self._echo_tol = float(self.get_parameter('transit_echo_delta_tol_m').value)
         self._echo_ignore_s = float(self.get_parameter('transit_echo_ignore_s').value)
         self._echo_band = float(self.get_parameter('transit_floor_band_m').value)
+        self._echo_max_probes = max(
+            int(self.get_parameter('transit_echo_max_probes').value), 1)
+        self._echo_max_back_total = float(
+            self.get_parameter('transit_echo_max_back_total_m').value)
+        self._echo_probes_used = 0
+        self._echo_back_total = 0.0
         self.enable_pub = self.create_publisher(
             String, str(self.get_parameter('vlm_enable_topic').value), 10)
         self._scan_hits = 0
@@ -543,6 +553,25 @@ class ClosedLoopBase(FlightCheckBase):
         return self.nearest_wide_delta if self.nearest_wide_delta is not None \
             else self.nearest_delta
 
+    def _give_up_candidate(self, why: str) -> None:
+        """标记当前候选点不可达 → 转下一个；用尽则收工降落。
+
+        服务器侧 2026-10-15：转场受阻**不做复杂绕行**（那是 local_planner + 仲裁器的职责），
+        驱动层只负责"这个点到不了就换下一个"，与"无确认不交权"同一哲学。
+        """
+        self.get_logger().warn(f'{why} → 该候选点标记为**不可达**，转下一个候选')
+        self._echo_probes_used = 0
+        self._echo_back_total = 0.0
+        if self._next_point():
+            target_east, target_north = self._current_point()
+            self.get_logger().info(
+                f'转场到下一个候选点（东 {target_east:+.0f}, 北 {target_north:+.0f}）')
+            self.enter('TRANSIT')
+            return
+        self.get_logger().warn('候选点用尽 → 收工降落')
+        self.send('land_fast')
+        self.finish()
+
     def _echo_probe_tick(self, now: float, current, altitude: float) -> None:
         """自机体回波判别状态机：停住 → **后退一小段** → 静止采样 → 比较机体偏移。
 
@@ -700,6 +729,10 @@ class ClosedLoopBase(FlightCheckBase):
         # 否则"发现候选→复验失败→回 SCAN"会无限循环、scan_max_s 永远不到期（2026-10-15 实测）
         if phase == 'SCAN' and previous not in ('ROTVERIFY', 'VERIFY'):
             self._scan_started_at = time.monotonic()
+        if phase == 'TRANSIT':
+            # 每段转场的回波判别预算独立（否则跨段累计会把后面的点也判成"用尽"）
+            self._echo_probes_used = 0
+            self._echo_back_total = 0.0
         if phase == 'ARM' and self._flight_started is None:
             self._flight_started = time.monotonic()
         if phase == 'RUN':
@@ -877,12 +910,26 @@ class ClosedLoopBase(FlightCheckBase):
                 self.record_approach()
                 return
             if blocked and suspicious:
+                # 有界：单次转场最多判别 N 次、累计后退有上限（服务器侧 2026-10-15 要求）
+                if (self._echo_probes_used >= self._echo_max_probes
+                        or self._echo_back_total + self._echo_back_m > self._echo_max_back_total + 1e-6):
+                    self.get_logger().warn(
+                        f'回波判别已用尽（{self._echo_probes_used} 次 / 累计后退 '
+                        f'{self._echo_back_total:.2f} m）→ 按真障碍处理，不再后退',
+                        throttle_duration_sec=3.0)
+                    self.publish_velocity_enu(0.0, 0.0, 0.0, 0.0)
+                    self.record_approach()
+                    if self.elapsed() > self.transit_timeout:
+                        self._give_up_candidate('转场受阻且回波判别用尽')
+                    return
                 # 疑似自机体回波（读数贴着地板）→ 后退一小段判别
                 back = (current[0] - self._echo_back_m * math.cos(heading),
                         current[1] - self._echo_back_m * math.sin(heading))
                 self._echo_probe = {'phase': 'back', 't0': now,
                                     'start': (current[0], current[1]),
                                     'target': back, 'delta0': self._current_body_delta()}
+                self._echo_probes_used += 1
+                self._echo_back_total += self._echo_back_m
                 self.publish_velocity_enu(0.0, 0.0, 0.0, 0.0)
                 self.get_logger().warn(
                     f'转场净空 {forward_clear:.2f} m 贴着地板 {self._map_floor_m:.2f} m'
@@ -909,9 +956,9 @@ class ClosedLoopBase(FlightCheckBase):
                 self.enter('DESCEND')
                 return
             if self.elapsed() > self.transit_timeout:
-                self.get_logger().warn(
-                    f'TRANSIT 超时（{self.transit_timeout:.0f} s，当前 {current}）→ 就地继续')
-                self.enter('SCAN' if self.pre_scan else 'APPROACH')
+                # 服务器侧 2026-10-15：**转场受阻不做复杂绕行**，直接"标记该候选不可达 → 转下一个"
+                self._give_up_candidate(
+                    f'TRANSIT 超时 {self.transit_timeout:.0f} s（受阻，当前 {current}）')
             return
 
         if self.phase == 'DESCEND':
