@@ -45,8 +45,10 @@ def test_slow_zone_scales_final_forward_speed():
 
 def test_obstacle_hold_zeroes_translation_and_overrides_yaw_left():
     """左更宽且明显开阔 → 左转（yaw>0）+ 小前向绕行（不原地打转）。"""
+    # 注意：净空取 0.55 m（> blind_zone_m 0.5）——盲区内前向会被强制归零，那是另一条规则
+    # （见 test_blind_zone_zeroes_forward_but_keeps_yaw）
     command, guard, holding, detail = apply_map_safety(
-        _command(yaw_rate=0.5), (0.4, 3.0, 1.0), 0.1, False, LIMITS,
+        _command(yaw_rate=0.5), (0.55, 3.0, 1.0), 0.1, False, LIMITS,
         stop_streak=LIMITS.stop_confirm_frames - 1)
     assert guard == 'obstacle'
     assert holding is True
@@ -187,6 +189,64 @@ def test_release_confirm_resets_on_interruption():
         _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS, stop_streak=streak)
     assert holding is True
     assert detail['stop_streak'] == 1
+
+
+def test_slow_forward_floor_only_amplifies_intended_forward():
+    """压速带前向下限只放大"本来就想前进"的帧（服务器侧 2026-10-15 约束 1）。
+
+    - VLM 显式停止（forward ≤ 0）→ **不加下限**；
+    - 纯转向（forward=0 且 yaw≠0）→ **不加下限**；
+    - forward > 0 且被压速压到很小 → 抬到下限，并落盘 creep_floor=True。
+    """
+    limits = MapSafetyLimits(slow_min_forward_mps=0.05)
+    # 显式停止：前向 0 → 保持 0，且标记未施加
+    cmd, guard, holding, detail = apply_map_safety(
+        _command(forward=0.0), (0.7, 3.0, 3.0), 0.1, False, limits, stop_streak=0)
+    assert guard == 'obstacle_slow'
+    assert cmd.forward == pytest.approx(0.0)
+    assert detail['creep_floor'] is False
+    # 纯转向：前向 0、yaw 非 0 → 仍不加下限
+    cmd, _, _, detail = apply_map_safety(
+        _command(forward=0.0, yaw_rate=0.2), (0.7, 3.0, 3.0), 0.1, False, limits,
+        stop_streak=0)
+    assert cmd.forward == pytest.approx(0.0)
+    assert detail['creep_floor'] is False
+    # 想前进但被压速压小 → 抬到 0.05
+    cmd, _, _, detail = apply_map_safety(
+        _command(forward=0.12), (0.7, 3.0, 3.0), 0.1, False, limits, stop_streak=0)
+    assert cmd.forward == pytest.approx(0.05)
+    assert detail['creep_floor'] is True
+
+
+def test_blind_zone_zeroes_forward_but_keeps_yaw():
+    """盲区底线（2026-10-15）：净空 ≤ blind_zone_m 时前向一律归零，但**保留偏航**。
+
+    动机：地图 min_range 过滤（0.45 m）会让净空读数触底——"看不见"不等于"没有障碍"，
+    所以贴到盲区就绝不再前推（保持态的 creep 也要压掉），只继续朝宽侧转把视野打开。
+    """
+    limits = MapSafetyLimits(blind_zone_m=0.5, creep_mps=0.05, slow_min_forward_mps=0.05)
+    # 保持态、左侧开阔（本来会给 creep=0.05）→ 盲区内必须归零，但偏航保留
+    cmd, guard, holding, detail = apply_map_safety(
+        BodyVelocity(0.05, 0.0, 0.0, 0.0, 1.0), (0.45, 3.0, 0.6), 0.1, True, limits,
+        stop_streak=0)
+    assert guard == 'obstacle' and holding is True
+    assert cmd.forward == pytest.approx(0.0)
+    assert abs(cmd.yaw_rate) > 0.0            # 仍在朝更宽一侧转
+    assert detail['blind_zone'] is True
+    # 压速带、本来想前进且会触发下限 → 盲区内同样归零
+    cmd2, guard2, _, detail2 = apply_map_safety(
+        BodyVelocity(0.12, 0.0, 0.0, 0.0, 1.0), (0.48, 3.0, 3.0), 0.1, False, limits,
+        stop_streak=0)
+    assert guard2 == 'obstacle_slow'
+    assert cmd2.forward == pytest.approx(0.0)
+    assert detail2['blind_zone'] is True
+    assert detail2['creep_floor'] is False
+    # 盲区外（0.7 m）→ 下限照常生效
+    cmd3, _, _, detail3 = apply_map_safety(
+        BodyVelocity(0.12, 0.0, 0.0, 0.0, 1.0), (0.7, 3.0, 3.0), 0.1, False, limits,
+        stop_streak=0)
+    assert cmd3.forward == pytest.approx(0.05)
+    assert detail3['blind_zone'] is False
 
 
 def test_stale_clearance_is_fail_safe_not_fail_open():

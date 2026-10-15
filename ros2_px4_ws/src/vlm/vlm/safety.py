@@ -54,9 +54,22 @@ class MapSafetyLimits:
     # 压速带（stop_m ~ slow_start_m）里的**前向下限**（0 = 关闭）。
     # 为什么需要（2026-10-15 实测）：压速是按净空线性缩放，净空越接近 stop_m 前向越趋近 0，
     # 于是"越想靠近越不走"，飞机长期停在 0.6~0.9 m 之间，永远跨不进保持带 → 拿不到 episode。
-    # 语义上**只放大本来就想前进的帧**（command.forward > 0），不覆盖 VLM 的显式停止，
-    # 也不改变 stop_m（0.6 m 安全阈值）；量级与保持态的 creep_mps 一致。
+    #
+    # 服务器侧 2026-10-15 认可作为试验默认，并**写死两条约束**（本实现逐条对应）：
+    #   1) 只在 `guard == obstacle_slow` 时生效——这个分支本身就排除了
+    #      保持(obstacle)/脱困(obstacle_escape)/陈旧(stale)/未交权(dry_run/defer)；
+    #      且**只放大本来就想前进的帧**（`command.forward > 0`）：
+    #      forward ≤ 0（VLM 显式停止）或纯转向（forward=0 且 yaw≠0）时**一律不加下限**；
+    #   2) 每帧把"是否施加了下限"落盘为 `guard_detail['creep_floor']`，便于事后区分
+    #      "模型想走" 与 "被下限推着走"。
+    # 另：量级与保持态已有的 creep_mps 一致，且**不改变 stop_m（0.6 m 安全阈值）**。
+    # 服务器侧备注：本质是"给语义层加前向偏置"，等 ② 集成时值得回头评估是否该在语义层解决。
     slow_min_forward_mps: float = 0.0
+    # **盲区底线**（0 = 关闭）：地图的 `min_range` 过滤（本机 0.45 m）会把更近的点当自机体回波丢掉，
+    # 所以净空读数在 0.45 m 处**触底**——"看不见"不等于"没有障碍"。
+    # 只要净空 ≤ 该值，就认为已经贴到传感器盲区：**一律归零前向**（保持态也不再 creep），
+    # 但**保留偏航**（继续朝宽侧转，把视野打开）。2026-10-15 用户观察到贴近障碍后加。
+    blind_zone_m: float = 0.5
 
 
 class ObstacleTrack:
@@ -205,6 +218,9 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
         side_clear = max(left_c, right_c)
         creep = limits.creep_mps if (limits.creep_mps > 0.0
                                      and side_clear >= limits.creep_open_side_m) else 0.0
+        blind = (limits.blind_zone_m > 0.0 and forward_c <= limits.blind_zone_m)
+        if blind:
+            creep = 0.0          # 已贴到盲区：不再前推，只保留偏航（继续朝宽侧转）
         capped = abs(turn_deg) >= limits.max_turn_deg
         if capped:
             yaw = 0.0      # 到达转角上限：停止继续转（配合小前向/归零，避免原地绕圈）
@@ -214,22 +230,29 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
                  'avoid_side': side, 'yaw_rate': round(yaw, 2),
                  'side_clear_m': round(side_clear, 2), 'creep_mps': round(creep, 2),
                  'turn_deg': round(turn_deg, 1), 'yaw_capped': capped,
-                 'stop_streak': stop_streak, 'release_streak': stop_streak})
+                 'stop_streak': stop_streak, 'release_streak': stop_streak,
+                 'blind_zone': blind})
 
     if forward_c < limits.slow_start_m:
         span = max(limits.slow_start_m - limits.stop_m, 1e-6)
         scale = min(max((forward_c - limits.stop_m) / span, 0.0), 1.0)
         scaled = command.forward * scale
         floored = False
-        # 压速带前向下限：只放大"本来就想前进"的帧（不覆盖显式停止）
+        # 走到这里 ⇒ guard 必为 obstacle_slow（enabled 关→map_off；陈旧→stale；defer→stale/obstacle；
+        # holding→obstacle 都已提前返回）。下限**只放大本来就想前进的帧**：
+        # forward ≤ 0（VLM 显式停止）或纯转向时 command.forward 不 > 0 → 不加下限。
         if (limits.slow_min_forward_mps > 0.0 and command.forward > 0.0
                 and scaled < limits.slow_min_forward_mps):
             scaled = min(limits.slow_min_forward_mps, command.forward)
             floored = True
+        blind = (limits.blind_zone_m > 0.0 and forward_c <= limits.blind_zone_m)
+        if blind:
+            scaled = 0.0         # 盲区内一律不前推（含刚被抬起的下限）
+            floored = False
         return (_with(forward=scaled), 'obstacle_slow', False,
                 {'reason': 'obstacle_slow', 'forward_m': round(forward_c, 2),
                  'scale': round(scale, 3), 'stop_streak': stop_streak,
-                 'creep_floor': floored})
+                 'creep_floor': floored, 'blind_zone': blind})
 
     return command, 'ok', False, {'forward_m': round(forward_c, 2),
                                   'stop_streak': stop_streak}

@@ -152,6 +152,9 @@ class VlmNavigator(Node):
         # 解除保持也要连续 N 帧确认（"进出双门限"，服务器侧 2026-10-13 建议）：
         # d4 实测"保持↔释放"来回切换（净空 0.45–0.58、每段 14–15 帧）→ 用确认把抖动滤掉。
         self.declare_parameter('obstacle_release_confirm_frames', 3)
+        # 盲区底线（0=关）：地图 min_range 过滤（0.45 m）使净空读数在 0.45 m 触底——
+        # "看不见"≠"没有障碍"。净空 ≤ 该值时**一律归零前向**（保持态也不再 creep），保留偏航。
+        self.declare_parameter('obstacle_blind_zone_m', 0.5)
         # 位姿质量门（服务器侧 2026-10-14 第三节）：世界系一致性判据只有在位姿可靠时才有意义。
         # 位置陈旧 / 角速度过大 → **暂缓判定**（既不算真障碍，也不判拖影），等姿态稳定再判；
         # 否则一次"快速偏航下的位姿滞后"会被误判成拖影（t14 的形态 B 很可能就是这种）。
@@ -220,7 +223,8 @@ class VlmNavigator(Node):
             slow_min_forward_mps=float(
                 self.get_parameter('obstacle_slow_min_forward_mps').value),
             release_confirm_frames=int(
-                self.get_parameter('obstacle_release_confirm_frames').value))
+                self.get_parameter('obstacle_release_confirm_frames').value),
+            blind_zone_m=float(self.get_parameter('obstacle_blind_zone_m').value))
         self._stop_confirm = int(
             self.get_parameter('obstacle_stop_confirm_frames').value)
         self._world_tolerance = float(
