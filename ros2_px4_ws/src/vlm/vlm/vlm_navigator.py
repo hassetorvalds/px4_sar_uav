@@ -149,6 +149,9 @@ class VlmNavigator(Node):
         # 压速带前向下限（0=关）：压速按净空线性缩放会把前向压到 ~0，导致飞机停在 0.6~0.9 m
         # 之间永远跨不进保持带（2026-10-15 d1 实测）。只放大"本来就想前进"的帧，不动 stop_m。
         self.declare_parameter('obstacle_slow_min_forward_mps', 0.0)
+        # 解除保持也要连续 N 帧确认（"进出双门限"，服务器侧 2026-10-13 建议）：
+        # d4 实测"保持↔释放"来回切换（净空 0.45–0.58、每段 14–15 帧）→ 用确认把抖动滤掉。
+        self.declare_parameter('obstacle_release_confirm_frames', 3)
         # 位姿质量门（服务器侧 2026-10-14 第三节）：世界系一致性判据只有在位姿可靠时才有意义。
         # 位置陈旧 / 角速度过大 → **暂缓判定**（既不算真障碍，也不判拖影），等姿态稳定再判；
         # 否则一次"快速偏航下的位姿滞后"会被误判成拖影（t14 的形态 B 很可能就是这种）。
@@ -215,7 +218,9 @@ class VlmNavigator(Node):
             creep_open_side_m=float(
                 self.get_parameter('obstacle_creep_open_side_m').value),
             slow_min_forward_mps=float(
-                self.get_parameter('obstacle_slow_min_forward_mps').value))
+                self.get_parameter('obstacle_slow_min_forward_mps').value),
+            release_confirm_frames=int(
+                self.get_parameter('obstacle_release_confirm_frames').value))
         self._stop_confirm = int(
             self.get_parameter('obstacle_stop_confirm_frames').value)
         self._world_tolerance = float(

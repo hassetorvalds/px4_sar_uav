@@ -153,12 +153,40 @@ def test_hysteresis_keeps_holding_until_release_threshold():
     _, guard, holding, _ = apply_map_safety(
         _command(), (0.95, 1.0, 1.0), 0.1, True, LIMITS)
     assert holding is True
-    # 前向 0.95 m 且侧向 2.0 m ≥ 1.2 m → 解除保持
+    # 前向 0.95 m 且侧向 2.0 m ≥ 1.2 m → 满足释放条件，但**要连续 release_confirm_frames 帧**
+    # （"进出双门限"，2026-10-15 加：d4 实测瞬释会造成"保持↔释放"来回切换）
+    streak = 0
+    for _ in range(LIMITS.release_confirm_frames - 1):
+        _, guard, holding, detail = apply_map_safety(
+            _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS, stop_streak=streak)
+        assert holding is True
+        assert guard == 'obstacle'
+        streak = detail['stop_streak']
     command, guard, holding, _ = apply_map_safety(
-        _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS)
+        _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS, stop_streak=streak)
     assert holding is False
     assert guard == 'obstacle_slow'          # 0.95 仍在压速段
     assert command.forward < 0.12
+
+
+def test_release_confirm_resets_on_interruption():
+    """释放确认必须是**连续**的：中途回到保持条件就清零，不许"累计"。"""
+    streak = 0
+    for _ in range(LIMITS.release_confirm_frames - 1):
+        _, _, holding, detail = apply_map_safety(
+            _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS, stop_streak=streak)
+        assert holding is True
+        streak = detail['stop_streak']
+    # 中断一帧（回到保持条件）
+    _, guard, holding, detail = apply_map_safety(
+        _command(), (0.7, 2.0, 2.0), 0.1, True, LIMITS, stop_streak=streak)
+    assert holding is True
+    streak = detail['stop_streak']
+    # 再满足释放条件一次也不够（计数已清零）
+    _, _, holding, detail = apply_map_safety(
+        _command(), (0.95, 2.0, 2.0), 0.1, True, LIMITS, stop_streak=streak)
+    assert holding is True
+    assert detail['stop_streak'] == 1
 
 
 def test_stale_clearance_is_fail_safe_not_fail_open():

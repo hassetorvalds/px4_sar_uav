@@ -41,6 +41,11 @@ class MapSafetyLimits:
     # 进入保持需要**连续 N 次**都低于 stop_m（时间维滤除单帧伪点，而不是按距离硬切）
     stop_confirm_frames: int = 3
     release_m: float = 0.9               # 高于该净空才解除"保持"（迟滞）
+    # 解除也要**连续 N 次**满足（服务器侧 2026-10-13 建议的"进出双门限"）。
+    # 为什么需要（2026-10-15 d4 实测）：释放是瞬时的，地图偶尔一跳 ≥release_m 就放行，
+    # 于是出现"保持↔释放"来回切换（净空 0.45–0.58 m、每段仅 14–15 帧），绕行永远做不完。
+    # 解除延后只会让飞机**多保持一会儿**（更保守），不会削弱安全。
+    release_confirm_frames: int = 3
     avoid_yaw_rate: float = 0.15         # 保持时朝较宽一侧的偏航角速度（覆盖 VLM）
     side_release_m: float = 1.2          # 所选侧也要恢复到该净空才解除（迟滞）
     max_turn_deg: float = 60.0           # 相对进入避障时的航向，累积转角上限（防死角打转）
@@ -178,9 +183,11 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
 
     # 迟滞：进入用 stop_m（且需连续 confirm 帧），退出要求"前向恢复到 release_m 且所选侧 ≥ side_release_m"
     if holding:
-        release = (forward_c >= limits.release_m
-                   and max(left_c, right_c) >= limits.side_release_m)
-        holding = not release
+        release_now = (forward_c >= limits.release_m
+                       and max(left_c, right_c) >= limits.side_release_m)
+        # 释放侧也用**同一个连续计数**做确认（"进出双门限"）：连续 N 帧满足才真正释放
+        stop_streak = (stop_streak + 1) if release_now else 0
+        holding = not (stop_streak >= max(int(limits.release_confirm_frames), 1))
         if not holding:
             stop_streak = 0
     else:
@@ -207,7 +214,7 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
                  'avoid_side': side, 'yaw_rate': round(yaw, 2),
                  'side_clear_m': round(side_clear, 2), 'creep_mps': round(creep, 2),
                  'turn_deg': round(turn_deg, 1), 'yaw_capped': capped,
-                 'stop_streak': stop_streak})
+                 'stop_streak': stop_streak, 'release_streak': stop_streak})
 
     if forward_c < limits.slow_start_m:
         span = max(limits.slow_start_m - limits.stop_m, 1e-6)

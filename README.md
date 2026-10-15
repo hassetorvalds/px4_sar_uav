@@ -284,6 +284,7 @@ Windows 11（宿主）
 | 锥内簇质心 | ✅ | `voxel_grid.cluster_centroid_in_cone()`（26 邻域连通聚类）+ `local_map` 只读字段 `nearest_centroid=(dx,dy,dz)@d@size`；世界系复验优先用它——同一大面三次复验偏差 **1.37/1.02/0.97 m**（用"最近点"时为 3.49 m） |
 | 自动链路闭合（首次） | ✅ | d3（s1015-130823）：交权 0.7 m → **保持 7 帧**（avoid_side=left）→ 无脱困 → 恢复 200 帧 → episode 79 帧**闭合**；双指标 **1/1、1/1**；安全落地 |
 | 压速带前向下限 | ✅ | `obstacle_slow_min_forward_mps`（默认 0；试验 0.05）：只放大"本来就想前进"的帧，不覆盖显式停止、不动 0.6 m 安全阈值——修 d1 暴露的"压速带吸引子"（前向常为 0.000 跨不进保持） |
+| 进出双门限（释放确认） | ✅ | `obstacle_release_confirm_frames`（默认 3）：解除保持也要连续 N 帧满足，中途回到保持条件即清零——修 d4 的"保持↔释放来回切换"（净空 0.45–0.58、每段 14–15 帧）；单测 62 passed（**飞验待补**，d6/d7 无交权） |
 | 寻障排序（结构质量） | ✅ | SEEK 合格判据：点数≥40 / 垂跨度≥6° / MAD≤1.0 / **中位距离≥6 m**，取最近的合格大结构；打印**全扇区表**（t12–t14 每轮筛出 4/8/6 个合格扇区 → 证明门限不是瓶颈） |
 | 双指标打分 | ✅ | `scripts/analyze_detour.py`：绕行闭合率（闭合/有 episode 轮次）+ 寻障命中率（有 episode/总轮次）+ 无 episode 单独计数，支持多轮聚合 |
 | 速度指令仲裁 | ✅ | `px4_interface/velocity_arbiter.py`：按优先级合并（`avoid` > `vlm`），过期逐级回落、全过期不发；20 Hz（同 bridge）+ `log_csv` 落盘赢家与 age；**实飞联调通过**：`vlm → avoid 抢占 → vlm 回落 → none`；`sim_stack.launch.py` 已对齐输入话题 |

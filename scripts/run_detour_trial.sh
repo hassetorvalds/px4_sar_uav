@@ -44,6 +44,7 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p avoidance_enabled:=true -p map_stale_s:=1.5 -p stale_forward_limit_mps:=0.1 \
     -p obstacle_slow_start_m:=1.2 -p obstacle_stop_m:=0.6 -p obstacle_release_m:=0.9 \
     -p obstacle_slow_min_forward_mps:=0.05 \
+    -p obstacle_release_confirm_frames:=3 \
     -p obstacle_side_release_m:=1.2 -p obstacle_stop_confirm_frames:=3 \
     -p obstacle_world_tolerance_m:=0.4 -p obstacle_candidate_max_m:=4.0 -p obstacle_track_size:=3 \
     -p obstacle_max_turn_deg:=60.0 -p obstacle_creep_mps:=0.05 -p obstacle_creep_open_side_m:=1.5 \
