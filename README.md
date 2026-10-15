@@ -426,6 +426,18 @@ scripts/check_stack.sh         # 终端 4：链路检查
 
 ## 4.6 本机环境临时改动（⚠️ **待撤销**）：Windows 保留端口占用 AirSim 的 45000
 
+### 开发链路一键起停（每次暂离/回来用）
+
+```bash
+scripts/dev_chain.sh start    # 隧道 → Agent → PX4(含电池阈值清零) → ROS 栈 → 监督层，并自检
+scripts/dev_chain.sh status   # 只看现状（各组件实例数 + 远端 /health）
+scripts/dev_chain.sh stop     # 全停（栈/监督层/VLM/驱动/PX4/Agent/隧道）——每次暂离前执行
+```
+
+约定：**暂离前跑 `stop`（WSL 可直接关闭）**；回来后先起服务器侧服务，再 `start`；
+飞行仍用 `scripts/run_detour_trial.sh <标签>`（它会起 VLM 节点并跑 fail-closed 的 `preflight.sh`）。
+`start` 的自检**不含 VLM 节点**（它只在试验期间存在），所以真正的门禁仍是 `preflight.sh`。
+
 > 记录于 2026-10-15。**这是对 Windows 主机的临时环境改动，不是项目代码的一部分；
 > 实验结束、经用户确认后必须执行下面的 `revert` 撤销。**
 
