@@ -76,7 +76,10 @@ class FlightSupervisor(Node):
         # 对长扫描又可能偏紧。格式 "PHASE:秒|PHASE:秒"，未列出的阶段用 phase_stuck_s。
         self.declare_parameter(
             'phase_budgets',
-            'CLIMB:30|SEEK:45|TRANSIT:90|DESCEND:30|SCAN:35|VERIFY:15'
+            # SCAN 预算 35→120 s：驱动"每点 25 s × 3 个候选点"本身就要 ~75 s（还有复验往返），
+            # 35 s 会把**正常扫描**误判成卡死（2026-10-15 d18 实测）。120 s 仍是"卡死兜底"
+            # （驱动侧 scan_max_s 保证单点 25 s 必结束，不会无限扫）。
+            'CLIMB:30|SEEK:45|TRANSIT:90|DESCEND:30|SCAN:120|VERIFY:15'
             '|ALIGN:15|APPROACH:45|RUN:150')
 
         self.timeout_s = float(self.get_parameter('timeout_s').value)

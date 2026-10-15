@@ -32,6 +32,19 @@ for pid in $(pgrep -f "install/vlm/lib/vlm/vlm_navigator" 2>/dev/null); do
 done
 sleep 3
 
+# 收尾清理：驱动结束后必须把本轮 VLM 节点也停掉。否则它会以 900 s 超时继续挂着，
+# 既占着话题/推理槽，也会让调用方的终端会话一直"看起来还在运行"（2026-10-15 实测）。
+cleanup_vlm() {
+    for pid in $(pgrep -f "install/vlm/lib/vlm/vlm_navigat[o]r" 2>/dev/null); do
+        kill "$pid" 2>/dev/null
+    done
+    for pid in $(pgrep -f "ros2 run vlm vlm_navigat[o]r" 2>/dev/null); do
+        kill "$pid" 2>/dev/null
+    done
+    sleep 2
+}
+trap cleanup_vlm EXIT
+
 # 2) 启动唯一一组 VLM 节点（dry_run + timeout，交权时由驱动脚本发 enable）
 rm -rf "vlm_decisions_${sid}"
 timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
@@ -63,13 +76,19 @@ if ! "${_dir}/preflight.sh"; then
 fi
 
 # 4) 自动寻障 + 完整绕行
-python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=115.0 \
+# 硬超时兜底：即使驱动卡住，也不能让整条流水线无限挂着（2026-10-15：曾出现
+# "飞机已落地、终端仍 running"；驱动已加"被外力上锁即收工"，这里是第二道闸）
+TIMEOUT_DRIVER="${TIMEOUT_DRIVER:-900}"
+timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=115.0 \
     -p seek_enabled:=true -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
     -p seek_margin_m:=3.0 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
     -p seek_min_points:=40 -p seek_min_span_deg:=6.0 -p seek_max_mad_m:=1.0 \
     -p seek_min_median_m:=6.0 -p seek_max_candidates:=3 \
-    -p transit_altitude_m:=3.5 -p transit_timeout_s:=120.0 \
-    -p transit_speed_mps:=1.0 -p transit_stop_clearance_m:=1.0 \
+    -p transit_altitude_m:=3.5 -p transit_timeout_s:=45.0 \
+    -p transit_speed_mps:=0.5 -p transit_stop_clearance_m:=1.0 \
+    -p transit_echo_back_m:=0.25 \
+    -p transit_echo_settle_s:=1.5 -p transit_echo_delta_tol_m:=0.08 -p transit_echo_ignore_s:=5.0 \
+    -p start_pose_enabled:=true -p start_world_north_m:=0.0 -p start_world_east_m:=0.0 \
     -p obstacle_creep_open_side_m:=2.0 -p obstacle_creep_budget_m:=0.5 -p obstacle_creep_budget_s:=10.0 \
     -p pre_position:=true -p pre_scan:=true -p scan_yaw_rate_deg_s:=15.0 -p scan_found_m:=4.0 \
     -p scan_side_open_m:=1.5 -p scan_max_s:=25.0 -p verify_s:=2.5 -p verify_rounds:=2 \
@@ -85,3 +104,4 @@ python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:
 echo "---- 试验 ${label}（session=${sid}）打分 ----"
 python3 scripts/analyze_detour.py "vlm_decisions_${sid}" | tail -12
 echo "取证：${log_dir}/${label}_${sid}_{vlm,driver}.log"
+cleanup_vlm

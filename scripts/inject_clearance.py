@@ -66,8 +66,22 @@ SCENARIO_ESCAPE_FLIGHT = [
     (5.0, None),                 # 陈旧
 ]
 
+# blind：盲区底线的**边界用例**（服务器侧 2026-10-15 要求）
+#   0.45（=地板值，触底）→ 期望前向**恒 0**、偏航保留
+#   0.55（>blind_zone 0.5）且一侧开阔 → 期望**仍给 creep 0.05**
+#   0.45 但两侧都开阔 → 盲区优先，仍然前向 0（三闸任一不满足就不给 creep）
+#   3.0 → 放开（用确认 3 帧后释放）
+SCENARIO_BLIND = [
+    (10.0, (0.45, 0.4, 0.4)),
+    (10.0, (0.55, 3.0, 0.4)),
+    (10.0, (0.45, 3.0, 3.0)),
+    (10.0, (3.0, 3.0, 3.0)),
+    (5.0, None),
+]
+
 SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN,
-             'escape': SCENARIO_ESCAPE, 'escape_flight': SCENARIO_ESCAPE_FLIGHT}
+             'escape': SCENARIO_ESCAPE, 'escape_flight': SCENARIO_ESCAPE_FLIGHT,
+             'blind': SCENARIO_BLIND}
 
 
 class ClearanceInjector(Node):
@@ -111,7 +125,9 @@ class ClearanceInjector(Node):
             return
         msg = String()
         msg.data = (f'voxels=0 frames=0 nearest_forward_m={values[0]:.2f} '
-                    f'left_m={values[1]:.2f} right_m={values[2]:.2f}')
+                    f'left_m={values[1]:.2f} right_m={values[2]:.2f} '
+                    # 地板值：注入值等于它时表示"触底（≤该值，未知）"，导航侧据此置 at_min_range
+                    f'fwd_floor_m=0.45')
         self.publisher.publish(msg)
 
 

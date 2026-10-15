@@ -43,6 +43,20 @@ _NEAREST_WIDE_RE = re.compile(
 # 锥内连通簇质心（服务器侧"限定 ②"）：`(dx,dy,dz)@d@size`，优先用于世界系复验
 _NEAREST_CENTROID_RE = re.compile(
     r'nearest_centroid=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\)@([0-9.]+)m@([0-9]+)')
+# local_map 的净空"地板值"（fwd_floor_m=0.45）：读数贴着它 = 触底/回波可疑
+_FLOOR_RE = re.compile(r'fwd_floor_m=([0-9.]+)')
+
+
+def is_ego_echo(delta_a, delta_b, tol: float = 0.08) -> bool:
+    """偏航前后"机体坐标系里的最近点偏移"几乎不变 → 判定为**自机体回波**。
+
+    真障碍：偏航后它的**方位**在机体系里会变（世界位置不动）；
+    自机体回波：在机体系里**固定**（随飞机一起转），所以偏航前后偏移几乎相同。
+    任一为 None 时返回 False（不敢断言，按"真障碍"保守处理）。
+    """
+    if delta_a is None or delta_b is None:
+        return False
+    return sum((float(a) - float(b)) ** 2 for a, b in zip(delta_a, delta_b)) ** 0.5 <= tol
 
 # 日志行缓冲：外部脚本常靠 grep 日志来判断阶段（例如"等进入 RUN 再开始注入"），
 # 块缓冲会让判断滞后甚至永远不命中（2026-10-12 踩到两次）。
@@ -123,12 +137,24 @@ class ClosedLoopBase(FlightCheckBase):
         # 并把速度压到人控级别，前方净空过低时就地停住。
         self.declare_parameter('transit_speed_mps', 1.0)
         self.declare_parameter('transit_stop_clearance_m', 1.0)
+        self.declare_parameter('transit_yaw_rate', 0.4)   # 转场时朝目标对齐的偏航角速度上限
         # 固定起始世界位姿（服务器侧 2026-10-15 要求 ②）：
         # 不要调 AirSim reset()（会断 lockstep）；改为**每轮起飞后用位置控制飞到固定世界位姿**
         # 再开始 SEEK，使各轮起点一致、命中率可横向比较。坐标用 AirSim 世界系（NED，米）。
         self.declare_parameter('start_pose_enabled', False)
         self.declare_parameter('start_world_north_m', 0.0)
         self.declare_parameter('start_world_east_m', 0.0)
+        # 转场"贴地板读数"的主动判别（2026-10-15）：净空贴着 min_range 地板（≈0.45）时，
+        # 可能是自机体回波（相机看到自家机架），也可能是真障碍。
+        # 判据：**后退一小段**再看机体偏移——真障碍的距离会随之变大（机体偏移变），
+        #       自机体回波跟着飞机走（机体偏移不变）。
+        # 注：不能用偏航做判别——转场期间 offboard_bridge 处于**位置模式**
+        #     （trajectory_setpoint 的 yaw = NaN），角速度指令不生效（2026-10-15 实测偏航超时）。
+        self.declare_parameter('transit_echo_back_m', 0.25)
+        self.declare_parameter('transit_echo_settle_s', 1.5)
+        self.declare_parameter('transit_echo_delta_tol_m', 0.08)
+        self.declare_parameter('transit_echo_ignore_s', 5.0)
+        self.declare_parameter('transit_floor_band_m', 0.08)         # 贴着地板多近算"可疑"
         # 交权瞬间通知 VLM 节点解除 dry_run（节点提前以 dry_run 跑，消除 ~30 s 启动时间差）
         self.declare_parameter('vlm_enable_topic', '/vlm_navigator/enable')
         self.declare_parameter('map_status_topic', '/local_map/status')
@@ -174,12 +200,24 @@ class ClosedLoopBase(FlightCheckBase):
         self.transit_speed = float(self.get_parameter('transit_speed_mps').value)
         self.transit_stop_clearance = float(
             self.get_parameter('transit_stop_clearance_m').value)
+        self.transit_yaw_rate = float(self.get_parameter('transit_yaw_rate').value)
         self._transit_step_at = 0.0
         self.start_pose_enabled = bool(self.get_parameter('start_pose_enabled').value)
         self._start_world = (
             float(self.get_parameter('start_world_north_m').value),
             float(self.get_parameter('start_world_east_m').value))
         self._start_pose_done = False
+        self._after_start_pose = False
+        self._ever_armed = False         # 曾经解锁过？（用于"被外力降落→收工退出"）
+        self._scan_started_at = 0.0      # 本点扫描起点（**不因复验失败重置**，避免死循环）
+        self._map_floor_m = None
+        self._echo_probe = None          # 判别状态机（None / dict）
+        self._echo_ignore_until = 0.0    # 判定为回波后，短期内忽略"可疑带"读数
+        self._echo_back_m = float(self.get_parameter('transit_echo_back_m').value)
+        self._echo_settle_s = float(self.get_parameter('transit_echo_settle_s').value)
+        self._echo_tol = float(self.get_parameter('transit_echo_delta_tol_m').value)
+        self._echo_ignore_s = float(self.get_parameter('transit_echo_ignore_s').value)
+        self._echo_band = float(self.get_parameter('transit_floor_band_m').value)
         self.enable_pub = self.create_publisher(
             String, str(self.get_parameter('vlm_enable_topic').value), 10)
         self._scan_hits = 0
@@ -303,6 +341,9 @@ class ClosedLoopBase(FlightCheckBase):
             self.nearest_centroid_delta = None
             self.nearest_centroid_dist = float('inf')
             self.nearest_centroid_size = 0
+        floor = _FLOOR_RE.search(msg.data or '')
+        if floor:
+            self._map_floor_m = float(floor.group(1))
 
     def _on_depth_image(self, msg: Image) -> None:
         """SEEK 阶段用：**几何去地面**后取最近结构点的方位与距离。
@@ -461,6 +502,20 @@ class ClosedLoopBase(FlightCheckBase):
         msg.angular.z = float(rate)
         self.velocity_pub.publish(msg)
 
+    def publish_velocity_enu(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
+        """ENU 世界速度 + 偏航角速度（速度模式）。
+
+        转场必须用**速度**而不是位置目标点：位置目标点交给 PX4 会被它按自己的巡航速度执行
+        （2026-10-15 高速撞障碍的根因）；而且"每周期推一点点位置"实测只跑出 ~0.11 m/s、
+        98 s 都到不了 20 m 外的点（被监督层 TRANSIT 预算判超时）。速度控制能**精确限幅**。
+        """
+        msg = Twist()
+        msg.linear.x = float(vx)
+        msg.linear.y = float(vy)
+        msg.linear.z = float(vz)
+        msg.angular.z = float(yaw_rate)
+        self.velocity_pub.publish(msg)
+
     def publish_target_enu(self, east: float, north: float, up: float) -> None:
         """位置模式目标（ENU，绝对坐标）：转场与降高用。
 
@@ -482,6 +537,49 @@ class ClosedLoopBase(FlightCheckBase):
         if self.px4_z is None or math.isnan(self.px4_x) or math.isnan(self.px4_y):
             return None
         return ned_to_enu(self.px4_x, self.px4_y, self.px4_z)
+
+    def _current_body_delta(self):
+        """当前"最近点"在机体系下的 ENU 偏移（宽锥优先，其次窄锥）。"""
+        return self.nearest_wide_delta if self.nearest_wide_delta is not None \
+            else self.nearest_delta
+
+    def _echo_probe_tick(self, now: float, current, altitude: float) -> None:
+        """自机体回波判别状态机：停住 → **后退一小段** → 静止采样 → 比较机体偏移。
+
+        判据：真障碍在后退后距离变大（机体偏移的前向分量变化 ≈ 后退距离）；
+        自机体回波跟着飞机走（机体偏移几乎不变）。
+        （不能用偏航——转场期间是位置模式，角速度指令不生效。）
+        """
+        probe = self._echo_probe
+        if probe is None:
+            return
+        if probe['phase'] == 'back':
+            self.publish_target_enu(probe['target'][0], probe['target'][1], altitude)
+            moved = math.hypot(current[0] - probe['start'][0],
+                               current[1] - probe['start'][1])
+            if moved < self._echo_back_m - 0.06 and now - probe['t0'] < 5.0:
+                return                      # 还在后退途中
+            probe['phase'] = 'settle'
+            probe['t0'] = now
+            return
+        # settle：静止 settle_s 后采样比较
+        self.publish_target_enu(probe['target'][0], probe['target'][1], altitude)
+        if now - probe['t0'] < self._echo_settle_s:
+            return
+        delta1 = self._current_body_delta()
+        echo = is_ego_echo(probe['delta0'], delta1, self._echo_tol)
+        if echo:
+            self._echo_ignore_until = now + self._echo_ignore_s
+            self.get_logger().warn(
+                f'回波判别：后退 {self._echo_back_m:.2f} m 后机体偏移几乎不变 '
+                f'（{probe["delta0"]} → {delta1}）→ **判定为自机体回波**，'
+                f'忽略该读数 {self._echo_ignore_s:.0f} s 继续转场（仍限速 {self.transit_speed:.1f} m/s）')
+        else:
+            self.get_logger().warn(
+                f'回波判别：后退 {self._echo_back_m:.2f} m 后机体偏移明显变化'
+                f'（{probe["delta0"]} → {delta1}）'
+                f'→ **判定为真障碍**，转场保持停住')
+        self._echo_probe = None
 
     def _local_target_for_world_pose(self):
         """把"AirSim 世界系目标位姿"换成**本机局部 ENU 目标**（用于固定起始位姿）。
@@ -591,11 +689,17 @@ class ClosedLoopBase(FlightCheckBase):
         self._realign_count = 0
         self._rot_step = 0
         self._rot_samples = []
+        self._scan_started_at = time.monotonic()   # 新点重新计时
         return True
 
     def enter(self, phase: str) -> None:
         """进入 RUN（交权）时通知提前跑着的 VLM 节点解除 dry_run。"""
+        previous = self.phase
         super().enter(phase)
+        # 扫描计时只在"真正开始扫描"时重置；从 ROTVERIFY/VERIFY 失败返回 SCAN 时**不重置**，
+        # 否则"发现候选→复验失败→回 SCAN"会无限循环、scan_max_s 永远不到期（2026-10-15 实测）
+        if phase == 'SCAN' and previous not in ('ROTVERIFY', 'VERIFY'):
+            self._scan_started_at = time.monotonic()
         if phase == 'ARM' and self._flight_started is None:
             self._flight_started = time.monotonic()
         if phase == 'RUN':
@@ -605,6 +709,17 @@ class ClosedLoopBase(FlightCheckBase):
             self.get_logger().info('已向 VLM 节点发送 enable（解除 dry_run）')
 
     def on_phase(self) -> None:
+        if self.armed:
+            self._ever_armed = True
+        # 安全闸：**被外力降落/上锁就该收工退出**（2026-10-15 实测的坑）。
+        # 监督层按阶段预算下发 land_fast 后，驱动原来自顾自继续跑阶段机（还会 SCAN→ROTVERIFY 死循环），
+        # 于是"飞机早落地了、终端还一直 running"。这里一旦发现从"已解锁"变成"上锁"就收尾。
+        if getattr(self, '_ever_armed', False) and not self.armed and self.phase != 'DONE':
+            self.get_logger().error(
+                f'检测到飞机已上锁（当前阶段 {self.phase}）——可能被监督层/外力 land_fast → '
+                f'驱动收工退出（不再发指令）')
+            self.finish()
+            return
         # 全局时限兜底：任何阶段卡住/超预算都收工降落（阶段级超时之外的第二道闸）
         if (self._flight_started is not None
                 and time.monotonic() - self._flight_started > self.max_flight_s):
@@ -627,6 +742,7 @@ class ClosedLoopBase(FlightCheckBase):
                             f'({target[0]:+.1f}, {target[1]:+.1f})')
                         self._points = [target]
                         self._point_index = 0
+                        self._after_start_pose = True
                         self.enter('TRANSIT')
                         return
                     self.get_logger().warn('固定起始位姿：拿不到 AirSim 世界位姿 → 跳过')
@@ -732,65 +848,103 @@ class ClosedLoopBase(FlightCheckBase):
             self.enter('TRANSIT')
             return
 
-        if self.phase in ('TRANSIT', 'DESCEND'):
-            altitude = self.transit_altitude if self.phase == 'TRANSIT' else self.altitude
+        if self.phase == 'TRANSIT':
+            # ⚠️ 转场用**速度控制**（2026-10-15 改）：位置目标点会被 PX4 按自身巡航速度执行
+            # （"高速撞障碍"的根因）；而"每周期推一点点位置"实测只有 ~0.11 m/s（98 s 都到不了
+            # 20 m 外的点，被监督层 TRANSIT 预算判超时）。速度控制能**精确限幅**。
+            altitude = self.transit_altitude
             target_east, target_north = self._current_point()
-            # ⚠️ 2026-10-15：**必须限速 + 前方净空硬停**。
-            # 用户现场看到多次"高速撞上障碍物"：转场以前直接发**最终位置点**，PX4 会用自身巡航速度
-            # （MPC_XY_CRUISE≈3 m/s、上限 12 m/s）全速冲过去，路径中间隔着建筑就是高速撞击
-            # （d9 数据里 0.5 s 位移 36 m 就是这种"位置目标点式"转场）。现在改为**追踪点**：
-            # 每个周期只把目标推进 min(限速×dt, 剩余距离)，并在前方净空过低时**就地停住**。
             current = self.position_enu()
             if current is None:
-                self.publish_target_enu(target_east, target_north, altitude)
                 self.record_approach()
                 return
-            dx = target_east - current[0]
-            dy = target_north - current[1]
+            dx, dy = target_east - current[0], target_north - current[1]
             remaining = math.hypot(dx, dy)
+            bearing = math.atan2(dy, dx) if remaining > 1e-3 else 0.0
+            heading = (ned_yaw_to_enu_yaw(self.heading_rad)
+                       if not math.isnan(self.heading_rad) else bearing)
+            err = math.remainder(bearing - heading, 2.0 * math.pi)
             now = time.monotonic()
-            dt = min(max(now - self._transit_step_at, 0.0), 0.5) if self._transit_step_at else 0.2
-            self._transit_step_at = now
-            step = min(self.transit_speed * dt, max(remaining, 0.0))
-            if remaining > 1e-3:
-                nx = current[0] + dx / remaining * step
-                ny = current[1] + dy / remaining * step
-            else:
-                nx, ny = target_east, target_north
-            # 前方净空硬停：转场路径上贴着障碍时不再推进（避免"盲飞"撞上去）
             forward_clear = self.clearance[0] if self.clearance else None
-            if (forward_clear is not None and forward_clear <= self.transit_stop_clearance
-                    and remaining > 0.5):
-                self.publish_target_enu(current[0], current[1], altitude)
+            suspicious = (forward_clear is not None and self._map_floor_m is not None
+                          and forward_clear <= self._map_floor_m + self._echo_band)
+            ignored = suspicious and now < self._echo_ignore_until
+            blocked = (forward_clear is not None
+                       and forward_clear <= self.transit_stop_clearance
+                       and remaining > 0.5 and not ignored)
+            if self._echo_probe is not None:
+                self._echo_probe_tick(now, current, altitude)
+                self.record_approach()
+                return
+            if blocked and suspicious:
+                # 疑似自机体回波（读数贴着地板）→ 后退一小段判别
+                back = (current[0] - self._echo_back_m * math.cos(heading),
+                        current[1] - self._echo_back_m * math.sin(heading))
+                self._echo_probe = {'phase': 'back', 't0': now,
+                                    'start': (current[0], current[1]),
+                                    'target': back, 'delta0': self._current_body_delta()}
+                self.publish_velocity_enu(0.0, 0.0, 0.0, 0.0)
+                self.get_logger().warn(
+                    f'转场净空 {forward_clear:.2f} m 贴着地板 {self._map_floor_m:.2f} m'
+                    f'（距目标 {remaining:.1f} m）→ 疑似自机体回波：后退 '
+                    f'{self._echo_back_m:.2f} m 判别（真障碍距离会变大、回波不变）')
+                self.record_approach()
+                return
+            forward = 0.0 if blocked else self.transit_speed * max(math.cos(err), 0.0)
+            yaw_rate = max(-self.transit_yaw_rate,
+                           min(self.transit_yaw_rate, 1.2 * err))
+            if blocked:
                 self.get_logger().warn(
                     f'转场前方净空 {forward_clear:.2f} m ≤ {self.transit_stop_clearance:.1f} m '
                     f'（距目标还有 {remaining:.1f} m）→ **就地停住**，不再盲飞',
                     throttle_duration_sec=3.0)
-                self.record_approach()
-                if self.elapsed() > self.transit_timeout:
-                    self.get_logger().warn(f'{self.phase} 因前方障碍超时 → 就地继续')
-                    self.enter('SCAN' if self.pre_scan else 'APPROACH')
-                return
-            self.publish_target_enu(nx, ny, altitude)
+            vz = max(-0.6, min(0.6, 0.6 * (altitude - current[2])))
+            self.publish_velocity_enu(forward * math.cos(bearing),
+                                      forward * math.sin(bearing), vz, yaw_rate)
             self.record_approach()
-            close = (current is not None
-                     and abs(current[0] - target_east) < 0.5
-                     and abs(current[1] - target_north) < 0.5
-                     and abs(current[2] - altitude) < 0.4)
+            if remaining <= 0.5 and abs(current[2] - altitude) < 0.4:
+                self.get_logger().info(
+                    f'转场到位（ENU 东 {current[0]:+.1f} 北 {current[1]:+.1f} '
+                    f'上 {current[2]:.1f}），降到扫描高度 {self.altitude:.1f} m')
+                self.enter('DESCEND')
+                return
+            if self.elapsed() > self.transit_timeout:
+                self.get_logger().warn(
+                    f'TRANSIT 超时（{self.transit_timeout:.0f} s，当前 {current}）→ 就地继续')
+                self.enter('SCAN' if self.pre_scan else 'APPROACH')
+            return
+
+        if self.phase == 'DESCEND':
+            # 纯降高 + 小幅水平修正（也用速度模式，避免与转场的模式来回切换）
+            altitude = self.altitude
+            target_east, target_north = self._current_point()
+            current = self.position_enu()
+            if current is None:
+                self.record_approach()
+                return
+            dx, dy = target_east - current[0], target_north - current[1]
+            vz = max(-0.6, min(0.6, 0.6 * (altitude - current[2])))
+            hx = max(-0.3, min(0.3, 0.4 * dx))
+            hy = max(-0.3, min(0.3, 0.4 * dy))
+            self.publish_velocity_enu(hx, hy, vz, 0.0)
+            self.record_approach()
+            close = (math.hypot(dx, dy) < 0.5 and abs(current[2] - altitude) < 0.4)
             if close:
-                if self.phase == 'TRANSIT':
-                    self.get_logger().info(
-                        f'转场到位（ENU 东 {current[0]:+.1f} 北 {current[1]:+.1f} '
-                        f'上 {current[2]:.1f}），降到扫描高度 {self.altitude:.1f} m')
-                    self.enter('DESCEND')
-                else:
-                    self.get_logger().info(
-                        f'已降到 {self.altitude:.1f} m，开始扫描/摆位')
-                    self.enter('SCAN' if self.pre_scan else 'APPROACH')
+                # 固定起始位姿那一程结束后回到**深度自动寻障**（否则会跳过 SEEK → d14 空跑一轮）
+                if self._after_start_pose:
+                    self._after_start_pose = False
+                    if self.seek_enabled:
+                        self._seek_samples = {}
+                        self.get_logger().info(
+                            f'固定起始位姿到位（ENU 东 {current[0]:+.1f} 北 '
+                            f'{current[1]:+.1f} 上 {current[2]:.1f}）→ 开始深度自动寻障')
+                        self.enter('SEEK')
+                        return
+                self.get_logger().info(f'已降到 {self.altitude:.1f} m，开始扫描/摆位')
+                self.enter('SCAN' if self.pre_scan else 'APPROACH')
             elif self.elapsed() > self.transit_timeout:
                 self.get_logger().warn(
-                    f'{self.phase} 超时（{self.transit_timeout:.0f} s，'
-                    f'当前 {current}）→ 就地继续')
+                    f'DESCEND 超时（{self.transit_timeout:.0f} s，当前 {current}）→ 就地继续')
                 self.enter('SCAN' if self.pre_scan else 'APPROACH')
             return
 
@@ -954,7 +1108,8 @@ class ClosedLoopBase(FlightCheckBase):
                     self._scan_hits = 0
             else:
                 self._scan_hits = 0
-            if self.elapsed() > self.scan_max_s:
+            # 用"本点扫描起点"而不是 phase 开始时刻：复验失败返回 SCAN 时不重置（防死循环）
+            if time.monotonic() - self._scan_started_at > self.scan_max_s:
                 self.publish_yaw_rate(0.0)
                 if self._next_point():
                     target_east, target_north = self._current_point()

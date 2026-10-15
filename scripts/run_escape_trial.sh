@@ -17,6 +17,7 @@ source "${_dir}/env.sh" >/dev/null 2>&1
 cd "${PX4_SAR_ROOT}"
 
 label="${1:-escape}"
+scenario="${INJECT_SCENARIO:-escape_flight}"     # 可用 INJECT_SCENARIO=blind 跑边界用例
 sid="s$(date +%m%d-%H%M%S)"
 log_dir="logs/$(date +%Y-%m-%d)"
 mkdir -p "$log_dir"
@@ -44,9 +45,19 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p obstacle_max_turn_deg:=60.0 -p obstacle_creep_mps:=0.05 -p obstacle_creep_open_side_m:=1.5 \
     -p obstacle_avoid_yaw_rate:=0.15 -p hold_max_s:=20.0 -p escape_back_mps:=0.10 \
     -p escape_max_s:=10.0 -p escape_max_m:=1.0 -p escape_max_retries:=1 \
+    -p obstacle_blind_zone_m:=0.5 -p obstacle_creep_open_side_m:=2.0 \
+    -p obstacle_creep_budget_m:=0.5 -p obstacle_creep_budget_s:=10.0 \
+    -p obstacle_release_confirm_frames:=3 \
     -p hold_on_slow_response_ms:=800.0 -p max_consecutive_errors:=3 \
     -p output_dir:="vlm_decisions_${sid}" -p session_id:="${sid}" -p record_frames:=false \
     > "${log_dir}/${label}_${sid}_vlm.log" 2>&1 &
+# 收尾清理：驱动结束后停掉本轮 VLM 节点（否则它会挂到 900 s 超时，且让调用方终端会话不结束）
+cleanup_vlm() {
+    for pid in $(pgrep -f "install/vlm/lib/vlm/vlm_navigat[o]r" 2>/dev/null); do kill "$pid" 2>/dev/null; done
+    for pid in $(pgrep -f "ros2 run vlm vlm_navigat[o]r" 2>/dev/null); do kill "$pid" 2>/dev/null; done
+    sleep 2
+}
+trap cleanup_vlm EXIT
 sleep 18
 
 if ! "${_dir}/preflight.sh"; then
@@ -71,7 +82,7 @@ done
 if grep -aq "已向 VLM 节点发送 enable" "${log_dir}/${label}_${sid}_driver.log" 2>/dev/null; then
     echo "已交权 → 开始注入'两侧都紧的墙'（逼出脱困）"
     timeout 120 python3 scripts/inject_clearance.py --ros-args \
-        -p scenario:=escape_flight -p topic:=/inject/status \
+        -p scenario:="${scenario}" -p topic:=/inject/status \
         > "${log_dir}/${label}_${sid}_inject.log" 2>&1
 else
     echo "本轮没有交权（无 enable）→ 未注入；驱动日志尾部："
