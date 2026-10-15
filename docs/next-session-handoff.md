@@ -17,6 +17,38 @@
 > （保持态也不再 creep），只保留偏航。**尚未飞验**；建议用 esc 式注入（2 m 悬停 + 注入 0.45 m）
 > 验证"前向归零、偏航保留"，不要靠近真实结构。
 
+### 2026-10-15 暂停状态（先读这段）
+
+```text
+为什么停：用户现场发现"测试中飞机多次贴近/疑似蹭到障碍物"，且 AirSim 并未复位。
+         我方已停飞核查，并加了盲区底线（见上）。**下一批飞行前需要用户确认安全策略。**
+
+已停（本机）：VLM 隧道、ROS 栈（bringup 及节点，含 velocity_arbiter）、flight_supervisor、
+              以及所有 VLM/驱动/注入进程
+仍在跑（本机）：PX4 SITL + Micro XRCE-DDS Agent（无人机已上锁、在地面）；
+              AirSim/UE4 由用户决定是否保留
+
+恢复前**建议先做**（用户/服务器侧待定）：
+  1) **重启 AirSim 场景**（把飞机世界位置放回出生点）——注意：重启 PX4 只重设 PX4 本地原点，
+     **不会**把飞机搬回出生点（2026-10-15 更正，见上）
+  2) 确认盲区底线的验证方式：建议 esc 式注入（2 m 悬停 + 注入 f=0.45, l=r=0.4）
+     期望"前向恒 0、偏航保留"→ 完全不靠近真实结构
+  3) 决定保持态 creep（0.5~1.2 m 段仍会 creep）是否要更保守
+
+恢复顺序（确认后照旧）：
+  1) scripts/vlm_tunnel.sh start → 确认 /health ready
+  2) scripts/restart_px4_sitl.sh（复位估计器/原点 + 清电池阈值）
+  3) bash scripts/bringup.sh camera_rate_hz:=2.5
+     setsid nohup python3 scripts/flight_supervisor.py --ros-args -p timeout_s:=5.0 -p arm_grace_s:=6.0 &
+  4) scripts/preflight.sh（fail-closed 全过才飞）
+  5) 跑 ③ 统计 / 盲区底线注入验证 / ② 仲裁回归
+
+待办（与代码无关）
+  · **转达**：docs/agent_comm/82_reply_blind_zone_safety_fix_and_pose_reset_correction.md（待转达）
+  · **撤销**：Windows 端口静态保留（README 4.6；用户确认实验结束后 scripts/win_port_exclusion.sh revert）
+  · 用户自行 push 到 GitHub（本轮提交见 git log）
+```
+
 ```text
 为什么停：服务器侧服务与监控**按操作者要求停止**；preflight 是 fail-closed（要远端 /health ready）
           → 本轮**未起飞**。本地也同步收尾。
