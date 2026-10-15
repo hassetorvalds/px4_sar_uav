@@ -43,6 +43,7 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p run_duration_s:=95.0 -p geofence_max_distance_m:=15.0 \
     -p avoidance_enabled:=true -p map_stale_s:=1.5 -p stale_forward_limit_mps:=0.1 \
     -p obstacle_slow_start_m:=1.2 -p obstacle_stop_m:=0.6 -p obstacle_release_m:=0.9 \
+    -p obstacle_slow_min_forward_mps:=0.05 \
     -p obstacle_side_release_m:=1.2 -p obstacle_stop_confirm_frames:=3 \
     -p obstacle_world_tolerance_m:=0.4 -p obstacle_candidate_max_m:=4.0 -p obstacle_track_size:=3 \
     -p obstacle_max_turn_deg:=60.0 -p obstacle_creep_mps:=0.05 -p obstacle_creep_open_side_m:=1.5 \
@@ -72,7 +73,7 @@ python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:
     -p closable_side_m:=2.5 \
     -p rot_verify:=true -p rot_deg:="${rot_deg}" -p rot_rate_deg_s:=12.0 -p rot_settle_s:=2.5 \
     -p rot_tol_m:="${rot_tol}" -p rot_dist_tol_m:="${rot_tol}" -p rot_pose_age_max_s:=0.5 \
-    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=0.8 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
+    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=0.7 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
     -p output_csv:="${log_dir}/${label}_${sid}_detour.csv" \
     > "${log_dir}/${label}_${sid}_driver.log" 2>&1
 

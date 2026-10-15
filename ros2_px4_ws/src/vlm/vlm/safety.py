@@ -46,6 +46,12 @@ class MapSafetyLimits:
     max_turn_deg: float = 60.0           # 相对进入避障时的航向，累积转角上限（防死角打转）
     creep_mps: float = 0.1               # 较宽侧明显开阔时的小前向（绕行用，0 = 关闭）
     creep_open_side_m: float = 1.5       # "明显开阔"的判定净空
+    # 压速带（stop_m ~ slow_start_m）里的**前向下限**（0 = 关闭）。
+    # 为什么需要（2026-10-15 实测）：压速是按净空线性缩放，净空越接近 stop_m 前向越趋近 0，
+    # 于是"越想靠近越不走"，飞机长期停在 0.6~0.9 m 之间，永远跨不进保持带 → 拿不到 episode。
+    # 语义上**只放大本来就想前进的帧**（command.forward > 0），不覆盖 VLM 的显式停止，
+    # 也不改变 stop_m（0.6 m 安全阈值）；量级与保持态的 creep_mps 一致。
+    slow_min_forward_mps: float = 0.0
 
 
 class ObstacleTrack:
@@ -206,9 +212,17 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
     if forward_c < limits.slow_start_m:
         span = max(limits.slow_start_m - limits.stop_m, 1e-6)
         scale = min(max((forward_c - limits.stop_m) / span, 0.0), 1.0)
-        return (_with(forward=command.forward * scale), 'obstacle_slow', False,
+        scaled = command.forward * scale
+        floored = False
+        # 压速带前向下限：只放大"本来就想前进"的帧（不覆盖显式停止）
+        if (limits.slow_min_forward_mps > 0.0 and command.forward > 0.0
+                and scaled < limits.slow_min_forward_mps):
+            scaled = min(limits.slow_min_forward_mps, command.forward)
+            floored = True
+        return (_with(forward=scaled), 'obstacle_slow', False,
                 {'reason': 'obstacle_slow', 'forward_m': round(forward_c, 2),
-                 'scale': round(scale, 3), 'stop_streak': stop_streak})
+                 'scale': round(scale, 3), 'stop_streak': stop_streak,
+                 'creep_floor': floored})
 
     return command, 'ok', False, {'forward_m': round(forward_c, 2),
                                   'stop_streak': stop_streak}

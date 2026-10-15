@@ -282,6 +282,8 @@ Windows 11（宿主）
 | 位姿质量门 | ✅ | `vlm_navigator`+`safety`：位置陈旧(>0.5 s)/角速度过大(**>0.45** rad/s，低于 RUN 上限才有意义) 时 **defer 暂缓判定**（既不算真障碍也不判拖影）；每帧落盘 `pose_age_s`/`yaw_rate`；esc3 交权后 337 帧 0 次误触发 |
 | 宽锥诊断字段 | ✅ | `local_map` 额外发布只读 `nearest_wide=(dx,dy,dz)@d`（`cone_wide_deg=35`），用于区分"真实但偏轴"与"假读数"；不影响任何判定 |
 | 锥内簇质心 | ✅ | `voxel_grid.cluster_centroid_in_cone()`（26 邻域连通聚类）+ `local_map` 只读字段 `nearest_centroid=(dx,dy,dz)@d@size`；世界系复验优先用它——同一大面三次复验偏差 **1.37/1.02/0.97 m**（用"最近点"时为 3.49 m） |
+| 自动链路闭合（首次） | ✅ | d3（s1015-130823）：交权 0.7 m → **保持 7 帧**（avoid_side=left）→ 无脱困 → 恢复 200 帧 → episode 79 帧**闭合**；双指标 **1/1、1/1**；安全落地 |
+| 压速带前向下限 | ✅ | `obstacle_slow_min_forward_mps`（默认 0；试验 0.05）：只放大"本来就想前进"的帧，不覆盖显式停止、不动 0.6 m 安全阈值——修 d1 暴露的"压速带吸引子"（前向常为 0.000 跨不进保持） |
 | 寻障排序（结构质量） | ✅ | SEEK 合格判据：点数≥40 / 垂跨度≥6° / MAD≤1.0 / **中位距离≥6 m**，取最近的合格大结构；打印**全扇区表**（t12–t14 每轮筛出 4/8/6 个合格扇区 → 证明门限不是瓶颈） |
 | 双指标打分 | ✅ | `scripts/analyze_detour.py`：绕行闭合率（闭合/有 episode 轮次）+ 寻障命中率（有 episode/总轮次）+ 无 episode 单独计数，支持多轮聚合 |
 | 速度指令仲裁 | ✅ | `px4_interface/velocity_arbiter.py`：按优先级合并（`avoid` > `vlm`），过期逐级回落、全过期不发；20 Hz（同 bridge）+ `log_csv` 落盘赢家与 age；**实飞联调通过**：`vlm → avoid 抢占 → vlm 回落 → none`；`sim_stack.launch.py` 已对齐输入话题 |
