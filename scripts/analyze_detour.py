@@ -35,6 +35,9 @@ RECOVERY_WINDOW = 20
 LONG_WINDOW = 50
 RECOVERY_FRAMES_NEEDED = 5
 FORWARD_THRESHOLD = 0.05
+# "可绕"判据（服务器侧 2026-10-16）：episode 期间**至少有一侧净空 ≥ 2.0 m**（有空间可蹭过去）。
+# 两侧都紧 / 盲区持续的 episode 归为"**不可绕**"——"保持住不硬推"是正确行为，**不进口径**。
+AMENABLE_SIDE_M = 2.0
 MIN_EPISODE_FRAMES = 3           # 单帧闪现不算 episode（服务器侧 2026-10-14 定稿）
 # episode 必须**至少含 1 帧保持态**，否则只是"减速"不算绕行；脱困帧也算保持态。
 HOLD_GUARDS = ('obstacle', 'obstacle_escape')
@@ -80,6 +83,8 @@ def analyze_round(directory, min_episode_frames):
              f'仅慢速区间 {slow_only} 个（不计分）']
     closed = 0
     fast_closed = 0
+    amenable_total = 0
+    impassable = 0
     for order, episode in enumerate(qualified, 1):
         def _forward_frames(n):
             w = records[episode['end'] + 1:episode['end'] + 1 + n]
@@ -88,15 +93,22 @@ def analyze_round(directory, min_episode_frames):
 
         forward_frames = _forward_frames(RECOVERY_WINDOW)      # 快速（20 帧）
         forward_long = _forward_frames(LONG_WINDOW)            # 最终（50 帧）
-        sides = {(r.get('guard_detail') or {}).get('avoid_side')
-                 for r in records[episode['start']:episode['end'] + 1]}
+        ep_frames = records[episode['start']:episode['end'] + 1]
+        sides = {(r.get('guard_detail') or {}).get('avoid_side') for r in ep_frames}
         sides = {s for s in sides if s}
-        escapes = [r for r in records[episode['start']:episode['end'] + 1]
-                   if r.get('guard') == 'obstacle_escape']
+        escapes = [r for r in ep_frames if r.get('guard') == 'obstacle_escape']
+        side_vals = [(r.get('guard_detail') or {}).get('side_clear_m') for r in ep_frames]
+        side_max = max([float(v) for v in side_vals if isinstance(v, (int, float))]
+                       or [float('inf')])       # 拿不到就按"可绕"计入（宁可算我们的账）
+        amenable = side_max >= AMENABLE_SIDE_M
         ok = forward_long >= RECOVERY_FRAMES_NEEDED            # 主判据：最终闭合
         fast = forward_frames >= RECOVERY_FRAMES_NEEDED        # 子判据：快速闭合
-        closed += int(ok)
-        fast_closed += int(fast)
+        if amenable:
+            amenable_total += 1
+            closed += int(ok)
+            fast_closed += int(fast)
+        else:
+            impassable += 1
         first = records[episode['start']]
         clearance = first.get('clearance') or [float('nan')]
         lines.append(
@@ -104,13 +116,14 @@ def analyze_round(directory, min_episode_frames):
             f'{records[episode["end"]].get("frame_seq")}'
             f'（{episode["end"] - episode["start"] + 1} 帧，起始净空 {clearance[0]:.2f} m，'
             f'避让侧 {sides or "—"}，脱困帧 {len(escapes)}）→ '
+            f'{"可绕" if amenable else "**不可绕**"}（两侧最大 {side_max:.2f} m） '
             f'最终闭合 {forward_long}/50 帧 与 快速闭合 {forward_frames}/20 帧 → '
             f'{"✅ 最终闭合" if ok else "❌ 未闭合"}'
             + ('（快速）' if fast else ('（慢速恢复）' if ok else '')))
     transients = raw_episodes - len(qualified) - slow_only
     lines.append(f'另有 {transients} 个单帧闪现区间（探测瞬态，不计分）')
     return {'qualified': len(qualified), 'closed': closed, 'fast_closed': fast_closed,
-            'lines': lines}
+            'amenable_total': amenable_total, 'impassable': impassable, 'lines': lines}
 
 
 def main(argv):
@@ -134,6 +147,9 @@ def main(argv):
     rounds_with_episode = 0
     total_episodes = 0
     total_closed = 0
+    total_fast = 0
+    rounds_amenable = 0
+    total_impassable = 0
     for directory in directories:
         result = analyze_round(directory, min_episode_frames)
         if result is None:
@@ -145,6 +161,9 @@ def main(argv):
             rounds_with_episode += 1
             total_episodes += result['qualified']
             total_closed += result['closed']
+            total_fast += result['fast_closed']
+            rounds_amenable += result['amenable_total']
+            total_impassable += result['impassable']
             rate = result['closed'] / result['qualified']
             print(f'本轮闭合率 {result["closed"]}/{result["qualified"]} = {rate * 100:.0f}% '
                   f'→ {"PASS（本轮算成功）" if result["closed"] == result["qualified"] else "FAIL"}')
@@ -155,12 +174,14 @@ def main(argv):
     if rounds_total <= 0:
         print('没有可分析的轮次')
         return 1
-    if total_episodes:
-        closure = total_closed / total_episodes
-        print(f'主指标 · 绕行闭合率 = {total_closed}/{total_episodes} = {closure * 100:.0f}% '
-              f'→ {"PASS（要求 100%）" if total_closed == total_episodes else "FAIL"}')
+    if rounds_amenable:
+        closure = total_closed / rounds_amenable
+        print(f'主指标 · **可绕闭合率** = {total_closed}/{rounds_amenable} = {closure * 100:.0f}% '
+              f'→ {"PASS（要求 100%）" if total_closed == rounds_amenable else "FAIL"}')
+        print(f'副指标 · 快速闭合（20 帧）= {total_fast}/{rounds_amenable}')
     else:
-        print('主指标 · 绕行闭合率 = 无 episode，无法评估')
+        print('主指标 · 可绕闭合率 = 无可绕 episode，无法评估')
+    print(f'另报   · **不可绕 episode {total_impassable} 个**（两侧均紧/盲区持续，保持住不硬推=正确行为，不进口径）')
     hit = rounds_with_episode / rounds_total
     print(f'副指标 · 寻障命中率 = 有 episode 轮次 {rounds_with_episode}/{rounds_total} '
           f'= {hit * 100:.0f}%')

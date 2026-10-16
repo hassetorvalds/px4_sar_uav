@@ -219,6 +219,7 @@ def test_slow_forward_floor_only_amplifies_intended_forward():
 
 
 def test_blind_zone_zeroes_forward_but_keeps_yaw():
+    """（既有用例：盲区内前向归零、保留偏航）"""
     """盲区底线（2026-10-15）：净空 ≤ blind_zone_m 时前向一律归零，但**保留偏航**。
 
     动机：地图 min_range 过滤（0.45 m）会让净空读数触底——"看不见"不等于"没有障碍"，
@@ -247,6 +248,21 @@ def test_blind_zone_zeroes_forward_but_keeps_yaw():
         stop_streak=0)
     assert cmd3.forward == pytest.approx(0.05)
     assert detail3['blind_zone'] is False
+
+
+def test_turn_cap_also_zeroes_creep():
+    """转角封顶时**前向也要归零**（2026-10-16 k7-e2 实测：封顶不转 + creep 前推 = 贴死结构）。
+
+    右侧开阔（本来会给 creep），但累积转角已达上限 → 偏航 0 且前向 0（只停不推）。
+    """
+    limits = MapSafetyLimits()
+    cmd, guard, holding, detail = apply_map_safety(
+        BodyVelocity(0.05, 0.0, 0.0, 0.0, 1.0), (0.55, 0.5, 3.0), 0.1, True, limits,
+        stop_streak=0, turn_deg=limits.max_turn_deg + 5.0)
+    assert guard == 'obstacle' and holding is True
+    assert detail['yaw_capped'] is True
+    assert cmd.yaw_rate == pytest.approx(0.0)
+    assert cmd.forward == pytest.approx(0.0)      # 不转就不推
 
 
 def test_stale_clearance_is_fail_safe_not_fail_open():

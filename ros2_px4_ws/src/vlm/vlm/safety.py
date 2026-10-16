@@ -231,7 +231,12 @@ def apply_map_safety(command: BodyVelocity, clearance, age_s: float, holding: bo
             creep = 0.0          # 已贴到盲区：不再前推，只保留偏航（继续朝宽侧转）
         capped = abs(turn_deg) >= limits.max_turn_deg
         if capped:
-            yaw = 0.0      # 到达转角上限：停止继续转（配合小前向/归零，避免原地绕圈）
+            # 到达转角上限：停止继续转（避免原地绕圈）。
+            # 并且**同时把前向归零**——2026-10-16 k7-e2 实测的教训：
+            # "封顶不转 + creep 继续推"会贴死在结构上（右侧本来是开的，却因为不转而没有绕开）。
+            # 转不动就不推，交给脱困/超时/预算兜底。
+            yaw = 0.0
+            creep = 0.0
         return (_with(forward=creep, left=0.0, yaw_rate=yaw), 'obstacle', True,
                 {'reason': 'obstacle_hold', 'forward_m': round(forward_c, 2),
                  'left_m': round(left_c, 2), 'right_m': round(right_c, 2),
