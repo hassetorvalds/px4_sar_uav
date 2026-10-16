@@ -79,9 +79,16 @@ SCENARIO_BLIND = [
     (5.0, None),
 ]
 
+# escape_hold：两侧**持续**都紧、**永不解除**（服务器侧 2026-10-16 要求）——
+# 用来验证最外层兜底的真实时间线：
+#   保持 → 脱困×2 用尽 → 继续保持在位 → 监督层阶段预算/max_flight_s → land_fast → 安全落地
+SCENARIO_ESCAPE_HOLD = [
+    (900.0, (0.45, 0.4, 0.4)),
+]
+
 SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN,
              'escape': SCENARIO_ESCAPE, 'escape_flight': SCENARIO_ESCAPE_FLIGHT,
-             'blind': SCENARIO_BLIND}
+             'blind': SCENARIO_BLIND, 'escape_hold': SCENARIO_ESCAPE_HOLD}
 
 
 class ClearanceInjector(Node):

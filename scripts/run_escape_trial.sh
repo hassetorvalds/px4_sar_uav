@@ -67,7 +67,10 @@ fi
 
 # 驱动器：**只爬升到 2 m 就直接交权**（不做寻障）——脱困验证不需要真障碍，
 # 障碍由注入的净空给出，这样每一轮都能稳定复现"保持 → 脱困"。
-python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=150.0 \
+# 测"监督层接手"时设大（例如 400），让驱动不先收工。
+# 注意：ROS 参数是 DOUBLE，整数写法会被解析成 INTEGER 而报错 → 统一格式化成小数
+run_s="$(awk -v v="${RUN_S:-150}" 'BEGIN{printf "%.1f", v}')"
+python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:="${run_s}" \
     -p pre_position:=false \
     -p output_csv:="${log_dir}/${label}_${sid}_detour.csv" \
     > "${log_dir}/${label}_${sid}_driver.log" 2>&1 &
