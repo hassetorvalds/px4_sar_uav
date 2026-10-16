@@ -27,7 +27,12 @@ import os
 import sys
 
 OBSTACLE_GUARDS = ('obstacle', 'obstacle_slow', 'obstacle_escape')
+# 快速闭合窗口（原判据）：episode 结束后 20 帧（≈9 s）内 ≥5 帧前向非零。
 RECOVERY_WINDOW = 20
+# **最终闭合窗口**（服务器侧 2026-10-16 指出）：恢复窗口必须 ≥"保持+脱困"的时间预算——
+# `hold_max_s=20 s`（≈44 帧）+ 脱困 `escape_max_s=10 s`（≈22 帧）→ 取 50 帧（≈23 s）。
+# 否则"合法但较慢"的绕行会被误判成未闭合（k7 的 episode 2 很可能就是被截断的）。
+LONG_WINDOW = 50
 RECOVERY_FRAMES_NEEDED = 5
 FORWARD_THRESHOLD = 0.05
 MIN_EPISODE_FRAMES = 3           # 单帧闪现不算 episode（服务器侧 2026-10-14 定稿）
@@ -74,29 +79,38 @@ def analyze_round(directory, min_episode_frames):
              f'主口径 episode（≥{min_episode_frames} 帧且含保持态）{len(qualified)} 个，'
              f'仅慢速区间 {slow_only} 个（不计分）']
     closed = 0
+    fast_closed = 0
     for order, episode in enumerate(qualified, 1):
-        window = records[episode['end'] + 1:episode['end'] + 1 + RECOVERY_WINDOW]
-        forward_frames = sum(
-            1 for r in window
-            if ((r.get('post_filter') or {}).get('forward') or 0.0) > FORWARD_THRESHOLD)
+        def _forward_frames(n):
+            w = records[episode['end'] + 1:episode['end'] + 1 + n]
+            return sum(1 for r in w
+                       if ((r.get('post_filter') or {}).get('forward') or 0.0) > FORWARD_THRESHOLD)
+
+        forward_frames = _forward_frames(RECOVERY_WINDOW)      # 快速（20 帧）
+        forward_long = _forward_frames(LONG_WINDOW)            # 最终（50 帧）
         sides = {(r.get('guard_detail') or {}).get('avoid_side')
                  for r in records[episode['start']:episode['end'] + 1]}
         sides = {s for s in sides if s}
         escapes = [r for r in records[episode['start']:episode['end'] + 1]
                    if r.get('guard') == 'obstacle_escape']
-        ok = forward_frames >= RECOVERY_FRAMES_NEEDED
+        ok = forward_long >= RECOVERY_FRAMES_NEEDED            # 主判据：最终闭合
+        fast = forward_frames >= RECOVERY_FRAMES_NEEDED        # 子判据：快速闭合
         closed += int(ok)
+        fast_closed += int(fast)
         first = records[episode['start']]
         clearance = first.get('clearance') or [float('nan')]
         lines.append(
             f'  episode {order}: seq {first.get("frame_seq")}–'
             f'{records[episode["end"]].get("frame_seq")}'
             f'（{episode["end"] - episode["start"] + 1} 帧，起始净空 {clearance[0]:.2f} m，'
-            f'避让侧 {sides or "—"}，脱困帧 {len(escapes)}）→ 恢复窗口内前向非零 '
-            f'{forward_frames} 帧 {"✅ 闭合" if ok else "❌ 未闭合"}')
+            f'避让侧 {sides or "—"}，脱困帧 {len(escapes)}）→ '
+            f'最终闭合 {forward_long}/50 帧 与 快速闭合 {forward_frames}/20 帧 → '
+            f'{"✅ 最终闭合" if ok else "❌ 未闭合"}'
+            + ('（快速）' if fast else ('（慢速恢复）' if ok else '')))
     transients = raw_episodes - len(qualified) - slow_only
     lines.append(f'另有 {transients} 个单帧闪现区间（探测瞬态，不计分）')
-    return {'qualified': len(qualified), 'closed': closed, 'lines': lines}
+    return {'qualified': len(qualified), 'closed': closed, 'fast_closed': fast_closed,
+            'lines': lines}
 
 
 def main(argv):
