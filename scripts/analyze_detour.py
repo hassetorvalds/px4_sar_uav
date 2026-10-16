@@ -97,9 +97,18 @@ def analyze_round(directory, min_episode_frames):
         sides = {(r.get('guard_detail') or {}).get('avoid_side') for r in ep_frames}
         sides = {s for s in sides if s}
         escapes = [r for r in ep_frames if r.get('guard') == 'obstacle_escape']
-        side_vals = [(r.get('guard_detail') or {}).get('side_clear_m') for r in ep_frames]
-        side_max = max([float(v) for v in side_vals if isinstance(v, (int, float))]
-                       or [float('inf')])       # 拿不到就按"可绕"计入（宁可算我们的账）
+        # "可绕"只看**保持帧**（guard=obstacle）的侧向净空：episode 末尾可能包含"已放开"的帧
+        # （例如注入场景最后回到 3.0 m），把它们算进来会把"不可绕"误判成"可绕"（2026-10-16 esc5 实测）
+        hold_frames = [r for r in ep_frames if r.get('guard') == 'obstacle']
+        side_vals = [(r.get('guard_detail') or {}).get('side_clear_m')
+                     for r in (hold_frames or ep_frames)]
+        # 用**中位数**而不是最大值：保持段末尾常有 1–2 帧"障碍已放开、但释放确认还没走完"的帧
+        # （2026-10-16 esc5：123 帧 0.4 + 2 帧 3.0）——取最大会把"不可绕"误判成"可绕"。
+        nums = sorted(float(v) for v in side_vals if isinstance(v, (int, float)))
+        if nums:
+            side_max = nums[len(nums) // 2]           # 中位数
+        else:
+            side_max = float('inf')                   # 拿不到就按"可绕"计入（宁可算我们的账）
         amenable = side_max >= AMENABLE_SIDE_M
         ok = forward_long >= RECOVERY_FRAMES_NEEDED            # 主判据：最终闭合
         fast = forward_frames >= RECOVERY_FRAMES_NEEDED        # 子判据：快速闭合
