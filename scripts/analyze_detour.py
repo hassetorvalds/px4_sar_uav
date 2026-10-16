@@ -43,6 +43,20 @@ MIN_EPISODE_FRAMES = 3           # 单帧闪现不算 episode（服务器侧 202
 HOLD_GUARDS = ('obstacle', 'obstacle_escape')
 
 
+def wilson_ci(successes: int, total: int, z: float = 1.96):
+    """Wilson 95% 置信区间（小样本/接近 100% 时比正态近似准，服务器侧 2026-10-16 要求）。
+
+    返回 ``(low, high)``；``total == 0`` 时返回 ``(0.0, 1.0)``。
+    """
+    if total <= 0:
+        return 0.0, 1.0
+    p = successes / total
+    denom = 1.0 + z ** 2 / total
+    centre = (p + z ** 2 / (2 * total)) / denom
+    half = z * ((p * (1 - p) / total + z ** 2 / (4 * total ** 2)) ** 0.5) / denom
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
 def analyze_round(directory, min_episode_frames):
     """分析单轮，返回 (合格 episode 列表, 闭合数, 记录, 统计字符串列表)。"""
     paths = sorted(glob.glob(os.path.join(directory, 'decision_*.json')))
@@ -185,8 +199,10 @@ def main(argv):
         return 1
     if rounds_amenable:
         closure = total_closed / rounds_amenable
-        print(f'主指标 · **可绕闭合率** = {total_closed}/{rounds_amenable} = {closure * 100:.0f}% '
-              f'→ {"PASS（要求 100%）" if total_closed == rounds_amenable else "FAIL"}')
+        lo, hi = wilson_ci(total_closed, rounds_amenable)
+        print(f'主指标 · **可绕闭合率** = {total_closed}/{rounds_amenable} = {closure * 100:.0f}%  '
+              f'Wilson 95% CI [{lo:.2f}, {hi:.2f}]'
+              f' → {"PASS（要求 100%）" if total_closed == rounds_amenable else "FAIL"}')
         print(f'副指标 · 快速闭合（20 帧）= {total_fast}/{rounds_amenable}')
     else:
         print('主指标 · 可绕闭合率 = 无可绕 episode，无法评估')

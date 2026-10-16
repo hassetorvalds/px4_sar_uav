@@ -1132,6 +1132,16 @@ class ClosedLoopBase(FlightCheckBase):
             if stable:
                 self.publish_enu_velocity(0.0)
                 self._approach_confirmed = True
+                # 交权点落盘（服务器侧 2026-10-16：有/无 episode 的轮次都要记，便于归因命中率）
+                _enu = self.position_enu()
+                _heading = (math.degrees(ned_yaw_to_enu_yaw(self.heading_rad))
+                            if not math.isnan(self.heading_rad) else None)
+                self.get_logger().info(
+                    f'交权点记录：ENU 东 {_enu[0]:+.1f} 北 {_enu[1]:+.1f} 上 {_enu[2]:+.1f}，'
+                    f'航向(ENU) {_heading if _heading is None else round(_heading, 1)}°，'
+                    f'前向净空 {round(self._clearance_history[-1], 2)} m，'
+                    f'左 {None if not self.clearance else round(self.clearance[1], 2)} '
+                    f'右 {None if not self.clearance else round(self.clearance[2], 2)}')
                 self.get_logger().info(
                     f'摆位完成：前向净空连续 {self.pre_stable} 次 ≤ {self.pre_stop:.1f} m'
                     f'（最近 {[round(v, 2) for v in self._clearance_history]}），'
