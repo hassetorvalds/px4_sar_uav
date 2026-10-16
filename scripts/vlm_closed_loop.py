@@ -144,6 +144,10 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('start_pose_enabled', False)
         self.declare_parameter('start_world_north_m', 0.0)
         self.declare_parameter('start_world_east_m', 0.0)
+        # 已知结构点位（走 C 的闭合回归用）：`scan_points` 里的坐标按 **AirSim 世界系**解释。
+        # 世界→局部换算：先由 start_pose 把飞机摆到世界原点，记下"世界原点对应的局部 ENU"，
+        # 之后 局部 = 世界 + 该偏移。这样不受 PX4 原点漂移影响（2026-10-16）。
+        self.declare_parameter('scan_points_world', False)
         # 转场"贴地板读数"的主动判别（2026-10-15）：净空贴着 min_range 地板（≈0.45）时，
         # 可能是自机体回波（相机看到自家机架），也可能是真障碍。
         # 判据：**后退一小段**再看机体偏移——真障碍的距离会随之变大（机体偏移变），
@@ -212,6 +216,8 @@ class ClosedLoopBase(FlightCheckBase):
             float(self.get_parameter('start_world_east_m').value))
         self._start_pose_done = False
         self._after_start_pose = False
+        self._origin_local = None        # 世界原点对应的局部 ENU（由 start_pose 到位后记下）
+        self._points_world = bool(self.get_parameter('scan_points_world').value)
         self._ever_armed = False         # 曾经解锁过？（用于"被外力降落→收工退出"）
         self._scan_started_at = 0.0      # 本点扫描起点（**不因复验失败重置**，避免死循环）
         self._map_floor_m = None
@@ -237,6 +243,15 @@ class ClosedLoopBase(FlightCheckBase):
         self._realign_count = 0
         self._lost_counter = 0
         self._points = self._parse_points(str(self.get_parameter('scan_points').value))
+        # 已知结构点位也可用**环境变量**直传（KNOWN_POINTS="东,北;东,北;…"，AirSim 世界系）：
+        # 绕开 `-p name:="a,b;c,d"` 这类"含分号字符串"在 shell/ROS 两层的解析坑（2026-10-16 踩到）。
+        _env_points = os.environ.get('KNOWN_POINTS', '').strip()
+        if _env_points:
+            self._points = self._parse_points(_env_points)
+            self._points_world = True
+            self.get_logger().info(f'已知结构点位（来自环境变量 KNOWN_POINTS）：{self._points}')
+        # 另存一份：起始位姿那段会临时把 `self._points` 当成"单点目标"用，到位后要还原
+        self._known_points = list(self._points)
         self._point_index = 0
         self._verify_rounds = max(int(self.get_parameter('verify_rounds').value), 1)
         self._verify_passed = 0
@@ -571,6 +586,24 @@ class ClosedLoopBase(FlightCheckBase):
         self.get_logger().warn('候选点用尽 → 收工降落')
         self.send('land_fast')
         self.finish()
+
+    def _resolve_world_points(self) -> None:
+        """把"世界坐标的已知点位"换算成本机局部 ENU（一次性）。
+
+        前提：调用时飞机已被 start_pose 摆到世界原点，且 `_origin_local` 已记下
+        "世界原点对应的局部 ENU"。之后 局部 = 世界 + 偏移。
+        """
+        if not self._points_world:
+            return
+        if self._origin_local is None:
+            self.get_logger().warn(
+                '已知点位是世界坐标，但还没摆到世界原点（需 start_pose_enabled:=true）→ 按局部坐标处理')
+            return
+        off_e, off_n = self._origin_local
+        self._points = [(e + off_e, n + off_n) for (e, n) in self._points]
+        self.get_logger().info(
+            '已知点位（世界→局部）换算完成：'
+            + str([(round(a, 1), round(b, 1)) for a, b in self._points]))
 
     def _echo_probe_tick(self, now: float, current, altitude: float) -> None:
         """自机体回波判别状态机：停住 → **后退一小段** → 静止采样 → 比较机体偏移。
@@ -980,12 +1013,24 @@ class ClosedLoopBase(FlightCheckBase):
                 # 固定起始位姿那一程结束后回到**深度自动寻障**（否则会跳过 SEEK → d14 空跑一轮）
                 if self._after_start_pose:
                     self._after_start_pose = False
+                    # 此刻飞机在世��原点（start_pose 的目标就是世界 0,0）→ 记下世界原点对应的局部 ENU，
+                    # 供"已知结构点位（世界坐标）"换算（局部 = 世界 + 该偏移）
+                    self._origin_local = (current[0], current[1])
                     if self.seek_enabled:
                         self._seek_samples = {}
                         self.get_logger().info(
                             f'固定起始位姿到位（ENU 东 {current[0]:+.1f} 北 '
                             f'{current[1]:+.1f} 上 {current[2]:.1f}）→ 开始深度自动寻障')
                         self.enter('SEEK')
+                        return
+                    # 还原"已知点位"（起始位姿那段临时把 self._points 当单点目标用了）
+                    self._points = list(self._known_points)
+                    if self._points:
+                        self._resolve_world_points()
+                        target_east, target_north = self._current_point()
+                        self.get_logger().info(
+                            f'已知结构点位模式：转到第 1 个点（东 {target_east:+.1f} 北 {target_north:+.1f}）')
+                        self.enter('TRANSIT')
                         return
                 self.get_logger().info(f'已降到 {self.altitude:.1f} m，开始扫描/摆位')
                 self.enter('SCAN' if self.pre_scan else 'APPROACH')

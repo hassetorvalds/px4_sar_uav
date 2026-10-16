@@ -79,7 +79,10 @@ class FlightSupervisor(Node):
             # SCAN 预算 35→120 s：驱动"每点 25 s × 3 个候选点"本身就要 ~75 s（还有复验往返），
             # 35 s 会把**正常扫描**误判成卡死（2026-10-15 d18 实测）。120 s 仍是"卡死兜底"
             # （驱动侧 scan_max_s 保证单点 25 s 必结束，不会无限扫）。
-            'CLIMB:30|SEEK:45|TRANSIT:90|DESCEND:30|SCAN:120|VERIFY:15'
+            # TRANSIT 90→150 s：驱动"每段 45 s"、受阻时会换点继续，而监督层是**按同名阶段累计**的
+            # （换点后名字仍是 TRANSIT）→ 3 段就可能到 135 s，90 s 会误杀（2026-10-16 k5 实测）。
+            # 仍是卡死兜底：驱动单段 45 s < 监督层 150 s < max_flight_s 600 s（嵌套成立）。
+            'CLIMB:30|SEEK:45|TRANSIT:150|DESCEND:30|SCAN:120|VERIFY:15'
             '|ALIGN:15|APPROACH:45|RUN:150')
 
         self.timeout_s = float(self.get_parameter('timeout_s').value)

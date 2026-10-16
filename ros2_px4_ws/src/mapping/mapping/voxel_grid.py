@@ -185,25 +185,25 @@ class VoxelGrid:
         cos_limit = math.cos(math.radians(half_angle_deg))
         forward = np.array([math.cos(heading_enu), math.sin(heading_enu), 0.0], dtype=float)
 
-        in_cone_keys = []
-        for key in self._voxels:
+        def in_cone(key):
+            """该体素是否落在锥内（水平夹角 + 垂直窗口 + 距离窗口）。"""
             delta = np.asarray(self._center(key), dtype=float) - origin
             distance = float(np.linalg.norm(delta))
             if distance < max(float(min_distance_m), 1e-6) or distance > max_distance:
-                continue
+                return False
             horizontal = float(np.linalg.norm(delta[:2]))
             cos_angle = (float(delta[:2] @ forward[:2]) / horizontal
                          if horizontal > 1e-6 else 0.0)
             if cos_angle < cos_limit:
-                continue
-            if not (-float(vertical_down_tolerance_m) <= delta[2] <= float(vertical_tolerance_m)):
-                continue
-            in_cone_keys.append(key)
-        if not in_cone_keys:
-            return None, 0, float('inf')
+                return False
+            return (-float(vertical_down_tolerance_m) <= delta[2]
+                    <= float(vertical_tolerance_m))
 
-        # 26 邻域连通聚类（体素索引空间）
-        remaining = set(in_cone_keys)
+        # 26 邻域连通聚类：**在整张局部地图上做**（不再只对锥内体素聚类）。
+        # 为什么（2026-10-16 k4 实测）：只对"锥内体素"聚类时，一偏航参与计算的子集就变，
+        # 质心会随姿态滑移（337→396→457 体素，世界点漂 2.92 m），"世界点一致"判据必然失败。
+        # 用整簇质心则小角度偏航下稳定；"是否在锥内"改用"簇内**有**体素在锥内"。
+        remaining = set(self._voxels.keys())
         best = None
         while remaining:
             seed = remaining.pop()
@@ -221,6 +221,8 @@ class VoxelGrid:
                                 members.append(neighbour)
             if len(members) < max(int(min_cluster_points), 1):
                 continue
+            if not any(in_cone(m) for m in members):
+                continue          # 整簇都不在锥内 → 与本次判定无关
             points = np.array([self._center(m) for m in members], dtype=float)
             delta = points.mean(axis=0) - origin
             distance = float(np.linalg.norm(delta))

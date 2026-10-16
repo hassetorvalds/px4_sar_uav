@@ -23,6 +23,25 @@ log_dir="logs/$(date +%Y-%m-%d)"
 # 注意：ROS 参数是 DOUBLE，整数写法（10）会被解析成 INTEGER 而报错 → 这里统一格式化成小数
 rot_deg="$(awk -v v="${ROT_DEG:-15}" 'BEGIN{printf "%.1f", v}')"
 rot_tol="$(awk -v v="${ROT_TOL:-1.5}" 'BEGIN{printf "%.2f", v}')"
+# ② 仲裁接进主线（2026-10-16）：VLM 的速度不再直连 bridge，而是走 velocity_arbiter
+# （几何避障 avoid > 语义 vlm）。用 NO_ARBITER=1 可退回直连做对照。
+if [ "${NO_ARBITER:-0}" = "1" ]; then
+    vlm_velocity_topic="/offboard_bridge/velocity_setpoint"
+else
+    vlm_velocity_topic="/velocity_arbiter/vlm_cmd"
+fi
+# 已知结构点位模式（走 C 的闭合回归）：KNOWN_POINTS="东,北;东,北;…"（**AirSim 世界系**）
+if [ -n "${KNOWN_POINTS:-}" ]; then
+    seek_flag=false
+    # 注意：值里含分号，**不要**在赋值时加引号（shell 不会二次解析变量里的引号），
+    # 而是在使用处用双引号包住展开（见下面的 -p scan_points:="${points_arg}"）
+    points_arg="${KNOWN_POINTS}"
+    world_flag=true
+else
+    seek_flag=true
+    points_arg="0,0"
+    world_flag=false
+fi
 mkdir -p "$log_dir"
 
 echo "== 试验 ${label}：session=${sid} =="
@@ -52,6 +71,7 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p image_topic:=/airsim_camera/image -p depth_topic:=/airsim_camera/depth \
     -p vlm_rate_hz:=2.2 -p remote_timeout_s:=3.0 -p warmup_frames:=8 \
     -p base_velocity:=0.3 -p max_speed:=0.3 -p forward_scale:=1.0 -p lateral_scale:=1.0 \
+    -p velocity_topic:="${vlm_velocity_topic}" \
     -p max_lateral_speed:=0.3 -p max_yaw_rate:=0.5 -p yaw_lock_s:=0.0 \
     -p run_duration_s:=95.0 -p geofence_max_distance_m:=15.0 \
     -p avoidance_enabled:=true -p map_stale_s:=1.5 -p stale_forward_limit_mps:=0.1 \
@@ -80,7 +100,8 @@ fi
 # "飞机已落地、终端仍 running"；驱动已加"被外力上锁即收工"，这里是第二道闸）
 TIMEOUT_DRIVER="${TIMEOUT_DRIVER:-900}"
 timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=115.0 \
-    -p seek_enabled:=true -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
+    -p seek_enabled:=${seek_flag} -p scan_points:="${points_arg}" -p scan_points_world:=${world_flag} \
+    -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
     -p seek_margin_m:=3.0 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
     -p seek_min_points:=40 -p seek_min_span_deg:=6.0 -p seek_max_mad_m:=1.0 \
     -p seek_min_median_m:=6.0 -p seek_max_candidates:=3 \
