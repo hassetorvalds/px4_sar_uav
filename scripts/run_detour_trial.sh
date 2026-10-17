@@ -119,7 +119,7 @@ TIMEOUT_DRIVER="${TIMEOUT_DRIVER:-900}"
 timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=115.0 \
     -p seek_enabled:=${seek_flag} -p scan_points:="${points_arg}" -p scan_points_world:=${world_flag} \
     -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
-    -p seek_margin_m:=3.0 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
+    -p seek_margin_m:=1.5 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
     -p seek_min_points:=40 -p seek_min_span_deg:=6.0 -p seek_max_mad_m:=1.0 \
     -p seek_min_median_m:=6.0 -p seek_max_candidates:=3 \
     -p transit_altitude_m:=3.5 -p transit_timeout_s:=45.0 \
