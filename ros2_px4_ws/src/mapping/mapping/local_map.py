@@ -182,7 +182,8 @@ class LocalMap(Node):
                          % (wide_delta[0], wide_delta[1], wide_delta[2], wide_d))
             # 锥内**连通簇质心**（服务器侧 2026-10-14 建议的"限定 ②"）：
             # 用"物体的质心"代替"锥内最近点"，避免最近点在大平面上随姿态滑移。
-            cluster_delta, cluster_size, cluster_dist = self._grid.cluster_centroid_in_cone(
+            (cluster_delta, cluster_size, cluster_dist,
+             cluster_zmin, cluster_zmax, cluster_span) = self._grid.cluster_centroid_in_cone(
                 ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
                 half_angle_deg=self._cone_deg, max_distance=self._cone_max,
                 vertical_tolerance_m=self._cone_vertical,
@@ -192,7 +193,10 @@ class LocalMap(Node):
             centroid_text = ('nearest_centroid=inf' if cluster_delta is None else
                              'nearest_centroid=(%.2f,%.2f,%.2f)@%.2fm@%d'
                              % (cluster_delta[0], cluster_delta[1], cluster_delta[2],
-                                cluster_dist, cluster_size))
+                                cluster_dist, cluster_size)
+                             + ('' if cluster_delta is None else
+                                ' cluster_z=%.2f,%.2f span_h=%.2f'
+                                % (cluster_zmin, cluster_zmax, cluster_span)))
         status = String()
         status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
                        f'nearest_forward_m={forward:.2f} '

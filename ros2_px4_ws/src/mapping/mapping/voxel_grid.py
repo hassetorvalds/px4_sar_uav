@@ -226,9 +226,15 @@ class VoxelGrid:
             points = np.array([self._center(m) for m in members], dtype=float)
             delta = points.mean(axis=0) - origin
             distance = float(np.linalg.norm(delta))
+            # 体素簇的**真实 3D 高度范围**与水平跨度（服务器侧 2026-10-17：
+            # 高度门用它，而不是深度图仰角——后者被地平线/天空污染，实测 28–33 m）
+            z_min = float(points[:, 2].min())
+            z_max = float(points[:, 2].max())
+            span_h = float(np.hypot(points[:, 0].max() - points[:, 0].min(),
+                                    points[:, 1].max() - points[:, 1].min()))
             if best is None or distance < best[2]:
-                best = (delta, len(members), distance)
-        return best if best is not None else (None, 0, float('inf'))
+                best = (delta, len(members), distance, z_min, z_max, span_h)
+        return best if best is not None else (None, 0, float('inf'), None, None, None)
 
     def nearest_point_in_cone(self, origin_enu, heading_enu: float,
                               half_angle_deg: float = 30.0,

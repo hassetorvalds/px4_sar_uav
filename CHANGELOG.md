@@ -15,6 +15,25 @@
 
 ---
 
+## [2026-10-17] 高度门 v2：改用**体素簇 z 范围**+ 修正符号（overfly_clearance）；在候选点评估
+
+### 变更（按服务器侧 2026-10-17 两点修正）
+
+- `voxel_grid.cluster_centroid_in_cone` 额外返回簇的 **min_z / max_z / 水平跨度**；
+  `local_map` 状态串新增 `cluster_z=min,max span_h=…`（世界 ENU，体素实测）。
+- 驱动在**候选点**（DESCEND 完成、结构已进体素图）做高度门：
+  `overflyable ⇔ flight_altitude − top_z ≥ overfly_clearance_m`（默认 **0.5 m**）。
+  2 m 飞行 ⇒ top≤1.5 m 才可飞越；**top>1.5 m（含 1.9 m 墙）都算障碍**。
+  低矮则记 `overflyable` 计数（单独统计）、换下一个候选；够高才进 SCAN/逼近。
+- 不再使用"深度图仰角"估高（h1/h2 实测 33/28 m，被地平线/天空污染）。
+
+### 验证
+
+- 语法/构建通过；`colcon test` **65 passed**。
+- **飞验待做**：本次未飞行（改动刚完成）。
+
+---
+
 ## [2026-10-17] 高度估计器改进（距离带 + 90 分位）仍不可用：h2 top_z 28 m → 需改用体素簇 z 范围
 
 ### 变更

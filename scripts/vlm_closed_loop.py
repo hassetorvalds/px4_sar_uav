@@ -43,6 +43,8 @@ _NEAREST_WIDE_RE = re.compile(
 # 锥内连通簇质心（服务器侧"限定 ②"）：`(dx,dy,dz)@d@size`，优先用于世界系复验
 _NEAREST_CENTROID_RE = re.compile(
     r'nearest_centroid=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\)@([0-9.]+)m@([0-9]+)')
+# 体素簇的 z 范围与水平跨度（服务器侧 2026-10-17 高度门用）
+_CLUSTER_Z_RE = re.compile(r'cluster_z=([-0-9.]+),([-0-9.]+) span_h=([0-9.]+)')
 # local_map 的净空"地板值"（fwd_floor_m=0.45）：读数贴着它 = 触底/回波可疑
 _FLOOR_RE = re.compile(r'fwd_floor_m=([0-9.]+)')
 
@@ -163,6 +165,9 @@ class ClosedLoopBase(FlightCheckBase):
         self.declare_parameter('transit_echo_delta_tol_m', 0.08)
         self.declare_parameter('transit_echo_ignore_s', 5.0)
         self.declare_parameter('transit_floor_band_m', 0.08)         # 贴着地板多近算"可疑"
+        # 高度门（服务器侧 2026-10-17 修正）：overflyable ⇔ flight_alt − top_z ≥ 该余量。
+        # 2 m 飞行、余量 0.5 ⇒ top≤1.5 m 才可飞越；**top>1.5 m（含 1.9 m 墙）都算障碍**。
+        self.declare_parameter('overfly_clearance_m', 0.5)
         # 回波判别要有界（服务器侧 2026-10-15）：单次转场最多判别 N 次 / 累计后退 ≤ 上限，
         # 避免"贴着面反复后退"
         self.declare_parameter('transit_echo_max_probes', 2)
@@ -239,6 +244,12 @@ class ClosedLoopBase(FlightCheckBase):
             int(self.get_parameter('transit_echo_max_probes').value), 1)
         self._echo_max_back_total = float(
             self.get_parameter('transit_echo_max_back_total_m').value)
+        self._overfly_clearance = float(
+            self.get_parameter('overfly_clearance_m').value)
+        self._overflyable = 0
+        self._cluster_zmax = None
+        self._cluster_zmin = None
+        self._cluster_span_h = None
         self._echo_probes_used = 0
         self._echo_back_total = 0.0
         self.enable_pub = self.create_publisher(
@@ -377,6 +388,13 @@ class ClosedLoopBase(FlightCheckBase):
         floor = _FLOOR_RE.search(msg.data or '')
         if floor:
             self._map_floor_m = float(floor.group(1))
+        cz = _CLUSTER_Z_RE.search(msg.data or '')
+        if cz:
+            self._cluster_zmin = float(cz.group(1))
+            self._cluster_zmax = float(cz.group(2))
+            self._cluster_span_h = float(cz.group(3))
+        elif 'nearest_centroid=inf' in (msg.data or ''):
+            self._cluster_zmin = self._cluster_zmax = self._cluster_span_h = None
 
     def _on_depth_image(self, msg: Image) -> None:
         """SEEK 阶段用：**几何去地面**后取最近结构点的方位与距离。
@@ -1059,6 +1077,27 @@ class ClosedLoopBase(FlightCheckBase):
                         self.get_logger().info(
                             f'已知结构点位模式：转到第 1 个点（东 {target_east:+.1f} 北 {target_north:+.1f}）')
                         self.enter('TRANSIT')
+                        return
+                # **高度门**（服务器侧 2026-10-17：在候选点、结构已进体素图时评估）：
+                # overflyable ⇔ 飞行高度 − 簇顶 ≥ overfly_clearance_m
+                if self._cluster_zmax is not None:
+                    gap = current[2] - self._cluster_zmax
+                    self.get_logger().info(
+                        f'候选点高度门：簇 z=[{self._cluster_zmin:.1f}, {self._cluster_zmax:.1f}] m、'
+                        f'水平跨度 {self._cluster_span_h:.1f} m，飞行高度 {current[2]:.1f} m，'
+                        f'顶部净空 {gap:.2f} m（可飞越阈值 {self._overfly_clearance:.2f} m）')
+                    if gap >= self._overfly_clearance:
+                        self._overflyable += 1
+                        self.get_logger().warn(
+                            f'该候选结构**低矮可飞越**（顶部净空 {gap:.2f} ≥ '
+                            f'{self._overfly_clearance:.2f} m）→ 不作障碍，换下一个候选 '
+                            f'（本轮 overflyable={self._overflyable}）')
+                        if self._next_point():
+                            self.enter('TRANSIT')
+                        else:
+                            self.get_logger().warn('候选点用尽 → 收工降落')
+                            self.send('land_fast')
+                            self.finish()
                         return
                 self.get_logger().info(f'已降到 {self.altitude:.1f} m，开始扫描/摆位')
                 self.enter('SCAN' if self.pre_scan else 'APPROACH')
