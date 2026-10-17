@@ -83,7 +83,7 @@ class FlightSupervisor(Node):
             # （换点后名字仍是 TRANSIT）→ 3 段就可能到 135 s，90 s 会误杀（2026-10-16 k5 实测）。
             # 仍是卡死兜底：驱动单段 45 s < 监督层 150 s < max_flight_s 600 s（嵌套成立）。
             'CLIMB:30|SEEK:45|TRANSIT:150|DESCEND:30|SCAN:120|VERIFY:15'
-            '|ALIGN:15|APPROACH:45|RUN:150')
+            '|ALIGN:15|APPROACH:45|RUN:200')
 
         self.timeout_s = float(self.get_parameter('timeout_s').value)
         self.repeat_s = float(self.get_parameter('repeat_s').value)

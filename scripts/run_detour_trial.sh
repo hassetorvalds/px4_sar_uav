@@ -90,7 +90,7 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p base_velocity:=0.3 -p max_speed:=0.3 -p forward_scale:=1.0 -p lateral_scale:=1.0 \
     -p velocity_topic:="${vlm_velocity_topic}" \
     -p max_lateral_speed:=0.3 -p max_yaw_rate:=0.5 -p yaw_lock_s:=0.0 \
-    -p run_duration_s:=95.0 -p geofence_max_distance_m:=15.0 \
+    -p run_duration_s:=150.0 -p geofence_max_distance_m:=15.0 \
     -p avoidance_enabled:=true -p map_stale_s:=1.5 -p stale_forward_limit_mps:=0.1 \
     -p obstacle_slow_start_m:=1.2 -p obstacle_stop_m:=0.6 -p obstacle_release_m:=0.9 \
     -p obstacle_slow_min_forward_mps:=0.05 \
@@ -116,7 +116,7 @@ fi
 # 硬超时兜底：即使驱动卡住，也不能让整条流水线无限挂着（2026-10-15：曾出现
 # "飞机已落地、终端仍 running"；驱动已加"被外力上锁即收工"，这里是第二道闸）
 TIMEOUT_DRIVER="${TIMEOUT_DRIVER:-900}"
-timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=115.0 \
+timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=180.0 \
     -p seek_enabled:=${seek_flag} -p scan_points:="${points_arg}" -p scan_points_world:=${world_flag} \
     -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
     -p seek_margin_m:=1.5 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
