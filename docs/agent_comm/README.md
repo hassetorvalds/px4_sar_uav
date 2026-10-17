@@ -109,6 +109,9 @@
 | `88_reply_from_server_service_ready_go_c.md` | 服务器→ | 2026-10-16 | 服务已恢复（`/health` ready、TRAJ_TOP1、GPU 基线 11579 MiB）；重申按 C 推进（②联调+回归、闭合率挂已知点位、命中率作副指标） | 已收到 |
 | `89_reply_arbiter_in_line_and_known_points.md` | →服务器 | 2026-10-16 | ②仲裁接进主线（VLM 走仲裁、驱动直连）、已知点位模式（世界坐标+固定起始位姿）、整簇质心、TRANSIT 预算 150 s；k1–k6 过程与卡点 | 已转达 |
 | `90_reply_from_server_confirm_dataflow_and_world_points.md` | 服务器→ | 2026-10-16 | 对账干净；要求确认**驱动阶段直连、交权后才经仲裁**（并落盘 winner 来源）；⚠️ 已知点位**必须开固定起始位姿 + 存世界坐标**（否则点位漂移）——两条我方均已符合并实测确认 | 已收到 |
+| `109_reply_from_server_height_sign_and_placement.md` | 服务器→ | 2026-10-17 | 对账干净；认可改用体素簇 z；⚠️ **高度门符号反了**（正确：overflyable ⇔ flight_alt−top_z ≥ clearance；2 m 飞行、0.5 m 余量 ⇒ top>1.5 m 都算障碍，1.9 m 墙也算）；⚠️ **门要在候选点评估**（SEEK 时结构在 16–19 m 外、体素图没覆盖）；overflyable 单独计数 | 已收到 |
+| `110_reply_height_gate_voxel_cluster.md` | →服务器 | 2026-10-17 | 高度门 v2 已落地并飞验（簇 z/跨度/顶部净空；7 m 结构判障碍 ✓）；seek_margin 1.5 让发现+复验首次全通（3.94 m 候选、复验 0.65 m 通过）；卡在**逼近时障碍脱离视野**；请其定"簇质心方位对准 + 作废判据"口径 | 已转达 |
+| `111_reply_approach_loses_obstacle.md` | →服务器 | 2026-10-17 | m1 详情：发现（3.94 m）→复验通过（0.65 m）→对准→逼近中净空回升 4.34 m→作废；建议①逼近用簇质心方位持续对准 ②"簇消失/世界点跳变"才作废；请其定口径 | **待转达** |
 | `106_reply_from_server_height_aware_obstacle.md` | 服务器→ | 2026-10-17 | 对账干净；**真正修法 = 高度感知的障碍定义**（2 m 飞行时 0.6 m 低矮物可直接飞越，不该算障碍）；A（降高度）只作一次判别、B（放宽 down 容差）不建议、C 非根因；建议实现"结构顶部 z ≥ 飞行高度+余量"的高度门，并回退 scan_found 6→4；地面策略搬到空中必须补 3D 高度维 | 已收到 |
 | `107_reply_p1p2_and_scanfound6.md` | →服务器 | 2026-10-17 | scan_found 6 m 无效（三候选点全 inf）；P1/P2 判别请求 | 已转达 |
 | `108_reply_height_estimator_unusable_use_voxel_cluster_z.md` | →服务器 | 2026-10-17 | 高度门已实现并回退 scan_found；但**深度图仰角估高不可用**（h1 33 m / h2 28 m，地平线/天空污染，距离带分不开）→ 建议改用 **local_map 体素簇的 min/max z**；请其定阈值 margin、overflyable 是否单独计数 | **待转达** |
