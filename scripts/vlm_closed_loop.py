@@ -876,8 +876,13 @@ class ClosedLoopBase(FlightCheckBase):
                 # `verticals` 是机体 FLU 的 up（相对相机/机体），加当前 ENU 高度即世界 z。
                 _pos = self.position_enu()
                 flight_up = _pos[2] if _pos is not None else self.altitude
-                top_z = float(flight_up + verticals.max())
-                bottom_z = float(flight_up + verticals.min())
+                # 高度估计：**只用中位距离附近的点**（±max(1.5*MAD, 1 m)），
+                # 排除远处/天空/地形点（h1 实测：整扇区 max 会给出 33 m 的荒谬顶部）。
+                near_band = max(1.5 * mad, 1.0)
+                near_mask = np.abs(distances - median) <= near_band
+                near_ups = verticals[near_mask] if np.any(near_mask) else verticals
+                top_z = float(flight_up + np.percentile(near_ups, 90))
+                bottom_z = float(flight_up + np.percentile(near_ups, 10))
                 tall_enough = top_z >= flight_up + self._seek_top_margin
                 # 质量门限（点数/垂跨度/MAD）+ 中位距离下限：只有"够大、够平、够远"的
                 # 扇区才算合格候选（服务器侧 2026-10-14 ①：最近的**合格大结构**）。
