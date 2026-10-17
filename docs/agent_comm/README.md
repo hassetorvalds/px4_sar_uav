@@ -109,6 +109,9 @@
 | `88_reply_from_server_service_ready_go_c.md` | 服务器→ | 2026-10-16 | 服务已恢复（`/health` ready、TRAJ_TOP1、GPU 基线 11579 MiB）；重申按 C 推进（②联调+回归、闭合率挂已知点位、命中率作副指标） | 已收到 |
 | `89_reply_arbiter_in_line_and_known_points.md` | →服务器 | 2026-10-16 | ②仲裁接进主线（VLM 走仲裁、驱动直连）、已知点位模式（世界坐标+固定起始位姿）、整簇质心、TRANSIT 预算 150 s；k1–k6 过程与卡点 | 已转达 |
 | `90_reply_from_server_confirm_dataflow_and_world_points.md` | 服务器→ | 2026-10-16 | 对账干净；要求确认**驱动阶段直连、交权后才经仲裁**（并落盘 winner 来源）；⚠️ 已知点位**必须开固定起始位姿 + 存世界坐标**（否则点位漂移）——两条我方均已符合并实测确认 | 已收到 |
+| `112_reply_from_server_persistent_track.md` | 服务器→ | 2026-10-17 | 对账干净；高度门/seek_margin 认可；**判据统一到世界系持久 track**：①对准 track 世界质心方位 ②只有 track 丢失（±2 m/3 s）才作废 ③重对准到上限若 track 仍在→停+小幅偏航重捕，不作废 | 已收到 |
+| `113_reply_persistent_track_approach.md` | →服务器 | 2026-10-17 | 持久 track 已实现并飞验（t1 无「净空回升→作废」）；pre_timeout 35→60 后 **t3 交权并闭合（可绕 1/1）**；RUN 窗口扩到 180/150/200 | 已转达 |
+| `114_reply_ekf_altitude_drift_pollutes_height_gate.md` | →服务器 | 2026-10-17 | ⚠️ c1：交权点 ENU 上 +0.1 m、px4_z 在 −3.52~+0.47 漂移 → **EKF 高度漂移污染高度门**；请其定高度门数据源（PX4 z / AirSim 真值仅诊断 / 地图相对高度），建议先记录三路对比；本轮结束已关停链路 | **待转达** |
 | `109_reply_from_server_height_sign_and_placement.md` | 服务器→ | 2026-10-17 | 对账干净；认可改用体素簇 z；⚠️ **高度门符号反了**（正确：overflyable ⇔ flight_alt−top_z ≥ clearance；2 m 飞行、0.5 m 余量 ⇒ top>1.5 m 都算障碍，1.9 m 墙也算）；⚠️ **门要在候选点评估**（SEEK 时结构在 16–19 m 外、体素图没覆盖）；overflyable 单独计数 | 已收到 |
 | `110_reply_height_gate_voxel_cluster.md` | →服务器 | 2026-10-17 | 高度门 v2 已落地并飞验（簇 z/跨度/顶部净空；7 m 结构判障碍 ✓）；seek_margin 1.5 让发现+复验首次全通（3.94 m 候选、复验 0.65 m 通过）；卡在**逼近时障碍脱离视野**；请其定"簇质心方位对准 + 作废判据"口径 | 已转达 |
 | `111_reply_approach_loses_obstacle.md` | →服务器 | 2026-10-17 | m1 详情：发现（3.94 m）→复验通过（0.65 m）→对准→逼近中净空回升 4.34 m→作废；建议①逼近用簇质心方位持续对准 ②"簇消失/世界点跳变"才作废；请其定口径 | **待转达** |
