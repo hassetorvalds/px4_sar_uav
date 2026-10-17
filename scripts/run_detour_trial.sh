@@ -134,7 +134,7 @@ timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -
     -p closable_side_m:=2.5 \
     -p rot_verify:=true -p rot_deg:="${rot_deg}" -p rot_rate_deg_s:=12.0 -p rot_settle_s:=2.5 \
     -p rot_tol_m:="${rot_tol}" -p rot_dist_tol_m:="${rot_tol}" -p rot_pose_age_max_s:=0.5 \
-    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=0.7 -p pre_timeout_s:=35.0 -p pre_stable_samples:=3 \
+    -p pre_speed_mps:=0.15 -p pre_stop_clearance_m:=0.7 -p pre_timeout_s:=60.0 -p pre_stable_samples:=3 \
     -p output_csv:="${log_dir}/${label}_${sid}_detour.csv" \
     > "${log_dir}/${label}_${sid}_driver.log" 2>&1
 
