@@ -247,6 +247,14 @@ class ClosedLoopBase(FlightCheckBase):
         self._overfly_clearance = float(
             self.get_parameter('overfly_clearance_m').value)
         self._overflyable = 0
+        # **持久 track**（服务器侧 2026-10-17）：世界系质心 + 最后可见时刻。
+        # 决策基于 track（丢失才作废），而不是某一帧的"锥内瞬时净空"。
+        self._track_world = None
+        self._track_at = 0.0
+        self._last_centroid_world = None
+        self._last_centroid_at = 0.0
+        self._track_radius_m = 2.0
+        self._track_lost_s = 3.0
         self._cluster_zmax = None
         self._cluster_zmin = None
         self._cluster_span_h = None
@@ -381,6 +389,13 @@ class ClosedLoopBase(FlightCheckBase):
                                            float(centroid.group(3)))
             self.nearest_centroid_dist = float(centroid.group(4))
             self.nearest_centroid_size = int(centroid.group(5))
+            # 持久 track 的观测：质心的**世界系**位置（局部 ENU + 质心偏移）
+            pos = self.position_enu()
+            if pos is not None:
+                self._last_centroid_world = (pos[0] + self.nearest_centroid_delta[0],
+                                             pos[1] + self.nearest_centroid_delta[1],
+                                             pos[2] + self.nearest_centroid_delta[2])
+                self._last_centroid_at = time.monotonic()
         elif 'nearest_centroid=inf' in (msg.data or ''):
             self.nearest_centroid_delta = None
             self.nearest_centroid_dist = float('inf')
@@ -777,6 +792,7 @@ class ClosedLoopBase(FlightCheckBase):
         self._realign_count = 0
         self._rot_step = 0
         self._rot_samples = []
+        self._track_world = None          # 新候选：track 重新建立
         self._scan_started_at = time.monotonic()   # 新点重新计时
         return True
 
@@ -795,6 +811,11 @@ class ClosedLoopBase(FlightCheckBase):
             # 每段转场的回波判别预算独立（否则跨段累计会把后面的点也判成"用尽"）
             self._echo_probes_used = 0
             self._echo_back_total = 0.0
+        if phase == 'ALIGN' and self._track_world is None \
+                and self._last_centroid_world is not None:
+            # 首次对准：用当前簇质心初始化 track
+            self._track_world = self._last_centroid_world
+            self._track_at = self._last_centroid_at
         if phase == 'ARM' and self._flight_started is None:
             self._flight_started = time.monotonic()
         if phase == 'RUN':
@@ -1156,6 +1177,16 @@ class ClosedLoopBase(FlightCheckBase):
 
         if self.phase == 'APPROACH':
             forward_clear = self.clearance[0] if self.clearance else None
+            # **持久 track 更新**（世界系质心；±2 m 内视为同一目标）
+            now = time.monotonic()
+            if self._last_centroid_world is not None:
+                if (self._track_world is None
+                        or math.dist(self._track_world, self._last_centroid_world)
+                        <= self._track_radius_m):
+                    self._track_world = self._last_centroid_world
+                    self._track_at = self._last_centroid_at
+            track_lost = (self._track_world is not None
+                          and (now - self._track_at) > self._track_lost_s)
             # 逼近中**持续复验**：净空回升/消失（障碍脱离视野）→ 停下重新对准
             if forward_clear is not None and forward_clear >= self.scan_found:
                 self._lost_counter += 1
@@ -1176,11 +1207,26 @@ class ClosedLoopBase(FlightCheckBase):
                 return
             if (self._lost_counter >= self.pre_stable
                     and self._realign_count >= int(self.get_parameter('realign_max').value)):
-                # 服务器侧建议：re-align 到上限仍未稳定 → **该候选点作废**，换下一个合格扇区，
-                # 而不是带着不确定目标交权（那样成功率不可解释）
+                # 服务器侧 2026-10-17：**只有 track 丢失才作废**；track 仍在 → 停下小幅偏航重捕获
+                if not track_lost:
+                    self.publish_enu_velocity(0.0)
+                    self.get_logger().warn(
+                        f'净空回升（{forward_clear:.2f} m）但 **track 仍在** → 不作废，原地小幅偏航重捕获')
+                    self._realign_count = 0
+                    self._lost_counter = 0
+                    if self._track_world is not None:
+                        pos = self.position_enu()
+                        if pos is not None:
+                            self._align_heading = math.atan2(
+                                self._track_world[1] - pos[1],
+                                self._track_world[0] - pos[0])
+                    self.enter('ALIGN')
+                    return
+                # track 丢失 → 该候选点作废，换下一个
                 self.publish_enu_velocity(0.0)
                 self.get_logger().warn(
-                    f'净空回升且重新对准已达上限（{self._realign_count} 次）→ 该候选点作废')
+                    f'**track 丢失**（±{self._track_radius_m:.1f} m 内超过 '
+                    f'{self._track_lost_s:.0f} s 无簇）→ 该候选点作废')
                 if self._next_point():
                     target_east, target_north = self._current_point()
                     self.get_logger().info(
