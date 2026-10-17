@@ -246,6 +246,21 @@ Windows 11（宿主）
 全部内容位于 `/home/sol/px4_sar_uav/`，详见第 5 节。
 迁移过程与注意事项记录在 `docs/migration-2026-09-14.md`。
 
+**试验数据归档（2026-10-17 整理）**：根目录只保留源码/文档/脚本/工作区；
+历史试验数据统一放在 `archive/`（**已加入 .gitignore，不入库**）：
+
+```text
+archive/
+├── vlm_decisions/
+│   ├── 2026-10-14/ … 2026-10-17/   # 按 session id 日期归档（s1014-…/s1017-…）
+│   └── legacy/                      # 无日期前缀的早期目录（c1..c22、m1..、stepB…）
+├── logs/                            # 2026-10-17 之前的逐日日志（今天的仍在 logs/）
+└── stray-colcon-root-2026-10/       # 误落在仓库根的 build/install/log（colcon 产物）
+```
+
+日常运行仍写入 `logs/<date>/` 与 `vlm_decisions_<session>/`（两者都在 .gitignore 中）；
+需要清理时把它们移进 `archive/` 对应日期即可，源码与文档不受影响。
+
 ## 4.3 已实现并验证的能力
 
 | 能力 | 状态 | 实测证据 |

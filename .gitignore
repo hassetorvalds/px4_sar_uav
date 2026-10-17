@@ -12,6 +12,8 @@ log/
 # ---------- 飞行 / 仿真日志与数据 ----------
 logs/
 vlm_decisions*/
+# 归档的试验数据（vlm_decisions/logs/散落构建产物）——本地留存，不入库
+archive/
 *.ulg
 *.bag
 *.db3
