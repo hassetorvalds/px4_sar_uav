@@ -128,7 +128,7 @@ timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -
     -p transit_echo_settle_s:=1.5 -p transit_echo_delta_tol_m:=0.08 -p transit_echo_ignore_s:=5.0 -p transit_echo_max_probes:=2 -p transit_echo_max_back_total_m:=0.5 \
     -p start_pose_enabled:=true -p start_world_north_m:=0.0 -p start_world_east_m:=0.0 \
     -p obstacle_creep_open_side_m:=2.0 -p obstacle_creep_budget_m:=0.5 -p obstacle_creep_budget_s:=10.0 \
-    -p pre_position:=true -p pre_scan:=true -p scan_yaw_rate_deg_s:=15.0 -p scan_found_m:=6.0 \
+    -p pre_position:=true -p pre_scan:=true -p scan_yaw_rate_deg_s:=15.0 -p scan_found_m:=4.0 \
     -p scan_side_open_m:=1.5 -p scan_max_s:=25.0 -p verify_s:=2.5 -p verify_rounds:=2 \
     -p align_tolerance_deg:=8.0 -p align_timeout_s:=10.0 -p align_yaw_rate:=0.4 -p realign_max:=3 \
     -p closable_side_m:=2.5 \

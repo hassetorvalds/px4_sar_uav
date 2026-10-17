@@ -125,6 +125,10 @@ class ClosedLoopBase(FlightCheckBase):
         # 先按"点数/垂跨度/MAD"筛出**真结构**，再取中位距离 ≥ 下限里**最近的**，
         # 避免锁到近处杂波（如 3.8 m 小物），同时保证留出绕行空间（围栏 12 m、停止 0.6 m）。
         self.declare_parameter('seek_min_median_m', 6.0)
+        # **高度门**（服务器侧 2026-10-17）：2 m 飞行时 0.6 m 的低矮物可直接飞越，不是障碍。
+        # 只有点簇**顶部高度 ≥ 飞行高度 + 该余量**的结构才算"需要绕行的障碍"。
+        # 0.0 = 顶部达到飞行高度即可；调大可要求"明显高于航路"。
+        self.declare_parameter('seek_top_margin_m', 0.0)
         self.declare_parameter('seek_max_candidates', 3)    # 最多产出几个候选点（按中位距离排序）
         # 转场（服务器侧 2026-10-13 建议 ①）：高一点飞过去，再降到扫描高度
         self.declare_parameter('transit_enabled', False)
@@ -298,6 +302,7 @@ class ClosedLoopBase(FlightCheckBase):
         self._seek_min_span = float(self.get_parameter('seek_min_span_deg').value)
         self._seek_max_mad = float(self.get_parameter('seek_max_mad_m').value)
         self._seek_min_median = float(self.get_parameter('seek_min_median_m').value)
+        self._seek_top_margin = float(self.get_parameter('seek_top_margin_m').value)
         self._seek_max_candidates = max(
             int(self.get_parameter('seek_max_candidates').value), 1)
         self.clearance = None
@@ -867,12 +872,20 @@ class ClosedLoopBase(FlightCheckBase):
                 mad = float(np.median(np.abs(distances - median)))
                 span = float(verticals.max() - verticals.min())
                 count = int(distances.size)
+                # **高度门**（服务器侧 2026-10-17）：换算到世界 up 的顶部/底部高度。
+                # `verticals` 是机体 FLU 的 up（相对相机/机体），加当前 ENU 高度即世界 z。
+                _pos = self.position_enu()
+                flight_up = _pos[2] if _pos is not None else self.altitude
+                top_z = float(flight_up + verticals.max())
+                bottom_z = float(flight_up + verticals.min())
+                tall_enough = top_z >= flight_up + self._seek_top_margin
                 # 质量门限（点数/垂跨度/MAD）+ 中位距离下限：只有"够大、够平、够远"的
                 # 扇区才算合格候选（服务器侧 2026-10-14 ①：最近的**合格大结构**）。
                 qualifies = (count >= self._seek_min_points
                              and span >= self._seek_min_span
                              and mad <= self._seek_max_mad
-                             and median >= self._seek_min_median)
+                             and median >= self._seek_min_median
+                             and tall_enough)
                 fails = []
                 if count < self._seek_min_points:
                     fails.append(f'点<{self._seek_min_points}')
@@ -882,18 +895,22 @@ class ClosedLoopBase(FlightCheckBase):
                     fails.append(f'MAD>{self._seek_max_mad}')
                 if median < self._seek_min_median:
                     fails.append(f'中位<{self._seek_min_median}m')
+                if not tall_enough:
+                    fails.append(f'低矮可飞越(top{top_z:.1f}<{flight_up + self._seek_top_margin:.1f})')
                 candidates.append({'sector': int(sector), 'median': median, 'mad': mad,
                                    'span': span, 'count': count, 'ok': qualifies,
+                                   'top_z': top_z, 'bottom_z': bottom_z,
                                    'fail': '/'.join(fails) or '—'})
             good = sorted((c for c in candidates if c['ok']), key=lambda c: c['median'])
             # 打印**全部扇区**（不只是前几个）：便于判断"是门限太严，还是场景真没有结构"
             # （服务器侧 2026-10-14 第五节建议）。
             summary = [(c['sector'], round(c['median'], 1), c['count'],
                         round(c['span'], 1), round(c['mad'], 2),
+                        round(c['top_z'], 1), round(c['bottom_z'], 1),
                         'OK' if c['ok'] else c['fail']) for c in
                        sorted(candidates, key=lambda c: c['median'])]
             self.get_logger().info(
-                f'深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 判定）'
+                f'深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 顶部z, 底部z, 判定）'
                 f'[门限：点≥{self._seek_min_points}/跨度≥{self._seek_min_span}°/'
                 f'MAD≤{self._seek_max_mad}/中位≥{self._seek_min_median}m]：' + str(summary))
             if not good:
