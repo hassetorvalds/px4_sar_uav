@@ -220,6 +220,9 @@ class ClosedLoopBase(FlightCheckBase):
         self._points_world = bool(self.get_parameter('scan_points_world').value)
         self._ever_armed = False         # 曾经解锁过？（用于"被外力降落→收工退出"）
         self._scan_started_at = 0.0      # 本点扫描起点（**不因复验失败重置**，避免死循环）
+        self._scan_min_forward = None    # 本点扫描期间的诊断量（最小前向净空/航向/侧向）
+        self._scan_min_heading = None
+        self._scan_min_sides = None
         self._map_floor_m = None
         self._echo_probe = None          # 判别状态机（None / dict）
         self._echo_ignore_until = 0.0    # 判定为回波后，短期内忽略"可疑带"读数
@@ -762,6 +765,9 @@ class ClosedLoopBase(FlightCheckBase):
         # 否则"发现候选→复验失败→回 SCAN"会无限循环、scan_max_s 永远不到期（2026-10-15 实测）
         if phase == 'SCAN' and previous not in ('ROTVERIFY', 'VERIFY'):
             self._scan_started_at = time.monotonic()
+            self._scan_min_forward = None
+            self._scan_min_heading = None
+            self._scan_min_sides = None
         if phase == 'TRANSIT':
             # 每段转场的回波判别预算独立（否则跨段累计会把后面的点也判成"用尽"）
             self._echo_probes_used = 0
@@ -1174,6 +1180,15 @@ class ClosedLoopBase(FlightCheckBase):
             self.publish_yaw_rate(self.scan_yaw_rate)
             self.record_approach()          # 与摆位共用记录（同一套列）
             forward_clear = self.clearance[0] if self.clearance else None
+            # 诊断（2026-10-17）：记录本次扫描的**最小前向净空 + 对应航向**与最小侧向净空——
+            # 用于回答"到了点位却找不到候选"是距离太远、还是朝向/侧向门限的问题。
+            if forward_clear is not None and forward_clear < 500.0:
+                heading_now = (math.degrees(ned_yaw_to_enu_yaw(self.heading_rad))
+                               if not math.isnan(self.heading_rad) else None)
+                if self._scan_min_forward is None or forward_clear < self._scan_min_forward:
+                    self._scan_min_forward = forward_clear
+                    self._scan_min_heading = heading_now
+                    self._scan_min_sides = (self.clearance[1], self.clearance[2])
             sides_open = (self.clearance is not None
                           and max(self.clearance[1], self.clearance[2]) >= self.scan_side_open)
             if forward_clear is not None and forward_clear <= self.scan_found:
@@ -1213,6 +1228,12 @@ class ClosedLoopBase(FlightCheckBase):
             # 用"本点扫描起点"而不是 phase 开始时刻：复验失败返回 SCAN 时不重置（防死循环）
             if time.monotonic() - self._scan_started_at > self.scan_max_s:
                 self.publish_yaw_rate(0.0)
+                self.get_logger().info(
+                    f'扫描诊断：本点最小前向净空 '
+                    f'{None if self._scan_min_forward is None else round(self._scan_min_forward, 2)} m'
+                    f'（航向(ENU) {None if self._scan_min_heading is None else round(self._scan_min_heading, 1)}°，'
+                    f'左/右 {None if not self._scan_min_sides else tuple(round(v, 2) for v in self._scan_min_sides)}）；'
+                    f'门限 scan_found={self.scan_found:.1f} m、侧向开阔门限={self.scan_side_open:.1f} m')
                 if self._next_point():
                     target_east, target_north = self._current_point()
                     self.get_logger().warn(
