@@ -15,6 +15,23 @@
 
 ---
 
+## [2026-10-17] b6/b7：local_map 崩溃被 fail-closed 拦下；b7 episode 被 RUN 窗口截断
+
+### 事件与验证
+```text
+· Batch2 b1–b5 全部被 preflight 拦下（local_map 0 实例）——local_map 在 t3/t4 之间因
+  cluster_centroid_in_cone 解包异常退出；fail-closed 保证了一次没起飞。
+· 重启栈后 b6 无 episode；b7 交权成功（持久 track+60 s 逼近），但
+  **episode 仅 5 帧（seq 650–654 / 总 655 帧）就在 RUN 窗口末尾** → 0/50 未闭合 = **窗口截断**，非绕行失败。
+  ⇒ 60 s 逼近让交权更晚，`run_s=115 s`（VLM run_duration=95 s）不够留出"保持→绕行→恢复"。
+```
+
+### 下一步
+- 把 `run_s` 115 → 180、VLM `run_duration_s` 95 → 150（并确认 geofence 与监督层 RUN 预算 150 s 的嵌套），
+  给"保持→脱困→恢复"留足时间；随后重跑 Batch2。
+
+---
+
 ## [2026-10-17] t3 成功：60 s 逼近预算 + 持久 track → 首次交权并闭合（可绕 1/1）
 
 ### 验证（t3 s1017-160???）
