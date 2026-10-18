@@ -13,6 +13,8 @@ import json
 import math
 from dataclasses import dataclass, field
 
+from .altitude import parse_frame
+
 SCHEMA_VERSION = 1
 
 #: 安全包络（执行层还会再夹一次；这里先拒绝明显越界的指令）
@@ -63,6 +65,8 @@ class Step:
 class TaskSpec:
     steps: list
     altitude_m: float = 2.0
+    #: 任务高度的帧（REL=相对起飞点；LCL=px4 local；TRUTH 仅诊断）
+    altitude_frame: str = 'REL'
     max_speed_mps: float = 0.5
     max_duration_s: float = 180.0
     geofence_radius_m: float = 40.0
@@ -75,6 +79,12 @@ class TaskSpec:
     # ------------------------------------------------------------------
 
     def validate(self):
+        try:
+            self.altitude_frame = parse_frame(self.altitude_frame).value
+        except ValueError as exc:
+            raise TaskError(str(exc)) from exc
+        if self.altitude_frame == 'TRUTH':
+            raise TaskError('TRUTH 仅用于诊断，不能作为任务高度帧')
         _check_range('altitude_m', self.altitude_m, ALTITUDE_MIN_M, ALTITUDE_MAX_M)
         _check_range('max_speed_mps', self.max_speed_mps, SPEED_MIN_MPS, SPEED_MAX_MPS)
         _check_range('max_duration_s', self.max_duration_s, DURATION_MIN_S, DURATION_MAX_S)
@@ -147,6 +157,7 @@ class TaskSpec:
             'version': self.version,
             'source_text': self.source_text,
             'altitude_m': round(float(self.altitude_m), 2),
+            'altitude_frame': self.altitude_frame,
             'max_speed_mps': round(float(self.max_speed_mps), 2),
             'max_duration_s': round(float(self.max_duration_s), 1),
             'geofence_radius_m': round(float(self.geofence_radius_m), 1),
@@ -168,6 +179,7 @@ class TaskSpec:
         spec = cls(
             steps=steps,
             altitude_m=float(data.get('altitude_m', 2.0)),
+            altitude_frame=str(data.get('altitude_frame', 'REL')),
             max_speed_mps=float(data.get('max_speed_mps', 0.5)),
             max_duration_s=float(data.get('max_duration_s', 180.0)),
             geofence_radius_m=float(data.get('geofence_radius_m', 40.0)),
@@ -190,7 +202,8 @@ class TaskSpec:
         parts = []
         for step in self.steps:
             if step.type == 'takeoff':
-                parts.append(f'起飞 {step.params.get("altitude_m", self.altitude_m):.1f} m')
+                parts.append(f'起飞 {step.params.get("altitude_m", self.altitude_m):.1f} m'
+                             f'（{self.altitude_frame}）')
             elif step.type == 'goto':
                 parts.append(f'飞到 (东 {step.params.get("east_m", 0):+.1f}, '
                              f'北 {step.params.get("north_m", 0):+.1f})')

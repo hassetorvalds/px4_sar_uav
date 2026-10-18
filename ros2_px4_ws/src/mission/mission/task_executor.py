@@ -28,16 +28,33 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
+from px4_interface.qos import px4_qos
 from px4_interface.state import Px4StateMonitor
+from px4_msgs.msg import VehicleCommand, VehicleCommandAck
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
 
+from .altitude import format_altitude
+from .altitude import to_dict as altitude_dict
+from .command_tracker import CommandState, CommandTracker
 from .executor_core import (apply_clearance_gate, forward_target, inside_geofence,
                             search_waypoints, step_timeout_s, velocity_toward)
 from .search_pattern import estimate_duration_s
 from .task_spec import TaskError, TaskSpec
 
 _CLEARANCE_RE = re.compile(r'nearest_forward_m=([0-9.]+|inf)')
+
+#: 命令名 → (PX4 vehicle_command, 是否期望 ACK)
+#: ``land_fast`` 由 bridge 用速度指令实现，没有单条 MAVLink ACK，靠"是否上锁"判完成。
+_COMMAND_IDS = {
+    'arm': (VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, True),
+    'disarm': (VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, True),
+    'disarm_force': (VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, True),
+    'offboard': (VehicleCommand.VEHICLE_CMD_DO_SET_MODE, True),
+    'land': (VehicleCommand.VEHICLE_CMD_NAV_LAND, True),
+    'land_fast': (None, False),
+    'hold': (None, False),
+}
 
 PHASE_IDLE = 'IDLE'
 PHASE_ARM = 'ARM'
@@ -53,6 +70,7 @@ class TaskExecutor(Node):
         super().__init__('task_executor')
         self.declare_parameter('task_file', '')
         self.declare_parameter('task_json', '')
+        self.declare_parameter('intent_path', '')
         self.declare_parameter('task_topic', '~/task')
         self.declare_parameter('status_topic', '~/status')
         self.declare_parameter('abort_topic', '~/abort')
@@ -77,6 +95,9 @@ class TaskExecutor(Node):
         self.declare_parameter('status_timeout_s', 2.0)
         self.declare_parameter('heartbeat_s', 0.5)
         self.declare_parameter('exit_on_done', True)
+        self.declare_parameter('ack_topic', '/fmu/out/vehicle_command_ack_v1')
+        self.declare_parameter('ack_timeout_s', 1.5)
+        self.declare_parameter('ack_max_attempts', 3)
 
         self._dry_run = bool(self.get_parameter('dry_run').value)
         self._hold_on_target = bool(self.get_parameter('hold_on_target').value)
@@ -92,6 +113,11 @@ class TaskExecutor(Node):
         self._status_timeout = float(self.get_parameter('status_timeout_s').value)
         self._heartbeat_s = float(self.get_parameter('heartbeat_s').value)
         self._exit_on_done = bool(self.get_parameter('exit_on_done').value)
+        self._ack_timeout = float(self.get_parameter('ack_timeout_s').value)
+        self._ack_max_attempts = max(int(self.get_parameter('ack_max_attempts').value), 1)
+        self._tracker = CommandTracker(ack_timeout_s=self._ack_timeout,
+                                       max_attempts=self._ack_max_attempts)
+        self._ground_up_lcl = None       # 起飞点在地面时的 PX4 local up（LCL 帧）
 
         self._monitor = Px4StateMonitor(self)
         self._phase = PHASE_IDLE
@@ -139,6 +165,10 @@ class TaskExecutor(Node):
         self.create_subscription(
             PoseStamped, str(self.get_parameter('best_topic').value),
             self._on_best, 10)
+        # PX4 命令 ACK：命令生命周期跟踪（发送 ≠ 完成）
+        self.create_subscription(
+            VehicleCommandAck, str(self.get_parameter('ack_topic').value),
+            self._on_command_ack, px4_qos())
 
         self._open_report()
         self._load_task()
@@ -166,6 +196,8 @@ class TaskExecutor(Node):
         if self._report_handle is None:
             return
         state = self._monitor.snapshot()
+        position = (None if state.position_ned is None
+                    else ned_to_enu(*state.position_ned))
         entry = {
             't': round(time.monotonic() - (self._task_started or time.monotonic()), 2),
             'event': event,
@@ -173,13 +205,61 @@ class TaskExecutor(Node):
             'step': self._step_index,
             'armed': bool(state.armed),
             'nav_state': int(state.nav_state),
-            'position_enu': (None if state.position_ned is None
-                             else [round(float(v), 2)
-                                   for v in ned_to_enu(*state.position_ned)]),
+            'position_enu': (None if position is None
+                             else [round(float(v), 2) for v in position]),
+            # 高度必须带帧：LCL 是 PX4 local，可能漂移；任务高度是 REL
+            'altitude_lcl': altitude_dict(None if position is None else position[2],
+                                          'LCL', 'px4_local'),
             **{key: value for key, value in fields.items()},
         }
+        if self._spec is not None:
+            entry['task_altitude'] = altitude_dict(
+                self._spec.altitude_m, self._spec.altitude_frame, 'task')
         self._report_handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
         self._report_handle.flush()
+
+    def _on_command_ack(self, msg: VehicleCommandAck) -> None:
+        record = self._tracker.on_ack(msg.command, msg.result)
+        if record is None:
+            return
+        self._report('command_ack', name=record.name,
+                     vehicle_command=int(msg.command), result=int(msg.result),
+                     state=record.state, latency_s=record.latency_s,
+                     attempts=record.attempts)
+        self.get_logger().info(
+            f'命令 ACK：{record.name} result={int(msg.result)} → {record.state}'
+            f'（{record.latency_s} s）')
+        if (record.name in ('arm', 'offboard')
+                and record.state == CommandState.REJECTED.value):
+            self._abort(f'{record.name} 被拒绝（result={msg.result}）')
+
+    def _track_commands(self, now: float) -> None:
+        """推进命令生命周期：超时重试、状态确认完成、失败收工。"""
+        for record in self._tracker.tick(now):
+            self._report('command_timeout', name=record.name, state=record.state,
+                         attempts=record.attempts, reason=record.reason)
+            self.get_logger().warn(
+                f'命令 {record.name} → {record.state}（attempts={record.attempts}）')
+            if (record.name in ('arm', 'offboard')
+                    and record.state == CommandState.DELIVERY_UNKNOWN.value):
+                self._abort(f'{record.name} ACK 超时（重试 {record.attempts} 次）')
+                return
+
+        state = self._monitor.snapshot()
+        for name, active in (('arm', state.armed), ('offboard', state.offboard)):
+            record = self._tracker.get(name)
+            if (active and record is not None
+                    and record.state != CommandState.COMPLETED.value):
+                self._tracker.mark_completed(name, 'state_confirmed')
+                self._report('command_completed', name=name,
+                             attempts=record.attempts, latency_s=record.latency_s)
+
+        if self._ever_armed and not state.armed and self._phase == PHASE_LAND:
+            record = self._tracker.get('land_fast')
+            if record is not None and record.state != CommandState.COMPLETED.value:
+                self._tracker.mark_completed('land_fast', 'disarmed')
+                self._report('command_completed', name='land_fast',
+                             state=CommandState.COMPLETED.value)
 
     def _load_task(self) -> None:
         task_json = str(self.get_parameter('task_json').value).strip()
@@ -205,7 +285,8 @@ class TaskExecutor(Node):
         self._spec = spec
         self._reset_task_state()
         self._report('task_accepted', summary=spec.summary(),
-                     spec=spec.to_dict())
+                     spec=spec.to_dict(),
+                     intent_path=str(self.get_parameter('intent_path').value))
         self.get_logger().info(f'接受任务：{spec.summary()}')
         if self._dry_run:
             self.get_logger().warn(
@@ -226,6 +307,9 @@ class TaskExecutor(Node):
         self._target_hold_until = 0.0
         self._land_command_sent = False
         self._manual_override = False
+        self._ground_up_lcl = None
+        self._tracker = CommandTracker(ack_timeout_s=self._ack_timeout,
+                                       max_attempts=self._ack_max_attempts)
 
     def _on_task(self, msg: String) -> None:
         if self._phase not in (PHASE_IDLE, PHASE_DONE):
@@ -295,6 +379,7 @@ class TaskExecutor(Node):
         self._update_heading()
         self._update_heartbeat(now)
         self._publish_status()
+        self._track_commands(now)
         state = self._monitor.snapshot()
         if state.armed:
             self._ever_armed = True
@@ -385,7 +470,9 @@ class TaskExecutor(Node):
 
     def _finish_done(self, *, forced: bool = False) -> None:
         # 先写 done（_enter(PHASE_DONE) 在 exit_on_done 时会把进程结束掉）
-        self._report('done', report_path=self._report_path, forced=forced)
+        self._report('commands', commands=self._tracker.to_dicts())
+        self._report('done', report_path=self._report_path, forced=forced,
+                     commands=self._tracker.to_dicts())
         self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
         self._enter(PHASE_DONE)
 
@@ -472,13 +559,26 @@ class TaskExecutor(Node):
 
     def _run_takeoff(self, step, position) -> None:
         altitude = float(step.params.get('altitude_m', self._spec.altitude_m))
-        self._publish_target(position[0], position[1], altitude)
-        if abs(float(position[2]) - altitude) <= self._takeoff_tol:
+        # 任务高度默认是 REL（相对起飞点）；PX4 的位置目标用 LCL。
+        # 起飞前记下地面 LCL，之后 target_lcl = ground + altitude_rel，
+        # **比较始终在 LCL 帧内**，避免 REL/LCL 混算（EKF 触地漂移的根因之一）。
+        if self._spec.altitude_frame == 'LCL':
+            target_lcl = altitude
+        else:
+            if self._ground_up_lcl is None:
+                self._ground_up_lcl = float(position[2])
+            target_lcl = self._ground_up_lcl + altitude
+        self._publish_target(position[0], position[1], target_lcl)
+        if abs(float(position[2]) - target_lcl) <= self._takeoff_tol:
             if self._takeoff_stable_at is None:
                 self._takeoff_stable_at = time.monotonic()
             elif time.monotonic() - self._takeoff_stable_at > 1.0:
-                self._origin_enu = (position[0], position[1], altitude)
-                self._report('takeoff_complete', altitude=altitude)
+                self._origin_enu = (position[0], position[1], target_lcl)
+                self._report(
+                    'takeoff_complete',
+                    altitude_lcl=altitude_dict(target_lcl, 'LCL', 'px4_local'),
+                    target=altitude_dict(altitude, self._spec.altitude_frame, 'task'),
+                    ground_lcl=self._ground_up_lcl)
                 self._advance_step()
         else:
             self._takeoff_stable_at = None
@@ -553,6 +653,20 @@ class TaskExecutor(Node):
     def _send_command(self, command: str) -> None:
         if self._dry_run:
             return
+        vehicle_command, expect_ack = _COMMAND_IDS.get(command, (None, False))
+        record = self._tracker.get(command)
+        retry_states = (CommandState.TIMEOUT.value, CommandState.REJECTED.value,
+                        CommandState.DELIVERY_UNKNOWN.value, CommandState.FAILED.value)
+        if record is None or record.state in retry_states:
+            record = self._tracker.submit(command, vehicle_command,
+                                          expect_ack=expect_ack)
+            self._report('command_sent', name=command,
+                         vehicle_command=vehicle_command,
+                         expect_ack=expect_ack, attempts=record.attempts,
+                         state=record.state)
+        elif record.state in (CommandState.EXECUTING.value,
+                              CommandState.COMPLETED.value) and not expect_ack:
+            return      # land_fast/hold 已发出，不重复
         self._command_pub.publish(String(data=command))
 
     def _publish_target(self, east: float, north: float, up: float) -> None:
@@ -612,7 +726,14 @@ class TaskExecutor(Node):
                                     else round(float(self._clearance_forward), 2)),
             'position_enu': (None if position is None
                              else [round(float(v), 2) for v in position]),
+            # 高度永远带帧：LCL=px4 local，task=任务高度（默认 REL）
+            'altitude_lcl': altitude_dict(None if position is None else position[2],
+                                          'LCL', 'px4_local'),
+            'commands': self._tracker.to_dicts(),
         }
+        if self._spec is not None:
+            payload['task_altitude'] = altitude_dict(
+                self._spec.altitude_m, self._spec.altitude_frame, 'task')
         self._status_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
     def _step_timeout(self, step) -> float:

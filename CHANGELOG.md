@@ -15,6 +15,58 @@
 
 ---
 
+## [2026-10-18] P0：IntentFrame + 高度帧 + 命令 ACK 生命周期（假 PX4 自检）
+
+### 新增
+
+- `mission/altitude.py`：高度帧 `REL / LCL / BARO / MSL / TRUTH`；`format_altitude`/
+  `require_same_frame`/`to_dict`；`TRUTH` 只允许诊断。
+- `mission/intent.py`：`IntentFrame`（typed facts + provenance + confidence + missing）；
+  `merge_intent()` 实现"本地事实优先"——VLM 改写本地距离/高度/目标会被拒绝并记 warning。
+- `mission/command_tracker.py`：命令生命周期
+  `queued → awaiting_ack → accepted → executing → completed`，
+  以及 `rejected / timeout / delivery_unknown`；`land_fast` 用 `expect_ack=False`。
+- 三个模块共 21 项单测；`mission` 单测 69 passed。
+
+### 变更
+
+- `mission/task_spec.py`：新增 `altitude_frame`（默认 REL，TRUTH 被拒绝）；
+  JSON 往返带帧标签。
+- `mission/task_executor.py`：
+  - 订阅 `/fmu/out/vehicle_command_ack_v1`，用 `CommandTracker` 跟踪
+    `arm/offboard/land_fast`；报告新增 `command_sent / command_ack /
+    command_timeout / command_completed / commands`；
+  - arm/offboard ACK 被拒绝或重试用尽 → 收工降落；
+  - `takeoff` 用 `ground_lcl + altitude_rel` 生成 LCL 目标，**比较不再跨帧**；
+  - 报告/状态新增 `altitude_lcl` 与 `task_altitude`（带帧/来源）。
+- `scripts/fly_task.py`：改用 `parse_intent()`；打印来源/置信度/缺失/provenance；
+  新增 `--intent-json`、`--remote-intent`；落盘 `intent_<stamp>.json` 并传给执行器
+  （报告里的 `intent_path`）。
+- `scripts/fake_px4_sim.py`：对 arm/offboard/land/disarm 发布 `VehicleCommandAck`，
+  让假 PX4 自检覆盖 ACK 生命周期。
+
+### 验证
+
+```text
+· 全包单测：196 passed / 2 skipped（mission 69 / vlm 45 / perception 28+1skip /
+  px4_interface 20 / planner 18 / mapping 15 / px4_offboard 1+1skip）
+· 假 PX4 自检（SIMCHECK_EXPECT=command_ack,command_completed,done）PASS：
+  command_sent(arm) → command_ack(accepted, 0.001 s) → command_completed
+  → command_sent(offboard) → command_ack → command_completed
+  → takeoff → ... → land_fast → command_completed → commands → done
+· CLI 合并：本地"向北 10 m" + 远端"向北 20 m" → 保留 10 m 并打印拒绝 warning
+```
+
+### 已知问题
+
+- **改动后未真机复飞**：ACK/高度帧只在假 PX4 自检通过；下次飞行前先跑
+  `task_executor_simcheck.sh`，再按 DEMO Step 2 飞一轮。
+- 真实 PX4 的 ACK 话题为 `/fmu/out/vehicle_command_ack_v1`；若 PX4 版本变化需同步。
+- 高度门（`vlm_closed_loop.py`）仍用 `height_source` 二选一，尚未统一到本次帧标签；
+  这是下一步（P1）的事。
+
+---
+
 ## [2026-10-18] 真机复验 + local_map 回归修复 + 参考仓库对照
 
 ### 修复

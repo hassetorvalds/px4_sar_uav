@@ -79,8 +79,19 @@ scripts/fly_task.py "起飞到 2 米，向北飞 10 米，悬停 5 秒，返航�
 scripts/fly_task.py "搜索北侧 20 米、半径 10 米的区域，寻找橙色标记，高度 2 米，降落"
 ```
 
-会打印：步骤表、搜索展开的航点数/预计时长、自动补的起飞/降落、任务 JSON 路径。
+会打印：步骤表、搜索展开的航点数/预计时长、自动补的起飞/降落、任务 JSON 路径，
+以及 **IntentFrame**（来源/置信度/缺失/每条事实的 provenance）。
 **默认不会起飞**。
+
+VLM 解析接入前，可以用 `--remote-intent` 验证"本地事实优先"的合并规则：
+
+```bash
+# 远端（模拟 VLM）说"向北 20 米"
+scripts/fly_task.py "起飞到 2 米，向北飞 20 米，降落" --intent-json > /tmp/vlm.json
+
+# 本地规则说"向北 10 米"：合并后仍应保留 10 米，并打印拒绝改写的 warning
+scripts/fly_task.py "起飞到 2 米，向北飞 10 米，降落" --remote-intent /tmp/vlm.json
+```
 
 ## 3. Step 2：最小飞行（起飞 → 前进 → 悬停 → 返航）
 
@@ -89,14 +100,16 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
   "起飞到 2 米，向前飞 5 米，悬停 5 秒，返航降落" --execute
 ```
 
-预期：
+预期（事件都带 `altitude_lcl`/`task_altitude` 帧标签）：
 
 ```text
 → 阶段 ARM → OFFBOARD → RUN
-执行 step 1/4：takeoff ...  → takeoff_complete
+command_sent(arm) → command_ack(accepted) → command_completed(arm)
+command_sent(offboard) → command_ack → command_completed(offboard)
+执行 step 1/4：takeoff ...  → takeoff_complete（LCL 与 REL 分别标注）
 执行 step 2/4：forward ...  → 到位
 执行 step 3/4：hover   ...  → 5 s
-执行 step 4/4：return_home  → land_fast → 已上锁，任务结束
+执行 step 4/4：return_home  → land_fast → command_completed → done
 ```
 
 `forward` 是**机体前向**：以起飞时的航向为准，飞 5 m。
@@ -142,5 +155,6 @@ pkill -f flight_supervisor || true
 | AirSim 4560 处于 `CloseWait` | PX4 连不上，整个链路起不来 | UE 里 **Stop → Play** 重启场景；WSL 侧 `4560 OK` 后再起 PX4 |
 | EKF 高度漂移 | 真降落不可用；高度门可能判错 | 收尾统一 `land_fast`；高度门数据源待定（见 RESULTS 6.1） |
 | 场景里没有人 | 只能验证"目标物"检测，不能宣称人员检测 | 需要给场景加人物/假人，或换有人的环境 |
-| 规则解析覆盖面有限 | 复杂/歧义指令会被拒绝 | 拒绝是**预期行为**；后续换 VLM parser，接口不变 |
+| 规则解析覆盖面有限 | 复杂/歧义指令会被拒绝 | 拒绝是**预期行为**；后续换 VLM parser，接口不变；`--remote-intent` 已定义合并契约 |
+| ACK/高度帧改动后未真机复飞 | 新增的生命周期与帧标签只在假 PX4 自检过 | 下次飞前先跑 `task_executor_simcheck.sh`，再按 Step 2 飞一轮 |
 | 搜索步骤未飞验 | 起飞/悬停/降落、向前/返航已飞通；搜索航点尚未实飞 | 先小半径（r=3 m）验证，再放大 |

@@ -78,3 +78,17 @@ def test_json_roundtrip():
 def test_from_json_rejects_bad_version():
     with pytest.raises(TaskError, match='schema 版本'):
         TaskSpec.from_json('{"version": 99, "steps": []}')
+
+
+def test_altitude_frame_default_and_roundtrip():
+    spec = _spec([Step('takeoff', {}), Step('land', {})]).validate()
+    assert spec.altitude_frame == 'REL'
+    assert spec.to_dict()['altitude_frame'] == 'REL'
+    restored = TaskSpec.from_dict({**spec.to_dict(), 'altitude_frame': 'LCL'})
+    assert restored.altitude_frame == 'LCL'
+
+
+def test_altitude_frame_rejects_unknown():
+    with pytest.raises(TaskError, match='高度帧'):
+        _spec([Step('takeoff', {}), Step('land', {})],
+              altitude_frame='AGL').validate()

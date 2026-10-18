@@ -25,7 +25,8 @@ import rclpy
 from geometry_msgs.msg import PoseStamped, Twist
 from px4_interface.frames import enu_to_ned, enu_yaw_to_ned_yaw
 from px4_interface.qos import px4_qos
-from px4_msgs.msg import VehicleLocalPosition, VehicleStatus
+from px4_msgs.msg import (VehicleCommand, VehicleCommandAck,
+                          VehicleLocalPosition, VehicleStatus)
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -67,6 +68,8 @@ class FakePx4(Node):
         self._position_pub = self.create_publisher(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1', qos)
         self._map_pub = self.create_publisher(String, '/local_map/status', 5)
+        self._ack_pub = self.create_publisher(
+            VehicleCommandAck, '/fmu/out/vehicle_command_ack_v1', qos)
 
         self.create_subscription(
             String, '/offboard_bridge/command', self._on_command, 10)
@@ -82,21 +85,36 @@ class FakePx4(Node):
 
     # ------------------------------------------------------------------
 
+    def _publish_ack(self, command_id: int, result: int = 0) -> None:
+        ack = VehicleCommandAck()
+        ack.command = int(command_id)
+        ack.result = int(result)
+        ack.target_system = 1
+        ack.target_component = 1
+        ack.from_external = True
+        ack.timestamp = int((time.monotonic() - self._started) * 1e6)
+        self._ack_pub.publish(ack)
+
     def _on_command(self, msg: String) -> None:
         command = msg.data.strip().lower()
         if command == 'arm':
             self._armed = True
             self._ever_armed = True
+            self._publish_ack(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM)
             self.get_logger().info('假 PX4：已解锁（受令）')
         elif command == 'offboard':
             self._offboard = True
+            self._publish_ack(VehicleCommand.VEHICLE_CMD_DO_SET_MODE)
         elif command in ('land_fast', 'land'):
             self._landing = True
+            if command == 'land':
+                self._publish_ack(VehicleCommand.VEHICLE_CMD_NAV_LAND)
             self.get_logger().info('假 PX4：开始降落')
         elif command in ('disarm', 'disarm_force'):
             self._armed = False
             self._landing = False
             self._offboard = False
+            self._publish_ack(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM)
 
     def _on_target(self, msg: PoseStamped) -> None:
         self._target = (float(msg.pose.position.x), float(msg.pose.position.y),

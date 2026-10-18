@@ -285,6 +285,30 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 - 换成 MAVSDK / PX4 Mission Mode（与现有 Offboard 栈是不同路线）；
 - 大改行为树/多机/真实飞机（demo 阶段不需要）。
 
+## 7.5 P0 落地（2026-10-18，仅假 PX4 自检，未真机复飞）
+
+按上面的 P0 做了三件最小改动，不换栈：
+
+| 项 | 文件 | 行为 |
+|---|---|---|
+| IntentFrame | `mission/intent.py` | 规则解析产出 typed facts + `source=local` + 置信度/缺失；`merge_intent` 本地事实优先，VLM 改写会被拒绝并记 warning；CLI `--remote-intent` 可验证 |
+| 高度帧 | `mission/altitude.py`、`TaskSpec.altitude_frame` | `REL/LCL/BARO/MSL/TRUTH`；报告写 `altitude_lcl` 与 `task_altitude`；`TRUTH` 仅诊断、禁止作为任务帧；起飞 target 用 `ground_lcl + altitude_rel`，比较始终在 LCL 内 |
+| 命令 ACK 生命周期 | `mission/command_tracker.py`、`task_executor.py` | `command_sent → command_ack → command_completed`；超时 `command_timeout → delivery_unknown` 并触发收工；`land_fast` 无 ACK，按"是否上锁"判完成 |
+
+验证：
+
+```text
+· mission 单测 69 passed（新增 intent/altitude/command_tracker 共 21 项）
+· 全包 196 passed / 2 skipped
+· 假 PX4 自检（SIMCHECK_EXPECT=command_ack,command_completed,done）PASS：
+    task_accepted → phase → command_sent(arm) → command_ack(accepted, 0.001 s)
+    → command_completed → phase → command_sent(offboard) → command_ack → command_completed
+    → takeoff → ... → land_fast → command_completed → commands → done
+· CLI：本地"向北 10 m" + 远端"向北 20 m" → 保留 10 m，warning 写明拒绝
+```
+
+未做：真机复飞（这轮结束后栈已停）；VLM 实际接入（只留了 `--remote-intent` 接口）。
+
 ## 8. 参考仓库的许可证提醒
 
 | 仓库 | 许可 | 能否复制代码 |

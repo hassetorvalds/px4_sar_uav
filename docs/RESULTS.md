@@ -32,17 +32,19 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **169 passed / 2 skipped**（vlm 45 / mission 44 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 13 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 170 passed |
+| 单元测试 | ✅ | **196 passed / 2 skipped**（vlm 45 / mission 69 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 15 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 197 passed |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
 | 区域覆盖搜索 | ⚠️ 航迹生成已测，未飞 | `mission/search_pattern.py`：弓字形覆盖；执行器按航点飞 |
-| 自然语言 → 任务（规则解析） | ⚠️ 已实现+单测，未做 VLM | `mission/task_parser.py`：中英/全角/中文数字；非法指令拒绝；输出可校验 `TaskSpec` |
-| 通用任务执行（起飞/航点/悬停/返航/搜索） | ⚠️ 最小/前进/返航已飞验；搜索未飞 | `mission/task_executor.py` + `executor_core.py`：围栏/净空门/总时限/人工接管暂停；`task_executor_simcheck.sh` 4 场景 PASS |
+| 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
+| 通用任务执行（起飞/航点/悬停/返航/搜索） | ⚠️ 最小/前进/返航已飞验；搜索未飞 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |
 | 语义地图 / 语言—空间定位 | ❌ | 未开始 |
 | 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU；多帧关联（世界距离/IoU + N 帧确认） |
 | 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |
 | 目标跟踪 / 搜救报告 | ⚠️ 跟踪内核已测，报告未做 | `perception/tracking.py`：确认目标（默认连续 3 帧、世界 2 m 门限、2 s 过期） |
+| 高度帧（REL/LCL/BARO/MSL/TRUTH） | ✅ 已进 schema/报告 | `mission/altitude.py`；`TaskSpec.altitude_frame`；报告 `altitude_lcl`/`task_altitude`；TRUTH 仅诊断且被拒绝作为任务帧 |
+| 命令 ACK 生命周期 | ✅ 假 PX4 自检通过 | `mission/command_tracker.py`：awaiting_ack→accepted→completed / timeout→delivery_unknown；arm/offboard/land_fast 已接 |
 
 ## 3. 量化结果（按批次，不跨版本合并）
 
@@ -97,8 +99,8 @@
 ```text
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
-自研源码      ~7600 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~1900 行，169 passed / 2 skipped（检测器入口下 170 passed）
+自研源码      ~8400 行 Python（不含 px4_msgs 与第三方）
+单元测试      ~2200 行，196 passed / 2 skipped（检测器入口下 197 passed）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）
