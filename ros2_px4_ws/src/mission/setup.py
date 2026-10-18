@@ -27,6 +27,7 @@ setup(
             'approach_supervisor = mission.approach_supervisor:main',
             'task_executor = mission.task_executor:main',
             'task_parser = mission.task_parser:main',
+            'task_report = mission.report:main',
         ],
     },
 )

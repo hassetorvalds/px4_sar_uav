@@ -87,6 +87,9 @@ class TaskExecutor(Node):
         self.declare_parameter('dry_run', True)
         self.declare_parameter('hold_on_target', True)
         self.declare_parameter('hold_once_per_step', True)
+        self.declare_parameter('center_on_target', True)
+        self.declare_parameter('center_tolerance_deg', 5.0)
+        self.declare_parameter('center_yaw_rate_deg_s', 15.0)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -110,6 +113,11 @@ class TaskExecutor(Node):
         self._dry_run = bool(self.get_parameter('dry_run').value)
         self._hold_on_target = bool(self.get_parameter('hold_on_target').value)
         self._hold_once_per_step = bool(self.get_parameter('hold_once_per_step').value)
+        self._center_on_target = bool(self.get_parameter('center_on_target').value)
+        self._center_tolerance = math.radians(float(
+            self.get_parameter('center_tolerance_deg').value))
+        self._center_yaw_rate = math.radians(float(
+            self.get_parameter('center_yaw_rate_deg_s').value))
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
         self._clearance_stop = float(self.get_parameter('clearance_stop_m').value)
@@ -157,6 +165,8 @@ class TaskExecutor(Node):
         self._target_hold_until = 0.0
         self._last_target_report_at = 0.0
         self._target_hold_count = 0
+        self._target_world = None
+        self._target_centered_reported = False
         self._manual_override = False
         self._last_target_pose = None
         self._origin_enu = (0.0, 0.0, 0.0)
@@ -370,6 +380,9 @@ class TaskExecutor(Node):
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
+        self._target_hold_count = 0
+        self._target_world = None
+        self._target_centered_reported = False
         self._land_command_sent = False
         self._manual_override = False
         self._ground_up_lcl = None
@@ -410,8 +423,11 @@ class TaskExecutor(Node):
                  round(float(msg.pose.position.y), 2),
                  round(float(msg.pose.position.z), 2)]
         self.get_logger().info(f'确认目标：world={world} → 悬停 {self._target_hold_s:.0f} s')
+        self._target_world = [float(v) for v in world]
+        self._target_centered_reported = False
         self._report('target_confirmed', world_enu=world,
-                     step_type=self._current_step_type())
+                     step_type=self._current_step_type(),
+                     centering=bool(self._center_on_target))
         self._target_hold_until = now + self._target_hold_s
         if self._land_on_target:
             self._begin_land()
@@ -578,11 +594,13 @@ class TaskExecutor(Node):
         self._blocked_since = None
         self._target_hold_until = 0.0
         self._target_hold_count = 0
+        self._target_world = None
+        self._target_centered_reported = False
         step = self._current_step()
         self._scan_phase = 'dwell'
         self._scan_target_enu = None
         self._scan_dwell_until = (time.monotonic()
-                                  + float(step.params.get('dwell_s', 1.5))
+                                  + float(step.params.get('dwell_s', 2.5))
                                   if step is not None else 0.0)
         if step is None:
             self._begin_land()
@@ -597,8 +615,10 @@ class TaskExecutor(Node):
             self._step_target = (self._origin_enu[0], self._origin_enu[1],
                                  self._origin_enu[2])
 
-    def _advance_step(self) -> None:
-        if self._target_hold_until > time.monotonic():
+    def _advance_step(self, *, ignore_hold: bool = False) -> None:
+        # takeoff 必须无视 hold 前进；否则起飞阶段看到目标会把 takeoff_complete
+        # 重复写到 hold 结束（2026-10-18 实测 8 次）。
+        if not ignore_hold and self._target_hold_until > time.monotonic():
             return
         self._enter_step(self._step_index + 1)
 
@@ -668,7 +688,7 @@ class TaskExecutor(Node):
                     altitude_lcl=altitude_dict(target_lcl, 'LCL', 'px4_local'),
                     target=altitude_dict(altitude, self._spec.altitude_frame, 'task'),
                     ground_lcl=self._ground_up_lcl)
-                self._advance_step()
+                self._advance_step(ignore_hold=True)
         else:
             self._takeoff_stable_at = None
 
@@ -743,7 +763,7 @@ class TaskExecutor(Node):
         约等于相机 2.5 Hz 的 3–4 帧，刚好够检测器做 3 帧确认。
         """
         if self._target_hold_until > now:
-            self._stop_velocity()
+            self._run_target_hold(position, now)
             return
         seconds = float(step.params.get('seconds', 20.0))
         if now - self._step_started >= seconds:
@@ -755,7 +775,7 @@ class TaskExecutor(Node):
             return
         if self._heading_enu is None:
             return
-        dwell = float(step.params.get('dwell_s', 1.5))
+        dwell = float(step.params.get('dwell_s', 2.5))
         step_deg = float(step.params.get('step_deg', 45.0))
         rate = math.radians(float(step.params.get('rate_deg_s', 20.0)))
         if self._scan_phase == 'dwell':
@@ -777,7 +797,44 @@ class TaskExecutor(Node):
         self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position),
                                yaw_rate=yaw_rate)
 
+    def _run_target_hold(self, position, now) -> None:
+        """目标悬停：保持位置/高度，并转向目标（scan/hover 阶段）。
+
+        只在 scan/hover 里用；search 阶段的 hold 不做偏航，避免改变航向
+        后影响后续净空门的方向判断。
+        """
+        vz = self._altitude_hold_vz(position)
+        if (not self._center_on_target or self._target_world is None
+                or self._heading_enu is None):
+            self._publish_velocity(0.0, 0.0, vz)
+            return
+        de = float(self._target_world[0]) - float(position[0])
+        dn = float(self._target_world[1]) - float(position[1])
+        if math.hypot(de, dn) < 0.5:
+            self._publish_velocity(0.0, 0.0, vz)
+            return
+        desired = math.atan2(dn, de)
+        rate, done = yaw_rate_to_target(
+            self._heading_enu, desired,
+            max_rate_rad_s=self._center_yaw_rate,
+            tolerance_rad=self._center_tolerance)
+        error_deg = math.degrees(math.remainder(desired - self._heading_enu, 2.0 * math.pi))
+        if done:
+            self._publish_velocity(0.0, 0.0, vz)
+            if not self._target_centered_reported:
+                self._target_centered_reported = True
+                self._report('target_centered', target_world=self._target_world,
+                             heading_enu_deg=round(math.degrees(self._heading_enu), 1),
+                             error_deg=round(error_deg, 1))
+                self.get_logger().info(
+                    f'目标已对准：方位误差 {error_deg:+.1f}°')
+            return
+        self._publish_velocity(0.0, 0.0, vz, yaw_rate=rate)
+
     def _run_hover(self, step, position, now) -> None:
+        if self._target_hold_until > now:
+            self._run_target_hold(position, now)
+            return
         self._publish_target(position[0], position[1], self._target_up_lcl())
         self._stop_velocity()
         seconds = float(step.params.get('seconds', 5.0))

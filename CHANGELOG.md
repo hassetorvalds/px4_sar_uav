@@ -15,6 +15,45 @@
 
 ---
 
+## [2026-10-18] Demo 收口：目标自动对准 + Markdown 证据页
+
+### 新增
+
+- 执行器 `center_on_target`（scan/hover 阶段）：确认目标后保持位置/高度，
+  用世界点算方位并 yaw 对准，报告 `target_centered`（含 `error_deg`）。
+  search 阶段的 hold 不偏航，避免改变航向影响净空门方向。
+- `mission/report.py`：把 `report_*.jsonl` 汇总成 Markdown 证据页
+  （任务/意图/健康检查/目标/命令生命周期/时间线）；`fly_task.py` 执行后自动生成
+  同目录 `report_*.md`，也可 `ros2 run mission task_report <jsonl>`。
+- `scan` 驻留默认 1.5 → **2.5 s**（2.5 Hz 相机约 6 帧，给 3 帧确认留余量）。
+
+### 修复
+
+- 起飞阶段收到目标确认时，`_advance_step()` 被 target hold 阻塞，
+  `takeoff_complete` 重复写 8 次、扫描晚开始；takeoff 现在 `ignore_hold=True` 前进。
+
+### 验证
+
+```text
+· 单测：mission 88 passed；全包 215 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 216）
+· 真机（起飞 2m → 原地扫描 60s → 降落）：
+  health_check 通过；takeoff LCL 1.996 / REL 2.0；
+  target_confirmed world=[32.98, 26.51, 4.72]（step=scan）
+  → target_centered error=-3.4°（heading 42.5°）
+  → scan_dwell 85/130/172… → scan_complete → done；arming_state=1、landed=true
+  报告：logs/tasks/report_20261018-164832-632.jsonl
+  证据页：logs/tasks/report_20261018-164832-632.md
+```
+
+### 已知问题
+
+- 目标世界 z≈4.72 与 `OrangeBall` 位姿 z≈3.68 仍有偏差（深度/像素近似）；
+- LCL 高度漂移仍在（起飞 LCL 1.996 与 REL 2.0 对齐，长航段会漂）；
+- 对准只在 scan/hover 生效；search hold 保持航向。
+
+---
+
 ## [2026-10-18] P1 安全加固：arm 前健康检查 + 自检域隔离 + 高度门帧标签
 
 ### 新增

@@ -126,7 +126,8 @@ command_sent(offboard) → command_ack → command_completed(offboard)
 FLY_TASK_CONFIRM=1 scripts/fly_task.py "起飞到 2 米，原地扫描 40 秒，降落" --execute
 ```
 
-预期报告：`target_confirmed world=[...]` → `scan_complete` → `land_fast → done`。
+预期报告：`target_confirmed world=[...]` → `target_centered error≈-3.4°`
+→ `scan_complete` → `land_fast → done`；执行器还会生成 `report_*.md` 证据页。
 目标为场景内橙色物体（实测 depth≈32 m）。
 
 **组合任务（搜索 + 步进扫描 + 发现）**：

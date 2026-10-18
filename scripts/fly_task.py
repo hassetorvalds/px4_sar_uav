@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(_ROOT, 'ros2_px4_ws', 'src', 'mission'))
 
 from mission.executor_core import search_waypoints  # noqa: E402
 from mission.intent import IntentFrame, merge_intent, parse_intent  # noqa: E402
+from mission.report import summarize  # noqa: E402
 from mission.search_pattern import estimate_duration_s, lawnmower  # noqa: E402
 from mission.task_spec import TaskError  # noqa: E402
 
@@ -96,6 +97,8 @@ def main(argv=None):
     parser.add_argument('--report', default='', help='执行报告路径（默认 logs/tasks/）')
     parser.add_argument('--no-hold-on-target', action='store_true',
                         help='检测到目标时不悬停（只记录）')
+    parser.add_argument('--no-summary', action='store_true',
+                        help='不生成 Markdown 证据页')
     args = parser.parse_args(argv)
 
     text = ' '.join(args.text)
@@ -175,6 +178,12 @@ def main(argv=None):
         return 5
     print(f'\n执行结束（退出码 {completed.returncode}）')
     print(f'报告：{report}')
+    if not args.no_summary and os.path.isfile(report):
+        try:
+            summary_path = summarize(report, intent_file)
+            print(f'证据页：{summary_path}')
+        except OSError as exc:
+            print(f'证据页生成失败：{exc}', file=sys.stderr)
     return completed.returncode
 
 
