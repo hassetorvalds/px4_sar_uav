@@ -38,7 +38,7 @@
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
 | 区域覆盖搜索 | ⚠️ 航迹生成已测，未飞 | `mission/search_pattern.py`：弓字形覆盖；执行器按航点飞 |
 | 自然语言 → 任务（规则解析） | ⚠️ 已实现+单测，未做 VLM | `mission/task_parser.py`：中英/全角/中文数字；非法指令拒绝；输出可校验 `TaskSpec` |
-| 通用任务执行（起飞/航点/悬停/返航/搜索） | ⚠️ 已实现+单测，**未飞验** | `mission/task_executor.py` + `executor_core.py`：围栏/净空门/总时限/人工接管暂停 |
+| 通用任务执行（起飞/航点/悬停/返航/搜索） | ⚠️ 假 PX4 自检通过，未真机飞验 | `mission/task_executor.py` + `executor_core.py`：围栏/净空门/总时限/人工接管暂停；`task_executor_simcheck.sh` 4 场景 PASS |
 | 语义地图 / 语言—空间定位 | ❌ | 未开始 |
 | 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU；多帧关联（世界距离/IoU + N 帧确认） |
 | 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |

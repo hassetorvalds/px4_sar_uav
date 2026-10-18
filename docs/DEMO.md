@@ -49,6 +49,29 @@ source scripts/env.sh
 scripts/check_stack.sh                       # 全绿（频率达标）才继续
 ```
 
+## 1.5 没有 AirSim 时也能自检（假 PX4）
+
+```bash
+# 简单飞行：takeoff → forward → hover → return_home → land → done
+scripts/task_executor_simcheck.sh
+
+# 搜索：8 个航点全部到位
+SIMCHECK_TIMEOUT=120 scripts/task_executor_simcheck.sh \
+  "搜索北侧 5 米、半径 3 米的区域，高度 2 米，降落"
+
+# 净空门：注入 0.5 m 前向净空 → clearance_blocked → abort → land
+SIMCHECK_TIMEOUT=70 SIMCHECK_BLOCK_AFTER=6 \
+  SIMCHECK_EXPECT=clearance_blocked,abort,done \
+  scripts/task_executor_simcheck.sh "向北飞 8 米，降落"
+
+# 人工接管：切 POSCTL → manual_override → 暂停 → 恢复 → manual_resume → 继续
+SIMCHECK_TIMEOUT=80 SIMCHECK_TAKEOVER_AFTER=14 \
+  SIMCHECK_EXPECT=manual_override,manual_resume,done \
+  scripts/task_executor_simcheck.sh "向北飞 8 米，降落"
+```
+
+每个场景最后都会打印事件序列与 `PASS/FAIL`（退出码 0 = PASS）。
+
 ## 2. Step 1：只解析，不飞（随时可演示）
 
 ```bash

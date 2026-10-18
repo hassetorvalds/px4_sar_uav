@@ -36,6 +36,9 @@
   人工接管暂停（非 Offboard 立即停发，交还后恢复）+ 卡阶段超时 → `land_fast`。
 - `scripts/fly_task.py`：CLI。默认**只解析并打印计划**；`--execute` 且
   `FLY_TASK_CONFIRM=1` 才执行；`--via-arbiter` 适配开着仲裁的栈。
+- `scripts/fake_px4_sim.py` + `scripts/task_executor_simcheck.sh`：**无 AirSim/PX4 的集成自检**。
+  假 PX4 发布状态/位置/地图净空，订阅执行器指令并做限速运动学近似；可注入
+  "前向净空 0.5 m" 与 "人工接管（切 POSCTL）" 两种场景，按报告里的事件序列判定 PASS/FAIL。
 - `docs/DEMO.md`：从起链路到"一句话飞行/搜索"的完整步骤与预期输出。
 - `scripts/stop_stack.sh`：补 `perception/victim_detector`、`mission/task_executor`、
   `vlm/vlm_navigator` 的清理。
@@ -54,11 +57,17 @@
 · 非法指令："今天天气不错" → 拒绝并列出支持的句式
 · 执行器 dry_run 冒烟：接受任务、打印计划、写
     logs/tasks/smoke.jsonl（task_accepted 含完整 TaskSpec）
+· 假 PX4 集成自检（task_executor_simcheck.sh，4 个场景全部 PASS）：
+    ① 简单飞行：takeoff → forward → hover → return_home → land → done
+    ② 搜索：8 个航点全部到位 → land → done
+    ③ 净空门：注入 nearest_forward_m=0.5 → clearance_blocked → abort → land → done
+    ④ 人工接管：切 POSCTL → manual_override → 暂停 → 恢复 OFFBOARD → manual_resume
+       → 继续飞 → land → done
 ```
 
 ### 已知问题 / 待办
 
-- **执行器未飞验**：代码/单测/dry_run 通过，尚未真实起飞。
+- **执行器未真机飞验**：状态机已用假 PX4 集成自检（4 场景 PASS），但尚未在 AirSim/PX4 上真实起飞。
 - **AirSim 4560 不可用（2026-10-18 现场）**：UE4Editor 在跑、RPC 45000 正常，
   但 4560 处于 `CloseWait`，Windows 本机也连不上 → 需要 UE 里 Stop → Play 重启场景。
 - 规则解析覆盖面有限：复杂/歧义指令会被拒绝（这是预期行为，后续换 VLM parser）。
