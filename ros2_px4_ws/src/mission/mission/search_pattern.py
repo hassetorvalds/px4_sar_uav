@@ -99,20 +99,110 @@ def lawnmower_rectangle(center_east: float, center_north: float, width_m: float,
     return waypoints
 
 
-def search_metrics(step_params, waypoints, speed_mps: float):
-    """覆盖指标：面积/折线长度/预计时间（与航点数量）。"""
+
+
+def lawnmower_polygon(polygon, spacing_m: float, angle_deg: float = 0.0,
+                      *, include_edges: bool = True):
+    """任意多边形（含凹形）的弓字搜索。
+
+    思路：把多边形旋转到"航线沿 x"的局部系，按 y 扫描线求与多边形边的交点，
+    排序后两两配对成段；再旋转回 ENU。凹多边形一条扫描线可能有多段。
+    """
+    points = [(float(e), float(n)) for e, n in polygon]
+    if len(points) < 3:
+        raise ValueError('polygon 至少 3 个顶点')
+    spacing = float(spacing_m)
+    if spacing <= 0:
+        raise ValueError('spacing_m 必须 > 0')
+    theta = math.radians(float(angle_deg))
+    cos_t, sin_t = math.cos(theta), math.sin(theta)
+
+    # 世界 → 局部（旋转 -theta）
+    local = [(e * cos_t + n * sin_t, -e * sin_t + n * cos_t)
+             for e, n in points]
+    ys = [p[1] for p in local]
+    y_min, y_max = min(ys), max(ys)
+
+    lanes = []
+    y = y_min
+    while y < y_max - 1e-9:
+        lanes.append(y)
+        y += spacing
+    if include_edges:
+        lanes.append(y_max)
+
+    def intersections(lane_y):
+        xs = []
+        count = len(local)
+        for index in range(count):
+            x1, y1 = local[index]
+            x2, y2 = local[(index + 1) % count]
+            if abs(y2 - y1) < 1e-12:
+                continue
+            low, high = (y1, y2) if y1 < y2 else (y2, y1)
+            if low <= lane_y < high or (include_edges and lane_y == high):
+                x = x1 + (lane_y - y1) * (x2 - x1) / (y2 - y1)
+                xs.append(x)
+        xs.sort()
+        unique = []
+        for x in xs:
+            if not unique or abs(x - unique[-1]) > 1e-6:
+                unique.append(x)
+        return unique
+
+    waypoints = []
+    for lane_index, lane_y in enumerate(lanes):
+        xs = intersections(lane_y)
+        for start in range(0, len(xs) - 1, 2):
+            x0, x1 = xs[start], xs[start + 1]
+            if lane_index % 2 == 1:
+                x0, x1 = x1, x0
+            for x in (x0, x1):
+                east = x * cos_t - lane_y * sin_t
+                north = x * sin_t + lane_y * cos_t
+                waypoints.append((east, north))
+    return waypoints
+
+
+def _polygon_area(points) -> float:
+    if len(points) < 3:
+        return 0.0
+    total = 0.0
+    for index, (east, north) in enumerate(points):
+        next_east, next_north = points[(index + 1) % len(points)]
+        total += east * next_north - next_east * north
+    return abs(total) / 2.0
+
+
+def search_metrics(step_params, waypoints, speed_mps: float,
+                   altitude_m=None, hfov_deg: float = 90.0):
+    """覆盖指标：面积/折线/预计时间；有高度时给下视足印与重叠率。"""
     shape = str(step_params.get('shape', 'square')).lower()
-    if shape == 'rectangle':
+    if shape == 'polygon':
+        vertices = (step_params.get('polygon')
+                    or step_params.get('vertices') or [])
+        area = _polygon_area([(float(e), float(n)) for e, n in vertices])
+    elif shape == 'rectangle':
         area = float(step_params.get('width_m', 0.0)) * float(
             step_params.get('height_m', 0.0))
     else:
         radius = float(step_params.get('radius_m', 0.0))
         area = (2.0 * radius) ** 2
-    return {
+    metrics = {
         'area_m2': round(area, 1),
         'path_length_m': round(path_length(waypoints), 1),
         'estimated_s': round(estimate_duration_s(waypoints, speed_mps), 1),
+        'spacing_m': float(step_params.get('spacing_m', 0.0)),
     }
+    if altitude_m is not None:
+        footprint = 2.0 * float(altitude_m) * math.tan(
+            math.radians(float(hfov_deg)) / 2.0)
+        spacing = float(step_params.get('spacing_m', 0.0))
+        metrics['footprint_width_m'] = round(footprint, 2)
+        metrics['lane_overlap_ratio'] = (
+            round(max(0.0, 1.0 - spacing / footprint), 3)
+            if footprint > 0 else 0.0)
+    return metrics
 
 
 def path_length(waypoints):

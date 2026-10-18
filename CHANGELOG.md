@@ -15,6 +15,41 @@
 
 ---
 
+## [2026-10-18] 多边形航迹 + 覆盖率敏感性：L 形 8/8、20/20
+
+### 新增
+
+- `lawnmower_polygon()`：任意多边形（含凹形）扫描线裁剪、可旋转；
+- `search` 支持 `shape=polygon` + `vertices/polygon` 顶点，TaskSpec 校验围栏；
+- `search_metrics` 增加下视足印/重叠率：`footprint_width_m`、`lane_overlap_ratio`；
+- `fly_task.py --task-json`：直接执行 TaskSpec JSON（多边形等解析器不覆盖的结构）；
+- 报告打印面积/折线/预计/足印/重叠。
+
+### 验证
+
+```text
+· 单测：mission 111 passed；全包 243 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 244）
+· 真机 L 形（20 m²、8 航点、下视 2 m）：
+  search_plan area=20.0 m²，path=20.5 m，est=54.9 s，
+  footprint=4.0 m，overlap=50%
+  search_waypoint 1/8 … 8/8
+  search_coverage 20/20（100%），漏扫 0，地面点 2,725,200
+  → done；arming_state=1、landed=true
+  报告：logs/tasks/report_20261018-174709-451.jsonl
+  证据页：logs/tasks/report_20261018-174709-451.md
+· 观测：搜索段 LCL z 2.08→2.71（漂移），未 abort。
+```
+
+### 已知问题
+
+- 多边形只从 JSON 输入，自然语言还不解析任意顶点；
+- 多块不连通区域/转场腿未优化；
+- 覆盖率是 1 m 网格，高度/间距敏感性只做了 2 m/2 m 一组；
+- LCL 高度漂移仍存在。
+
+---
+
 ## [2026-10-18] 下视相机：观测覆盖 0/24 → 24/24
 
 ### 配置/代码

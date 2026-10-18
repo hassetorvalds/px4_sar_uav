@@ -155,6 +155,32 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 预期：`search_plan` 带 `area_m2/path_length_m/estimated_s`，`search_waypoint 6/6`。
 报告还会带 `coverage`；需要 AirSim `Down` 相机（Pitch -90）才能得到 24/24，前视只有 0/24，见 [COVERAGE](COVERAGE.md)。
 
+多边形（JSON）示例：
+
+```bash
+python3 - <<'PY'
+import json
+task = {
+  "version": 1, "source_text": "L 形多边形搜索",
+  "altitude_m": 2.0, "altitude_frame": "REL",
+  "max_speed_mps": 0.5, "max_duration_s": 180.0, "geofence_radius_m": 40.0,
+  "steps": [
+    {"type": "takeoff", "params": {"altitude_m": 2.0}},
+    {"type": "search", "params": {
+      "shape": "polygon", "center_east_m": 5.0, "center_north_m": -6.0,
+      "polygon": [[-3,-3],[3,-3],[3,-1],[-1,-1],[-1,3],[-3,3]],
+      "spacing_m": 2.0, "target": {"kind": "any"}, "altitude_m": 2.0}},
+    {"type": "land", "params": {}}
+  ]
+}
+open('/tmp/polygon_l.json','w').write(json.dumps(task))
+PY
+FLY_TASK_CONFIRM=1 scripts/fly_task.py --task-json /tmp/polygon_l.json --execute
+```
+
+预期：`search_plan` 面积 20 m²、足印 4 m、重叠 50%，`search_waypoint 8/8`，
+下视 `coverage 20/20`。
+
 再飞**小半径搜索**（东南侧，避开正前方墙体）：
 
 ```bash

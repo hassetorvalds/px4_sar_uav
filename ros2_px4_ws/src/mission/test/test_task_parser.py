@@ -179,3 +179,30 @@ def test_parse_rectangle_search():
     assert search.params['width_m'] == pytest.approx(8.0)
     assert search.params['height_m'] == pytest.approx(6.0)
     assert search.params['spacing_m'] == pytest.approx(3.0)
+
+
+def test_lawnmower_polygon_l_shape():
+    from mission.search_pattern import lawnmower_polygon
+
+    polygon = [(2, -9), (8, -9), (8, -7), (4, -7), (4, -3), (2, -3)]
+    waypoints = lawnmower_polygon(polygon, 2.0)
+    assert len(waypoints) == 8
+    assert waypoints[0] == pytest.approx((2, -9))
+    assert waypoints[-1] == pytest.approx((2, -3))
+    assert min(p[0] for p in waypoints) >= 2 - 1e-6
+    assert max(p[0] for p in waypoints) <= 8 + 1e-6
+    assert min(p[1] for p in waypoints) >= -9 - 1e-6
+    assert max(p[1] for p in waypoints) <= -3 + 1e-6
+
+
+def test_search_metrics_polygon_and_footprint():
+    from mission.search_pattern import (lawnmower_polygon, search_metrics)
+
+    polygon = [(2, -9), (8, -9), (8, -7), (4, -7), (4, -3), (2, -3)]
+    waypoints = lawnmower_polygon(polygon, 2.0)
+    metrics = search_metrics({'shape': 'polygon', 'polygon': [
+        (-3, -3), (3, -3), (3, -1), (-1, -1), (-1, 3), (-3, 3)],
+        'spacing_m': 2.0}, waypoints, 0.5, altitude_m=2.0)
+    assert metrics['area_m2'] == pytest.approx(20.0)
+    assert metrics['footprint_width_m'] == pytest.approx(4.0)
+    assert metrics['lane_overlap_ratio'] == pytest.approx(0.5)

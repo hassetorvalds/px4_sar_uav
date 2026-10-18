@@ -116,6 +116,9 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
             detail += (f'；面积 {_fmt(plan.get("area_m2"), 1)} m²'
                        f'，折线 {_fmt(plan.get("path_length_m"), 1)} m'
                        f'，预计 {_fmt(plan.get("estimated_s"), 0)} s')
+            if plan.get('lane_overlap_ratio') is not None:
+                detail += (f'，下视足印 {_fmt(plan.get("footprint_width_m"), 1)} m'
+                           f'、重叠 {100.0 * float(plan.get("lane_overlap_ratio")):.0f}%')
         lines.append(detail)
     if scan_complete:
         lines.append('- 扫描：完成')

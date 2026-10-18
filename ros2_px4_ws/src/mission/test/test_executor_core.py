@@ -128,3 +128,13 @@ def test_search_waypoints_rectangle():
     assert min(p[1] for p in waypoints) == pytest.approx(-9.0)
     assert max(p[1] for p in waypoints) == pytest.approx(-3.0)
     assert all(p[2] == pytest.approx(2.0) for p in waypoints)
+
+
+def test_search_waypoints_polygon():
+    waypoints = search_waypoints({
+        'shape': 'polygon', 'center_east_m': 5.0, 'center_north_m': -6.0,
+        'polygon': [[-3, -3], [3, -3], [3, -1], [-1, -1], [-1, 3], [-3, 3]],
+        'spacing_m': 2.0, 'altitude_m': 2.0}, altitude_m=2.0)
+    assert len(waypoints) == 8
+    assert waypoints[0] == pytest.approx((2.0, -9.0, 2.0))
+    assert waypoints[-1] == pytest.approx((2.0, -3.0, 2.0))

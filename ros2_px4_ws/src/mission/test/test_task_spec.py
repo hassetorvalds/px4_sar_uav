@@ -138,3 +138,29 @@ def test_rectangle_search_validation_and_geofence():
                                'spacing_m': 3.0,
                                'target': {'kind': 'any'}}),
                Step('land', {})]).validate()
+
+
+def test_polygon_search_validation():
+    spec = _spec([Step('takeoff', {}),
+                  Step('search', {'shape': 'polygon',
+                                  'center_east_m': 5.0, 'center_north_m': -6.0,
+                                  'polygon': [[-3, -3], [3, -3], [3, -1],
+                                              [-1, -1], [-1, 3], [-3, 3]],
+                                  'spacing_m': 2.0,
+                                  'target': {'kind': 'any'}}),
+                  Step('land', {})]).validate()
+    assert '多边形 6 顶点' in spec.summary()
+
+    with pytest.raises(TaskError, match='至少 3 个顶点'):
+        _spec([Step('takeoff', {}),
+               Step('search', {'shape': 'polygon', 'polygon': [[0, 0], [1, 1]],
+                               'target': {'kind': 'any'}}),
+               Step('land', {})]).validate()
+
+    with pytest.raises(TaskError, match='围栏'):
+        _spec([Step('takeoff', {}),
+               Step('search', {'shape': 'polygon',
+                               'center_east_m': 5.0, 'center_north_m': 0.0,
+                               'polygon': [[40, 0], [42, 0], [42, 2], [40, 2]],
+                               'target': {'kind': 'any'}}),
+               Step('land', {})]).validate()

@@ -142,14 +142,27 @@ class TaskSpec:
                          self.geofence_radius_m)
         elif step.type == 'search':
             shape = str(p.get('shape', 'square')).lower()
-            if shape not in ('square', 'rectangle'):
-                raise TaskError(f'search.shape 必须是 square/rectangle，得到 {shape!r}')
+            if shape not in ('square', 'rectangle', 'polygon'):
+                raise TaskError(f'search.shape 必须是 square/rectangle/polygon，得到 {shape!r}')
             _check_range('search.spacing_m', float(p.get('spacing_m', 4.0)),
                          SEARCH_SPACING_MIN_M, SEARCH_SPACING_MAX_M)
             center_east = float(p.get('center_east_m', 0.0))
             center_north = float(p.get('center_north_m', 0.0))
             center_distance = math.hypot(center_east, center_north)
-            if shape == 'rectangle':
+            if shape == 'polygon':
+                vertices = p.get('polygon') or p.get('vertices') or []
+                if not isinstance(vertices, list) or len(vertices) < 3:
+                    raise TaskError('search.polygon 至少 3 个顶点')
+                for vertex in vertices:
+                    if (not isinstance(vertex, (list, tuple)) or len(vertex) != 2):
+                        raise TaskError('search.polygon 顶点必须是 [east, north]')
+                    east = center_east + float(vertex[0])
+                    north = center_north + float(vertex[1])
+                    if math.hypot(east, north) > self.geofence_radius_m:
+                        raise TaskError('search 多边形顶点超出围栏')
+                _check_range('search.angle_deg', float(p.get('angle_deg', 0.0)),
+                             SEARCH_ANGLE_MIN_DEG, SEARCH_ANGLE_MAX_DEG)
+            elif shape == 'rectangle':
                 width = float(p.get('width_m', 10.0))
                 height = float(p.get('height_m', 10.0))
                 _check_range('search.width_m', width,
@@ -253,7 +266,13 @@ class TaskSpec:
             elif step.type == 'forward':
                 parts.append(f'向前 {step.params.get("meters", 0):.1f} m')
             elif step.type == 'search':
-                if str(step.params.get('shape', 'square')).lower() == 'rectangle':
+                if str(step.params.get('shape', 'square')).lower() == 'polygon':
+                    vertices = (step.params.get('polygon')
+                                or step.params.get('vertices') or [])
+                    parts.append(
+                        f'搜索 多边形 {len(vertices)} 顶点'
+                        f'（{step.params.get("target", {}).get("kind", "target")}）')
+                elif str(step.params.get('shape', 'square')).lower() == 'rectangle':
                     parts.append(
                         f'搜索 矩形 {step.params.get("width_m", 10):.1f}×'
                         f'{step.params.get("height_m", 10):.1f} m'

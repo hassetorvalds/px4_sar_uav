@@ -719,7 +719,8 @@ class TaskExecutor(Node):
             self._search_wps = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
             metrics = search_metrics(step.params, self._search_wps,
-                                     self._spec.max_speed_mps)
+                                     self._spec.max_speed_mps,
+                                     altitude_m=self._spec.altitude_m)
             polygon = self._search_polygon(step)
             self._coverage = None
             if polygon:
