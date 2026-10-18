@@ -153,7 +153,8 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 ```
 
 预期：`search_plan` 带 `area_m2/path_length_m/estimated_s`，`search_waypoint 6/6`。
-报告还会带 `coverage`；需要 AirSim `Down` 相机（Pitch -90）才能得到 24/24，前视只有 0/24，见 [COVERAGE](COVERAGE.md)。
+报告还会带 `coverage`；需要 AirSim `Down` 相机（Pitch -90）才能得到 24/24，前视只有 0/24。
+敏感性示例：2 m/间距 4 m（0% 重叠）实测 97.2%，见 [COVERAGE](COVERAGE.md)。
 
 多边形（JSON）示例：
 

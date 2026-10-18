@@ -51,9 +51,11 @@ class CoverageMonitor(Node):
         try:
             payload = json.loads(msg.data)
             polygon = payload.get('polygon') if isinstance(payload, dict) else payload
+            cell_size = (float(payload.get('cell_size_m', self._cell_size))
+                         if isinstance(payload, dict) else self._cell_size)
             if not polygon or len(polygon) < 3:
                 raise ValueError('polygon 顶点不足')
-            self._grid = CoverageGrid(polygon, cell_size_m=self._cell_size,
+            self._grid = CoverageGrid(polygon, cell_size_m=cell_size,
                                       ground_tol_m=self._ground_tol)
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             self.get_logger().warn(f'忽略 polyon：{exc}')

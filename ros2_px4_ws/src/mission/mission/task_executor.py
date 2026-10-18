@@ -97,6 +97,7 @@ class TaskExecutor(Node):
         self.declare_parameter('persist_findings', True)
         self.declare_parameter('coverage_polygon_topic', '/coverage/polygon')
         self.declare_parameter('coverage_status_topic', '/coverage/status')
+        self.declare_parameter('coverage_cell_size_m', 0.5)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -131,6 +132,8 @@ class TaskExecutor(Node):
         self._persist_findings = bool(
             self.get_parameter('persist_findings').value)
         self._coverage = None
+        self._coverage_cell_size = float(
+            self.get_parameter('coverage_cell_size_m').value)
         self._findings = FindingsBook(self._findings_radius)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
@@ -725,7 +728,8 @@ class TaskExecutor(Node):
             self._coverage = None
             if polygon:
                 self._coverage_pub.publish(String(data=json.dumps(
-                    {'polygon': polygon, 'cell_size_m': 1.0},
+                    {'polygon': polygon,
+                     'cell_size_m': self._coverage_cell_size},
                     ensure_ascii=False)))
             self._report('search_plan', waypoints=len(self._search_wps),
                          polygon=polygon, **metrics)
