@@ -24,7 +24,8 @@ def _write_report(path):
          'findings': [{'finding_id': 1, 'label': 'target',
                        'world_enu': [1.0, 2.0, 3.0], 'confidence': 1.0,
                        'priority': 'unknown', 'status': 'inspected',
-                       'first_seen': 8.0, 'last_seen': 9.0}]},
+                       'first_seen': 8.0, 'last_seen': 9.0}],
+         'findings_path': 'logs/findings/findings_demo.json'},
     ]
     with open(path, 'w', encoding='utf-8') as handle:
         for event in events:
@@ -43,6 +44,7 @@ def test_summarize_contains_target_and_commands(tmp_path):
     assert '| arm | completed | 1 | 0 |' in text
     assert '## 发现物' in text
     assert '| 1 | target | (1.00, 2.00, 3.00)' in text
+    assert 'findings_demo.json' in text
 
 
 def test_summarize_abort(tmp_path):

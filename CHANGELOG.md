@@ -15,6 +15,40 @@
 
 ---
 
+## [2026-10-18] P3 收尾：findings 持久化 + 跨任务汇总
+
+### 新增
+
+- `mission/findings_store.py`：
+  - `persist_findings()` 原子写 `logs/findings/findings_<task_id>.json`，
+    并追加 `logs/findings/index.jsonl`；
+  - `load_records()` 优先读 index、按 task_id 去重；
+  - `summarize_records()`/`render_summary()` 输出任务数/发现物数/类别/状态/表格。
+- 执行器：`findings_dir`、`persist_findings` 参数；`_finish_done()` 在写
+  `done` 前落盘，报告 `findings_saved`，`done` 带 `findings_path/findings_task_id`。
+- CLI `ros2 run mission task_findings`（`--json` / `--md` / `--limit`）。
+- `docs/FINDINGS.md`。
+
+### 验证
+
+```text
+· 单测：mission 102 passed；全包 229 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 230）
+· 真机 Action 扫描 45 s：
+  finding #1 target [31.22, 29.69, 4.76] → inspected
+  落盘 logs/findings/findings_action_fstore_20261018-171431.json + index.jsonl
+  task_findings 汇总：任务 1、有发现 1、发现物 1、状态 inspected
+  Markdown 含「发现物」表 + 发现物记录路径
+```
+
+### 已知问题
+
+- 跨任务不做空间去重（同一目标在不同任务会各记一条）；
+- 没有数据库/索引服务，只有 JSON JSONL + 文件；
+- `task_id` 冲突时文件覆盖，正常每任务只写一次。
+
+---
+
 ## [2026-10-18] P3：findings 模型 + Action result / Markdown 证据页
 
 ### 新增

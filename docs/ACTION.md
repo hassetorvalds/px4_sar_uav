@@ -54,6 +54,17 @@ ros2 run mission task_action_client --task-file /tmp/task_search.json --timeout 
 ros2 run mission task_action_client --task-file /tmp/task.json --cancel-after 4
 ```
 
+## findings 落盘与汇总
+
+任务结束执行器会写 `logs/findings/findings_<task_id>.json` 并追加 `index.jsonl`；
+Action result 的 `findings_json` 与这份记录一致。
+
+```bash
+ros2 run mission task_findings --limit 20
+ros2 run mission task_findings --json
+ros2 run mission task_findings --md logs/findings/summary.md
+```
+
 ## 自检
 
 ```bash
@@ -76,7 +87,9 @@ ACTION_SIMCHECK_CANCEL_AFTER=4 bash scripts/action_simcheck.sh   # 取消路径
   （`report_action_full_20261018-170422.jsonl`）；
 - 真机 findings：`#1 target [36.19,35.88,5.73]` → `inspected`，
   `findings_json` 随 result 返回，Markdown 有「发现物」表
-  （`report_action_findings_20261018-171030.md`）。
+  （`report_action_findings_20261018-171030.md`）；
+- 持久化：`logs/findings/findings_action_fstore_20261018-171431.json`，
+  `task_findings` 汇总 1 任务/1 发现物。
 
 ## 限制
 

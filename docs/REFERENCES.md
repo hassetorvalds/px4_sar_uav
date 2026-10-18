@@ -339,7 +339,8 @@ arm ACK 0.011 s、offboard 0.016 s，takeoff LCL 2.008 / REL 2.0，安全上锁�
 - 执行器目标确认 → `finding(confirmed)`，对准 → `finding(inspected)`；
 - `done.findings`、`/mission/status`、`ExecuteTask.Result.findings_json`、
   Markdown「发现物」表四条出口都有；
-- 真机扫描 45 s：`#1 target [36.19,35.88,5.73]` → inspected。
+- 真机扫描 45 s：`#1 target [36.19,35.88,5.73]` → inspected；
+- 持久化：`logs/findings/*.json` + `index.jsonl`，`task_findings` 跨任务汇总。
 
 ## 8. 参考仓库的许可证提醒
 

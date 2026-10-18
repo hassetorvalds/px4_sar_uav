@@ -42,6 +42,7 @@ from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_targ
                             search_waypoints, step_timeout_s, velocity_toward,
                             yaw_rate_to_target)
 from .findings import FindingsBook, priority_for_kind
+from .findings_store import persist_findings
 from .health import check_prearm
 from .search_pattern import estimate_duration_s
 from .task_spec import TaskError, TaskSpec
@@ -92,6 +93,8 @@ class TaskExecutor(Node):
         self.declare_parameter('center_tolerance_deg', 5.0)
         self.declare_parameter('center_yaw_rate_deg_s', 15.0)
         self.declare_parameter('findings_merge_radius_m', 3.0)
+        self.declare_parameter('findings_dir', 'logs/findings')
+        self.declare_parameter('persist_findings', True)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -122,6 +125,9 @@ class TaskExecutor(Node):
             self.get_parameter('center_yaw_rate_deg_s').value))
         self._findings_radius = float(
             self.get_parameter('findings_merge_radius_m').value)
+        self._findings_dir = str(self.get_parameter('findings_dir').value)
+        self._persist_findings = bool(
+            self.get_parameter('persist_findings').value)
         self._findings = FindingsBook(self._findings_radius)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
@@ -597,11 +603,32 @@ class TaskExecutor(Node):
             return
 
     def _finish_done(self, *, forced: bool = False) -> None:
-        # 先写 done（_enter(PHASE_DONE) 在 exit_on_done 时会把进程结束掉）
+        # 先落 findings、再写 done（_enter(PHASE_DONE) 在 exit_on_done 时会退出）
+        findings_path = ''
+        findings_task_id = ''
+        if self._persist_findings:
+            try:
+                info = persist_findings(
+                    findings=self._findings.to_dicts(),
+                    task_summary=(self._spec.summary() if self._spec else ''),
+                    report_path=self._report_path,
+                    intent_path=str(self.get_parameter('intent_path').value),
+                    findings_dir=self._findings_dir,
+                    started_at=self._task_started,
+                    finished_at=time.time())
+                findings_path = info['path']
+                findings_task_id = info['task_id']
+                self._report('findings_saved', path=findings_path,
+                             task_id=findings_task_id,
+                             count=len(self._findings))
+            except OSError as exc:
+                self.get_logger().warn(f'findings 持久化失败：{exc}')
         self._report('commands', commands=self._tracker.to_dicts())
         self._report('done', report_path=self._report_path, forced=forced,
                      commands=self._tracker.to_dicts(),
-                     findings=self._findings.to_dicts())
+                     findings=self._findings.to_dicts(),
+                     findings_path=findings_path,
+                     findings_task_id=findings_task_id)
         self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
         # 先发一条 DONE 状态再退出：Action server 依赖它收结果；
         # _enter(PHASE_DONE) 在 exit_on_done 时会直接 SystemExit。

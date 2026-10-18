@@ -120,6 +120,8 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         for item in centered:
             lines.append(f'  - 已对准：方位误差 {_fmt(item.get("error_deg"), 1)}°'
                          f'（t={item.get("t")} s）')
+    if done and done.get('findings_path'):
+        lines.append(f'- 发现物记录：`{done.get("findings_path")}`')
     lines.append('')
     lines.append('## 发现物')
     lines.append('')
