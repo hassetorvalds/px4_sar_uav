@@ -7,6 +7,7 @@
 - 取消走 `/mission/cancel`，执行器会落地上锁。
 """
 
+import json
 import time
 
 import rclpy
@@ -62,7 +63,6 @@ class TaskActionServer(Node):
             callback_group=self._group)
 
     def _on_status(self, msg: String) -> None:
-        import json
         try:
             self._status = json.loads(msg.data)
             self._status_at = time.monotonic()
@@ -122,6 +122,8 @@ class TaskActionServer(Node):
                 last_feedback = now
             if status is not None and status.get('phase') == 'DONE':
                 result.report_path = str(status.get('report_path') or '')
+                result.findings_json = json.dumps(
+                    status.get('findings') or [], ensure_ascii=False)
                 if status.get('aborted'):
                     result.success = False
                     result.message = str(status.get('abort_reason') or 'aborted')

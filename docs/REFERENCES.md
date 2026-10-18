@@ -229,7 +229,7 @@ intent frame、provenance、显式确认计划、命令生命周期、证据摘�
 | 任务 schema | flat steps | `version + defaults + items` | 兼容式对齐（保留 steps 加载器，新增 defaults/items） | P1 |
 | 证据/审计 | JSONL + `report_*.md` | durable journal + ULog summary + hash | ✅ Markdown 摘要已做；ULog 路径/哈希仍缺 | 部分落地 |
 | 覆盖规划 | 正方形弓字 | 多边形/扫掠角/重叠/转场腿 | 升级 `search_pattern` | P2 |
-| 发现物/报告 | 无 | findings schema | 加 `perception` 的 finding 模型（type/priority/status/confidence） | P2 |
+| 发现物/报告 | `mission/findings.py` + `report_*.md` | findings schema | ✅ 已做：type/priority/status/confidence/world/首次最后；写入 report/Action result/Markdown | 已落地 |
 | 续跑/持久化 | 无 | persistence + file monitor | 后置 | P3 |
 | 模式注册 | 裸 Offboard | PX4 外部模式 | 暂不换（成本/风险） | 不做 |
 
@@ -332,6 +332,14 @@ arm ACK 0.011 s、offboard 0.016 s，takeoff LCL 2.008 / REL 2.0，安全上锁�
 
 未做：独立 `Takeoff/Goto/Search` Action 类型、并发/抢占、YAML/py_trees。
 下一步若要 BT，直接把 TaskSpec 作为 goal 即可，不需要再改执行器。
+
+## 7.8 P3 落地（2026-10-18）：findings 模型
+
+- `FindingsBook`：3 m 内合并、位置增量平均、状态只升级不降级；
+- 执行器目标确认 → `finding(confirmed)`，对准 → `finding(inspected)`；
+- `done.findings`、`/mission/status`、`ExecuteTask.Result.findings_json`、
+  Markdown「发现物」表四条出口都有；
+- 真机扫描 45 s：`#1 target [36.19,35.88,5.73]` → inspected。
 
 ## 8. 参考仓库的许可证提醒
 

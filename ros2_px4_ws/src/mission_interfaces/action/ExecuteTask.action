@@ -5,6 +5,7 @@ string task_json
 bool success
 string message
 string report_path
+string findings_json
 ---
 # 反馈
 string phase

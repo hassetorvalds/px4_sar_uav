@@ -41,6 +41,7 @@ from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_targ
                             inside_geofence,
                             search_waypoints, step_timeout_s, velocity_toward,
                             yaw_rate_to_target)
+from .findings import FindingsBook, priority_for_kind
 from .health import check_prearm
 from .search_pattern import estimate_duration_s
 from .task_spec import TaskError, TaskSpec
@@ -90,6 +91,7 @@ class TaskExecutor(Node):
         self.declare_parameter('center_on_target', True)
         self.declare_parameter('center_tolerance_deg', 5.0)
         self.declare_parameter('center_yaw_rate_deg_s', 15.0)
+        self.declare_parameter('findings_merge_radius_m', 3.0)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -118,6 +120,9 @@ class TaskExecutor(Node):
             self.get_parameter('center_tolerance_deg').value))
         self._center_yaw_rate = math.radians(float(
             self.get_parameter('center_yaw_rate_deg_s').value))
+        self._findings_radius = float(
+            self.get_parameter('findings_merge_radius_m').value)
+        self._findings = FindingsBook(self._findings_radius)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
         self._clearance_stop = float(self.get_parameter('clearance_stop_m').value)
@@ -167,6 +172,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._target_centered_reported = False
+        self._findings = FindingsBook(self._findings_radius)
         self._manual_override = False
         self._last_target_pose = None
         self._origin_enu = (0.0, 0.0, 0.0)
@@ -255,6 +261,17 @@ class TaskExecutor(Node):
                 self._spec.altitude_m, self._spec.altitude_frame, 'task')
         self._report_handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
         self._report_handle.flush()
+
+    def _now_t(self) -> float:
+        return round(time.monotonic() - self._clock_started, 2)
+
+    def _target_kind(self) -> str:
+        if self._spec is not None:
+            for step in self._spec.steps:
+                if step.type == 'search':
+                    target = step.params.get('target') or {}
+                    return str(target.get('kind') or 'target')
+        return 'target'
 
     def _on_battery(self, msg: BatteryStatus) -> None:
         remaining = float(msg.remaining)
@@ -385,6 +402,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._target_centered_reported = False
+        self._findings = FindingsBook(self._findings_radius)
         self._land_command_sent = False
         self._abort_reason = None
         self._manual_override = False
@@ -432,9 +450,18 @@ class TaskExecutor(Node):
         self.get_logger().info(f'确认目标：world={world} → 悬停 {self._target_hold_s:.0f} s')
         self._target_world = [float(v) for v in world]
         self._target_centered_reported = False
+        kind = self._target_kind()
+        label = 'target' if kind in ('', 'any', 'target') else kind
+        finding = self._findings.add_or_update(
+            label=label, world_enu=world, confidence=1.0,
+            priority=priority_for_kind(kind), source='perception',
+            t=self._now_t(), step_type=self._current_step_type(),
+            status='confirmed')
         self._report('target_confirmed', world_enu=world,
                      step_type=self._current_step_type(),
-                     centering=bool(self._center_on_target))
+                     centering=bool(self._center_on_target),
+                     finding_id=finding.finding_id)
+        self._report('finding', action='confirmed', **finding.to_dict())
         self._target_hold_until = now + self._target_hold_s
         if self._land_on_target:
             self._begin_land()
@@ -573,7 +600,8 @@ class TaskExecutor(Node):
         # 先写 done（_enter(PHASE_DONE) 在 exit_on_done 时会把进程结束掉）
         self._report('commands', commands=self._tracker.to_dicts())
         self._report('done', report_path=self._report_path, forced=forced,
-                     commands=self._tracker.to_dicts())
+                     commands=self._tracker.to_dicts(),
+                     findings=self._findings.to_dicts())
         self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
         # 先发一条 DONE 状态再退出：Action server 依赖它收结果；
         # _enter(PHASE_DONE) 在 exit_on_done 时会直接 SystemExit。
@@ -838,6 +866,12 @@ class TaskExecutor(Node):
                 self._report('target_centered', target_world=self._target_world,
                              heading_enu_deg=round(math.degrees(self._heading_enu), 1),
                              error_deg=round(error_deg, 1))
+                finding = self._findings.mark_inspected(
+                    self._target_world, t=self._now_t(),
+                    step_type=self._current_step_type(),
+                    notes='target centered')
+                if finding is not None:
+                    self._report('finding', action='inspected', **finding.to_dict())
                 self.get_logger().info(
                     f'目标已对准：方位误差 {error_deg:+.1f}°')
             return
@@ -978,6 +1012,7 @@ class TaskExecutor(Node):
                                           'LCL', 'px4_local'),
             'commands': self._tracker.to_dicts(),
             'health': self._last_health,
+            'findings': self._findings.to_dicts(),
         }
         if self._spec is not None:
             payload['task_altitude'] = altitude_dict(

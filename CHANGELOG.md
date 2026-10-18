@@ -15,6 +15,43 @@
 
 ---
 
+## [2026-10-18] P3：findings 模型 + Action result / Markdown 证据页
+
+### 新增
+
+- `mission/findings.py`：`Finding` / `FindingsBook`
+  - 同一目标按世界距离（默认 3 m）合并，位置取增量平均，减少单帧深度误差；
+  - `status` 只升级不降级（candidate → confirmed → inspected → resolved）；
+  - `priority` 由类别映射（person/victim=high、vehicle=medium、其他 unknown，不猜）；
+  - `findings_merge_radius_m` 可配。
+- 执行器：目标确认时写 `finding(action=confirmed)`，对准时写
+  `finding(action=inspected)`；`/mission/status` 与 `done` 都带 `findings`。
+- 报告：`mission/report.py` 新增「发现物」表（ID/类型/位置/置信度/优先级/状态/首次/最后）。
+- Action：`ExecuteTask.Result` 新增 `findings_json`，result 里直接回传结构化发现物。
+
+### 验证
+
+```text
+· 单测：mission 97 passed；全包 224 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 225）
+· 真机 Action（起飞 2m → 扫描 45s → 降落）：
+  target_confirmed world=[36.19, 35.88, 5.73]（t=37.68）
+  → target_centered 4.4°
+  → finding #1 status=inspected（first/last=37.68/39.71）
+  → result success=True，findings_json 回传
+  报告：logs/tasks/report_action_findings_20261018-171030.jsonl
+  证据页：logs/tasks/report_action_findings_20261018-171030.md（「发现物」表）
+```
+
+### 已知问题
+
+- 单次扫描只确认一次时 `updates=1`，合并逻辑主要靠单测覆盖；
+- 置信度仍是检测器确认的 1.0，没有把 bbox/深度质量映射进去；
+- 优先级对 `any` 保持 unknown，不臆造；
+- findings 尚未持久化到跨任务数据库。
+
+---
+
 ## [2026-10-18] Action 完整任务复飞：搜索 8/8 + 扫描检测 + 对准 + 落地
 
 ### 验证

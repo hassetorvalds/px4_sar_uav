@@ -23,7 +23,7 @@ task_action_server ── /mission/task ──▶ task_executor ──▶ offboa
 |---|---|
 | goal `task_json` | TaskSpec JSON（`fly_task.py --json` 或 VLM 生成） |
 | feedback `phase/step_index/step_total/step_type/progress/altitude_lcl_m/target_altitude_m/status` | 阶段、步数进度、LCL 高度 |
-| result `success/message/report_path` | 是否成功、失败原因、JSONL 报告 |
+| result `success/message/report_path/findings_json` | 是否成功、失败原因、JSONL 报告、结构化发现物 |
 | cancel | 接受；执行器收到 `/mission/cancel` 后 **落地上锁**（不恢复任务） |
 
 - 一次只接受一个 goal；执行器不在 `IDLE/DONE` 或状态过期时拒绝。
@@ -73,7 +73,10 @@ ACTION_SIMCHECK_CANCEL_AFTER=4 bash scripts/action_simcheck.sh   # 取消路径
   takeoff LCL 2.011 / REL 2.0，上锁落地；
 - 真机完整任务：搜索 8/8 → 扫描 60 s → `target_confirmed [29.19,30.78,4.87]`
   → `target_centered 3.5°` → `success=True`，上锁落地
-  （`report_action_full_20261018-170422.jsonl`）。
+  （`report_action_full_20261018-170422.jsonl`）；
+- 真机 findings：`#1 target [36.19,35.88,5.73]` → `inspected`，
+  `findings_json` 随 result 返回，Markdown 有「发现物」表
+  （`report_action_findings_20261018-171030.md`）。
 
 ## 限制
 

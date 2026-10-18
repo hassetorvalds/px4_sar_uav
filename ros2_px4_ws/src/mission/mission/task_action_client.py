@@ -1,6 +1,7 @@
 """ExecuteTask Action 客户端（测试/BT/VLM 调用的最小入口）。"""
 
 import argparse
+import json
 import sys
 import time
 
@@ -62,6 +63,12 @@ class TaskActionClient(Node):
         self.get_logger().info(
             f'结果：success={result.success} message={result.message!r} '
             f'report={result.report_path}')
+        try:
+            findings = json.loads(result.findings_json or '[]')
+        except json.JSONDecodeError:
+            findings = []
+        if findings:
+            self.get_logger().info(f'发现物：{findings}')
         return 0 if result.success else 5
 
 

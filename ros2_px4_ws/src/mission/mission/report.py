@@ -63,6 +63,13 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
     health = next((e for e in reversed(events) if e.get('event') == 'health_check'), None)
     takeoff = next((e for e in events if e.get('event') == 'takeoff_complete'), None)
     commands = done.get('commands') if done else []
+    findings = (done or {}).get('findings') or []
+    if not findings:
+        by_id = {}
+        for event in events:
+            if event.get('event') == 'finding' and event.get('finding_id') is not None:
+                by_id[event['finding_id']] = event
+        findings = list(by_id.values())
     scan_complete = any(e.get('event') == 'scan_complete' for e in events)
     waypoints = [e for e in events if e.get('event') == 'search_waypoint']
     plan = next((e for e in events if e.get('event') == 'search_plan'), None)
@@ -113,6 +120,22 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         for item in centered:
             lines.append(f'  - 已对准：方位误差 {_fmt(item.get("error_deg"), 1)}°'
                          f'（t={item.get("t")} s）')
+    lines.append('')
+    lines.append('## 发现物')
+    lines.append('')
+    if findings:
+        lines.append('| ID | 类型 | 位置 ENU | 置信度 | 优先级 | 状态 | 首次/最后 (s) |')
+        lines.append('|---|---|---|---|---|---|---|')
+        for finding in findings:
+            lines.append(
+                f'| {finding.get("finding_id")} | {finding.get("label")} | '
+                f'{_world(finding.get("world_enu"))} | '
+                f'{_fmt(finding.get("confidence"), 2)} | '
+                f'{finding.get("priority")} | {finding.get("status")} | '
+                f'{_fmt(finding.get("first_seen"), 1)} / '
+                f'{_fmt(finding.get("last_seen"), 1)} |')
+    else:
+        lines.append('未记录发现物。')
     if commands:
         lines.append('')
         lines.append('## 命令生命周期')
