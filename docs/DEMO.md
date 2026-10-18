@@ -153,7 +153,7 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 ```
 
 预期：`search_plan` 带 `area_m2/path_length_m/estimated_s`，`search_waypoint 6/6`。
-报告还会带 `coverage`；当前前视相机下 6×4 m 区域可能为 0，见 [COVERAGE](COVERAGE.md)。
+报告还会带 `coverage`；需要 AirSim `Down` 相机（Pitch -90）才能得到 24/24，前视只有 0/24，见 [COVERAGE](COVERAGE.md)。
 
 再飞**小半径搜索**（东南侧，避开正前方墙体）：
 

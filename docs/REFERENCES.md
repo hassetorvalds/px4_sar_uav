@@ -228,7 +228,7 @@ intent frame、provenance、显式确认计划、命令生命周期、证据摘�
 | 解锁前健康检查 | `mission/health.py` + 执行器 | `checkArmingAndRunConditions` | ✅ 已做：状态/位置/preflight/failsafe/battery，失败不发 arm | 已落地 |
 | 任务 schema | flat steps | `version + defaults + items` | 兼容式对齐（保留 steps 加载器，新增 defaults/items） | P1 |
 | 证据/审计 | JSONL + `report_*.md` | durable journal + ULog summary + hash | ✅ Markdown 摘要已做；ULog 路径/哈希仍缺 | 部分落地 |
-| 覆盖规划 | 矩形/旋转弓字 + 面积/路径指标 | 多边形/扫掠角/重叠/转场腿 | ✅ 矩形/旋转已做；观测覆盖实测 0/24，瓶颈是前视足印；多边形待覆盖有意义后再做 | 部分落地 |
+| 覆盖规划 | 矩形/旋转弓字 + 面积/路径指标 | 多边形/扫掠角/重叠/转场腿 | ✅ 矩形/旋转已做；下视相机覆盖 24/24；多边形/重叠/转场腿仍缺 | 部分落地 |
 | 发现物/报告 | `mission/findings.py` + `report_*.md` | findings schema | ✅ 已做：type/priority/status/confidence/world/首次最后；写入 report/Action result/Markdown | 已落地 |
 | 续跑/持久化 | 无 | persistence + file monitor | 后置 | P3 |
 | 模式注册 | 裸 Offboard | PX4 外部模式 | 暂不换（成本/风险） | 不做 |

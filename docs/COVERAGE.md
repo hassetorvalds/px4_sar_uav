@@ -54,3 +54,48 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 # 报告里看 search_coverage / done.coverage
 ros2 topic echo /coverage/status --once
 ```
+
+---
+
+## 下视相机修复（2026-10-18）
+
+### 配置
+
+Windows 侧 `C:\Users\steve\Documents\AirSim\settings.json` 的 `Vehicles.Drone1.Cameras`
+增加：
+
+```json
+"Down": {
+  "CaptureSettings": [
+    {"ImageType": 0, "Width": 640, "Height": 480},
+    {"ImageType": 1, "Width": 640, "Height": 480}
+  ],
+  "X": 0.0, "Y": 0.0, "Z": 0.1,
+  "Pitch": -90.0, "Roll": 0.0, "Yaw": 0.0,
+  "FOV_Degrees": 90.0
+}
+```
+
+备份：`settings.json.bak-20261018-173936`。改完必须在 UE 里 **Stop→Play** 重载。
+
+### 代码
+
+- `airsim_camera` 新增 `camera_pitch_deg`；≤ -45° 时按**下视**做光学系→机体 FLU：
+  `[-y_cam, -x_cam, -z_cam]`（前视仍是 `[z_cam, -x_cam, -y_cam]`）；
+- 启动第二个节点 `airsim_camera_down`（`camera_name=Down`，`camera_pitch_deg=-90`）；
+- `coverage_monitor` 默认改订 `/airsim_camera_down/points`；
+- 前视相机/检测器不变。
+
+### 实测（同一矩形 6×4 m、6 航点、2 m）
+
+```text
+前视：0/24（0.0%）   地面点 63,984，区域内 0
+下视：24/24（100.0%） 地面点 2,745,600，区域内 1,170,872
+报告：logs/tasks/report_20261018-174221-192.jsonl
+```
+
+### 结论
+
+- 瓶颈确实是相机足印；换下视后覆盖从 0 变 100%；
+- 1 m 网格下 6×4 m 区域全覆盖，漏扫 0；
+- 下一步才值得做多边形航迹（形状问题），以及覆盖率随高度的敏感性测试。

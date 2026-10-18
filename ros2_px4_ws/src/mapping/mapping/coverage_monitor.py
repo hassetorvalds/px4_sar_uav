@@ -18,7 +18,7 @@ from .voxel_grid import filter_by_min_range, yaw_rotate_flu_to_enu
 class CoverageMonitor(Node):
     def __init__(self) -> None:
         super().__init__('coverage_monitor')
-        self.declare_parameter('points_topic', '/airsim_camera/points')
+        self.declare_parameter('points_topic', '/airsim_camera_down/points')
         self.declare_parameter('polygon_topic', '/coverage/polygon')
         self.declare_parameter('status_topic', '/coverage/status')
         self.declare_parameter('cell_size_m', 1.0)

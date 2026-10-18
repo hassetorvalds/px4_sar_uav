@@ -15,6 +15,34 @@
 
 ---
 
+## [2026-10-18] 下视相机：观测覆盖 0/24 → 24/24
+
+### 配置/代码
+
+- AirSim settings 增加 `Down` 相机（Pitch -90、FOV 90、640×480），备份
+  `settings.json.bak-20261018-173936`；UE Stop→Play 重载；
+- `airsim_camera` 新增 `camera_pitch_deg`；下视时点云光学系→机体 FLU 用
+  `[-y_cam, -x_cam, -z_cam]`；
+- 启动第二个 `airsim_camera_down` 节点；`coverage_monitor` 改订
+  `/airsim_camera_down/points`；前视/检测不变。
+
+### 验证（同一矩形 6×4 m、6 航点、2 m）
+
+```text
+· 前视：0/24（0.0%），地面点 63,984，区域内 0
+· 下视：24/24（100.0%），地面点 2,745,600，区域内 1,170,872
+· 报告：logs/tasks/report_20261018-174221-192.jsonl
+· 证据页：logs/tasks/report_20261018-174221-192.md
+```
+
+### 结论
+
+- 覆盖瓶颈确实是前视足印，不是网格/航迹；
+- 下视相机让覆盖有意义；下一步可做多边形航迹、覆盖率随高度/重叠的敏感性。
+- 单测不变：239 passed / 2 skipped（mapping 20，mission 107）。
+
+---
+
 ## [2026-10-18] 观测覆盖监视：真实点云 + 负结果（0/24）
 
 ### 新增

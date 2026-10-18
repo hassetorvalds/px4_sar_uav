@@ -38,6 +38,7 @@ class AirSimCamera(Node):
         self.declare_parameter('port', 45000)
         self.declare_parameter('vehicle_name', 'Drone1')
         self.declare_parameter('camera_name', '0')
+        self.declare_parameter('camera_pitch_deg', 0.0)
         self.declare_parameter('frame_id', 'camera_link')
         # AirSim RPC 每次调用的固定开销约 330 ms（LockStep 步进），因此实际上限约 3 Hz；
         # 实测彩色+深度放在同一次调用里几乎不增加开销（350 ms vs 334 ms），
@@ -54,6 +55,8 @@ class AirSimCamera(Node):
         self._port = int(self.get_parameter('port').value)
         self._vehicle = str(self.get_parameter('vehicle_name').value)
         self._camera = str(self.get_parameter('camera_name').value)
+        self._camera_pitch = float(
+            self.get_parameter('camera_pitch_deg').value)
         self._frame_id = str(self.get_parameter('frame_id').value)
         self._publish_depth = bool(self.get_parameter('publish_depth').value)
         self._depth_interval = max(int(self.get_parameter('depth_interval').value), 1)
@@ -76,7 +79,8 @@ class AirSimCamera(Node):
         self.create_timer(1.0 / rate_hz, self._tick)
         self.get_logger().info(
             f'airsim_camera 启动：{self._host}:{self._port}，'
-            f'vehicle={self._vehicle} camera={self._camera}，{rate_hz:.1f} Hz，'
+            f'vehicle={self._vehicle} camera={self._camera} '
+            f'pitch={self._camera_pitch:.0f}°，{rate_hz:.1f} Hz，'
             f'深度发布={self._publish_depth}')
 
     # ------------------------------------------------------------------
@@ -222,7 +226,11 @@ class AirSimCamera(Node):
         y_cam = (v[valid] - cy) / focal * z_cam
 
         # 光学系(x右,y下,z前) → 机体 FLU(x前,y左,z上)
-        points = np.stack([z_cam, -x_cam, -y_cam], axis=1).astype(np.float32)
+        if self._camera_pitch <= -45.0:
+            # 下视相机：图像右→机体右(-y)，图像下→机体后(-x)，光轴前→机体下(-z)
+            points = np.stack([-y_cam, -x_cam, -z_cam], axis=1).astype(np.float32)
+        else:
+            points = np.stack([z_cam, -x_cam, -y_cam], axis=1).astype(np.float32)
 
         cloud = PointCloud2()
         cloud.header.stamp = stamp

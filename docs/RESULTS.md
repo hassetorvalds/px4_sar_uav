@@ -45,7 +45,7 @@
 | Action 完整任务 | ✅ 真机 | 搜索 8/8 → 扫描 60 s → 目标 `[29.19,30.78,4.87]` → 对准 3.5° → 落地；result `success=True` |
 | 结构化发现物（findings） | ✅ 真机 | 合并/平均/状态升级；落盘 `logs/findings/`；`task_findings` 跨任务汇总；写入 report/Action result/Markdown |
 | 覆盖规划（矩形/角度） | ✅ 真机 | 矩形/旋转弓字 + 面积/折线/预计时间；真机 6/6 航点（24 m²、22 m、54 s） |
-| 观测覆盖（真实点云） | ⚠️ 负结果 | 106 万点/6.4 万地面点，6×4 m 内 0；前视足印在区域外；见 [COVERAGE](COVERAGE.md) |
+| 观测覆盖（真实点云） | ✅ 下视 24/24 | 前视 0/24（足印在区域外）→ 下视相机 24/24（100%），2.7M 地面点；见 [COVERAGE](COVERAGE.md) |
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |

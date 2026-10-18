@@ -35,6 +35,7 @@ def generate_launch_description():
         DeclareLaunchArgument('detector_backend', default_value='color'),
         DeclareLaunchArgument('with_arbiter', default_value='true'),
         DeclareLaunchArgument('with_coverage', default_value='true'),
+        DeclareLaunchArgument('with_down_camera', default_value='true'),
     ]
     arbiter_on = LaunchConfiguration('with_arbiter')
     arbiter_if = IfCondition(arbiter_on)
@@ -71,6 +72,17 @@ def generate_launch_description():
                  'port': LaunchConfiguration('airsim_port'),
                  'rate_hz': LaunchConfiguration('camera_rate_hz'),
              }]),
+        # 传感器层：下视相机（专用于覆盖统计；检测仍用前视 0）
+        Node(package='sensor_bridge', executable='airsim_camera',
+             name='airsim_camera_down', output='screen',
+             parameters=[{
+                 'host': LaunchConfiguration('airsim_host'),
+                 'port': LaunchConfiguration('airsim_port'),
+                 'rate_hz': LaunchConfiguration('camera_rate_hz'),
+                 'camera_name': 'Down',
+                 'camera_pitch_deg': -90.0,
+             }],
+             condition=IfCondition(LaunchConfiguration('with_down_camera'))),
         # 地图层：局部体素障碍地图 + 三向净空
         Node(package='mapping', executable='local_map',
              name='local_map', output='screen'),
