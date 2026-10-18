@@ -27,8 +27,11 @@
   - `detectors.py`：`color`（颜色连通域，不依赖 cv2）/ `hog`（行人 SVM）/ `haar`（全身级联）；
   - `geometry.py`：像素+深度 → 光学系 → 机体 FLU → 世界 ENU（与 `frames.py` 同一约定）；
   - `victim_detector.py`：订阅 RGB/深度/CameraInfo + PX4 状态，发布
-    `~/detections`（JSON）与 `~/best`（PoseStamped）；**只观测，不发飞控指令**；
-  - 21 项单测（检测内核 + 几何/深度）。
+    `~/detections`（JSON）、`~/tracks`（多帧确认目标）与 `~/best`（PoseStamped）；
+    **只观测，不发飞控指令**；
+  - `tracking.py`：多帧关联（世界距离 ≤2 m / 无深度时用 bbox IoU）+ N 帧确认（默认 3）
+    + TTL 过期（默认 2 s）+ 世界点 EMA；
+  - 29 项单测（检测内核 + 几何/深度 + 多帧关联）。
 - `scripts/eval_detector.py`：离线评估检测器的检出率/耗时（用已存帧，不依赖 ROS）。
 - `scripts/run_detector.sh`：统一启动入口（`PYTHONNOUSERSITE=1`，规避本机 cv2 与 numpy 2.x 冲突）。
 - `scripts/analyze_height_sources.py`：对 CSV 的 `px4_up/truth_up/up_offset_m` 做漂移统计
@@ -51,9 +54,9 @@
 ### 验证
 
 ```text
-· 单测：vlm 45 + perception 20(+1 skip) + px4_interface 20 + planner 18 + mapping 13
-        + mission 5 + px4_offboard 1(+1 skip) = **122 passed / 1 skipped**；
-        `PYTHONNOUSERSITE=1` 时 HOG 用例也跑 → **123 passed**
+· 单测：vlm 45 + perception 28(+1 skip) + px4_interface 20 + planner 18 + mapping 13
+        + mission 5 + px4_offboard 1(+1 skip) = **130 passed / 2 skipped**；
+        `PYTHONNOUSERSITE=1` 时 HOG 用例也跑 → **131 passed**
 · check_stack：无栈环境下 4 个 /fmu/out 话题全部 FAIL、退出码 1（旧版会打 OK）
 · 离线检测（60 张已存帧）：
     color(橙色) 19/60 有检出、mean 57 ms → 稳定命中场景橙色球；

@@ -8,7 +8,8 @@
 
 输出：
   ``~/detections``（std_msgs/String，JSON）：每帧的检测列表（bbox / 分数 / 深度 / 世界点）
-  ``~/best``（geometry_msgs/PoseStamped，map）：分数最高的目标，供任务层悬停/记录
+  ``~/tracks``（std_msgs/String，JSON）：多帧关联后的轨道（hits / confirmed / 世界点）
+  ``~/best``（geometry_msgs/PoseStamped，map）：**已确认**目标里分数最高的，供任务层悬停/记录
 
 安全边界：本节点**只发布观测**，不发任何飞控指令；世界点只在 PX4 位置新鲜时给出。
 """
@@ -30,6 +31,7 @@ from std_msgs.msg import String
 from .detectors import make_detector
 from .geometry import (CameraIntrinsics, depth_patch_median, pixel_to_body_flu,
                        pixel_to_world_enu, scale_pixel)
+from .tracking import TargetTracker
 
 
 def _decode_rgb(msg: Image):
@@ -83,6 +85,10 @@ class VictimDetector(Node):
         self.declare_parameter('max_depth_m', 30.0)
         self.declare_parameter('detections_topic', '~/detections')
         self.declare_parameter('best_topic', '~/best')
+        self.declare_parameter('tracks_topic', '~/tracks')
+        self.declare_parameter('track_gate_m', 2.0)
+        self.declare_parameter('track_confirm_hits', 3)
+        self.declare_parameter('track_ttl_s', 2.0)
         self.declare_parameter('h_min_area', 120.0)   # 像素→世界点所需的最小 bbox 面积
 
         self._min_score = float(self.get_parameter('min_score').value)
@@ -92,6 +98,11 @@ class VictimDetector(Node):
         self._max_depth = float(self.get_parameter('max_depth_m').value)
         self._h_min_area = float(self.get_parameter('h_min_area').value)
         self._label = str(self.get_parameter('label').value)
+        self._confirm_hits = max(int(self.get_parameter('track_confirm_hits').value), 1)
+        self._tracker = TargetTracker(
+            gate_m=float(self.get_parameter('track_gate_m').value),
+            confirm_hits=self._confirm_hits,
+            ttl_s=float(self.get_parameter('track_ttl_s').value))
         self._detector = self._build_detector()
         self._intrinsics = None
         self._depth = None
@@ -102,6 +113,8 @@ class VictimDetector(Node):
 
         self._detections_pub = self.create_publisher(
             String, str(self.get_parameter('detections_topic').value), 10)
+        self._tracks_pub = self.create_publisher(
+            String, str(self.get_parameter('tracks_topic').value), 10)
         self._best_pub = self.create_publisher(
             PoseStamped, str(self.get_parameter('best_topic').value), 10)
 
@@ -173,7 +186,8 @@ class VictimDetector(Node):
         pose_fresh = self._monitor.position_fresh()
 
         detections = []
-        best = None
+        det_objects = []
+        worlds = []
         for det in raw:
             if det.score < self._min_score:
                 continue
@@ -181,6 +195,7 @@ class VictimDetector(Node):
             item['depth_m'] = None
             item['range_m'] = None
             item['world_enu'] = None
+            world_point = None
             u, v = det.center
             if (self._depth is not None and self._depth_size is not None
                     and det.area >= self._h_min_area):
@@ -191,18 +206,18 @@ class VictimDetector(Node):
                     flu = pixel_to_body_flu(u, v, depth, self._intrinsics)
                     item['range_m'] = round(float(np.linalg.norm(flu)), 3)
                     if position_enu is not None and heading_enu is not None and pose_fresh:
-                        world = pixel_to_world_enu(
+                        world_point = pixel_to_world_enu(
                             u, v, depth, self._intrinsics, heading_enu, position_enu)
-                        item['world_enu'] = [round(float(c), 2) for c in world]
+                        item['world_enu'] = [round(float(c), 2) for c in world_point]
             detections.append(item)
-            if best is None or det.score * max(det.area, 1.0) > best[0]:
-                best = (det.score * max(det.area, 1.0), det, item)
+            det_objects.append(det)
+            worlds.append(world_point)
 
+        stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
         self._sequence += 1
         payload = {
             'seq': self._sequence,
-            'stamp': round(float(msg.header.stamp.sec)
-                           + float(msg.header.stamp.nanosec) * 1e-9, 3),
+            'stamp': round(stamp, 3),
             'pose_age_s': (None if not pose_fresh
                            else round(self._monitor.position_age_s(), 3)),
             'count': len(detections),
@@ -210,24 +225,39 @@ class VictimDetector(Node):
         }
         self._detections_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
-        if best is not None and best[2].get('world_enu') is not None:
-            self._publish_best(best[2])
+        # 多帧关联：任务层只应对"确认目标"下手，避免单帧误报触发悬停。
+        tracks = self._tracker.update(det_objects, stamp, worlds)
+        track_payload = {
+            'seq': self._sequence,
+            'stamp': round(stamp, 3),
+            'confirm_hits': self._confirm_hits,
+            'tracks': [t.to_dict(self._confirm_hits) for t in tracks],
+        }
+        self._tracks_pub.publish(String(data=json.dumps(track_payload, ensure_ascii=False)))
+
+        confirmed = [t for t in tracks
+                     if t.hits >= self._confirm_hits and t.world is not None]
+        if confirmed:
+            best_track = max(confirmed, key=lambda t: (t.score, t.hits))
+            self._publish_track(best_track)
             self.get_logger().info(
-                f'检测 {best[1].label} score={best[1].score:.2f} '
-                f'depth={best[2]["depth_m"]} m world={best[2]["world_enu"]}',
+                f'确认目标 track={best_track.track_id} hits={best_track.hits} '
+                f'world={[round(float(c), 2) for c in best_track.world]}',
                 throttle_duration_sec=1.0)
         elif detections:
             self.get_logger().info(
-                f'检测 {len(detections)} 个目标（无可用深度/位姿，未给世界点）',
+                f'检测 {len(detections)} 个（待确认；无深度/位姿时不给世界点）',
                 throttle_duration_sec=2.0)
 
-    def _publish_best(self, item) -> None:
+    def _publish_track(self, track) -> None:
+        if track.world is None:
+            return
         pose = PoseStamped()
         pose.header.stamp = self.get_clock().now().to_msg()
         pose.header.frame_id = 'map'
-        pose.pose.position.x = float(item['world_enu'][0])
-        pose.pose.position.y = float(item['world_enu'][1])
-        pose.pose.position.z = float(item['world_enu'][2])
+        pose.pose.position.x = float(track.world[0])
+        pose.pose.position.y = float(track.world[1])
+        pose.pose.position.z = float(track.world[2])
         pose.pose.orientation.w = 1.0
         self._best_pub.publish(pose)
 

@@ -32,16 +32,16 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **122 passed / 1 skipped**（vlm 45 / perception 20(+1 skip) / px4_interface 20 / planner 18 / mapping 13 / mission 5 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 123 passed |
+| 单元测试 | ✅ | **130 passed / 2 skipped**（vlm 45 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 13 / mission 5 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 131 passed |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
 | 区域覆盖搜索 | ❌ | `frontier_explorer` 有代码，未进主线、未飞 |
 | 任务级自然语言解析 | ❌ | 当前只有"指向式导航"，没有 JSON 任务 schema |
 | 语义地图 / 语言—空间定位 | ❌ | 未开始 |
-| 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU 有 21 项单测 |
+| 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU；多帧关联（世界距离/IoU + N 帧确认） |
 | 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |
-| 目标跟踪 / 搜救报告 | ❌ | 未开始 |
+| 目标跟踪 / 搜救报告 | ⚠️ 跟踪内核已测，报告未做 | `perception/tracking.py`：确认目标（默认连续 3 帧、世界 2 m 门限、2 s 过期） |
 
 ## 3. 量化结果（按批次，不跨版本合并）
 
@@ -97,7 +97,7 @@
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
 自研源码      ~6200 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~1350 行，122 passed / 1 skipped（检测器入口下 123 passed）
+单元测试      ~1550 行，130 passed / 2 skipped（检测器入口下 131 passed）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）
