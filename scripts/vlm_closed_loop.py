@@ -168,6 +168,12 @@ class ClosedLoopBase(FlightCheckBase):
         # 高度门（服务器侧 2026-10-17 修正）：overflyable ⇔ flight_alt − top_z ≥ 该余量。
         # 2 m 飞行、余量 0.5 ⇒ top≤1.5 m 才可飞越；**top>1.5 m（含 1.9 m 墙）都算障碍**。
         self.declare_parameter('overfly_clearance_m', 0.5)
+        # **三路高度**（2026-10-17，c1 暴露 EKF z 漂移污染高度门）：
+        #   px4     = 现状：PX4 local z（会漂，默认保持行为不变）
+        #   airsim  = 用 AirSim 真值（相对起飞点）参与高度门；PX4 z 只作记录
+        # 无论选哪路，CSV 都同时记 px4_up / truth_up / up_offset，供离线对比后再定。
+        self.declare_parameter('height_source', 'px4')
+        self.declare_parameter('truth_sample_s', 2.0)    # AirSim 真值采样周期（0=关闭）
         # 回波判别要有界（服务器侧 2026-10-15）：单次转场最多判别 N 次 / 累计后退 ≤ 上限，
         # 避免"贴着面反复后退"
         self.declare_parameter('transit_echo_max_probes', 2)
@@ -258,6 +264,18 @@ class ClosedLoopBase(FlightCheckBase):
         self._cluster_zmax = None
         self._cluster_zmin = None
         self._cluster_span_h = None
+        # 三路高度：AirSim 真值（相对起飞点）与采样节流。
+        # 只在 armed 后的第一批采样里记下地面参考，之后 truth_up 即"离地高度"。
+        self._height_source = str(self.get_parameter('height_source').value).strip().lower()
+        self._truth_sample_s = float(self.get_parameter('truth_sample_s').value)
+        self._truth_up = None            # AirSim 当次 up（绝对，米）
+        self._truth_up0 = None           # 地面参考（首次 armed 时采样）
+        self._truth_up_local = None      # 相对起飞点的 up，与 PX4 local z 同口径
+        self._truth_at = 0.0
+        if self._height_source not in ('px4', 'airsim'):
+            self.get_logger().warn(
+                f'height_source={self._height_source!r} 不识别 → 回退 px4（可选 px4/airsim）')
+            self._height_source = 'px4'
         self._echo_probes_used = 0
         self._echo_back_total = 0.0
         self.enable_pub = self.create_publisher(
@@ -502,6 +520,13 @@ class ClosedLoopBase(FlightCheckBase):
             'heading_deg': (round(math.degrees(self.heading_rad), 2)
                             if not math.isnan(self.heading_rad) else None),
             'px4_z': (round(self.px4_z, 3) if self.px4_z is not None else None),
+            'px4_up': (round(-self.px4_z, 3) if self.px4_z is not None else None),
+            'truth_up': (round(self._truth_up_local, 3)
+                         if self._truth_up_local is not None else None),
+            'up_offset_m': (round(-self.px4_z - self._truth_up_local, 3)
+                            if (self.px4_z is not None
+                                and self._truth_up_local is not None) else None),
+            'height_src': self._height_source,
             'px4_x': None if math.isnan(self.px4_x) else round(self.px4_x, 3),
             'px4_y': None if math.isnan(self.px4_y) else round(self.px4_y, 3),
             'drift_m': None if drift is None else round(drift, 3),
@@ -533,6 +558,13 @@ class ClosedLoopBase(FlightCheckBase):
             'heading_deg': (round(math.degrees(self.heading_rad), 2)
                             if not math.isnan(self.heading_rad) else None),
             'px4_z': (round(self.px4_z, 3) if self.px4_z is not None else None),
+            'px4_up': (round(-self.px4_z, 3) if self.px4_z is not None else None),
+            'truth_up': (round(self._truth_up_local, 3)
+                         if self._truth_up_local is not None else None),
+            'up_offset_m': (round(-self.px4_z - self._truth_up_local, 3)
+                            if (self.px4_z is not None
+                                and self._truth_up_local is not None) else None),
+            'height_src': self._height_source,
             'px4_x': None if math.isnan(self.px4_x) else round(self.px4_x, 3),
             'px4_y': None if math.isnan(self.px4_y) else round(self.px4_y, 3),
             'forward_clear_m': (self.clearance[0] if self.clearance else None),
@@ -603,6 +635,55 @@ class ClosedLoopBase(FlightCheckBase):
         if self.px4_z is None or math.isnan(self.px4_x) or math.isnan(self.px4_y):
             return None
         return ned_to_enu(self.px4_x, self.px4_y, self.px4_z)
+
+    # ------------------------------------------------ 三路高度（c1 的 EKF 漂移）
+
+    def _sample_truth(self, now: float) -> None:
+        """按 ``truth_sample_s`` 节流采一次 AirSim 真值高度（只读，不参与控制默认）。
+
+        LockStep 下每次 RPC 约 330 ms，所以**不能**逐帧调；2 s 一次足够刻画漂移。
+        首次在 armed 之后采样时记地面参考 ``_truth_up0``（那时飞机还在地面）。
+        """
+        if self._truth_sample_s <= 0:
+            return
+        if now - self._truth_at < self._truth_sample_s:
+            return
+        self._truth_at = now
+        try:
+            pose = self.client.simGetVehiclePose()
+            # AirSim 世界系 NED：z 向下为正 → up = -z
+            truth_up = -float(pose.position.z_val)
+        except Exception as exc:                             # noqa: BLE001
+            self.get_logger().warn(f'AirSim 真值高度读取失败：{exc}', throttle_duration_sec=10.0)
+            return
+        self._truth_up = truth_up
+        if self._truth_up0 is None and self.armed:
+            self._truth_up0 = truth_up
+        if self._truth_up0 is not None:
+            self._truth_up_local = truth_up - self._truth_up0
+
+    def _flight_up(self, fallback=None):
+        """高度门使用的"飞行高度"（与 height_source 一致）。"""
+        if self._height_source == 'airsim' and self._truth_up_local is not None:
+            return self._truth_up_local
+        pos = self.position_enu()
+        if pos is not None:
+            return pos[2]
+        return self.altitude if fallback is None else fallback
+
+    def _to_flight_frame(self, z_px4):
+        """把 PX4 局部 ENU 的 z 换算到"当前高度源"的参考系。
+
+        体素簇的 z 来自 local_map，建立在 PX4 local ENU 上；若高度门改用 AirSim 真值，
+        要用同一时刻的 ``px4_up`` 与 ``truth_up`` 把簇顶搬到真值参考系，否则两路混用。
+        """
+        if self._height_source != 'airsim' or self._truth_up_local is None:
+            return z_px4
+        pos = self.position_enu()
+        if pos is None:
+            return z_px4
+        return z_px4 - pos[2] + self._truth_up_local
+
 
     def _current_body_delta(self):
         """当前"最近点"在机体系下的 ENU 偏移（宽锥优先，其次窄锥）。"""
@@ -827,6 +908,8 @@ class ClosedLoopBase(FlightCheckBase):
     def on_phase(self) -> None:
         if self.armed:
             self._ever_armed = True
+        # 三路高度：按节流采 AirSim 真值（只读；height_source=px4 时不影响控制）
+        self._sample_truth(time.monotonic())
         # 安全闸：**被外力降落/上锁就该收工退出**（2026-10-15 实测的坑）。
         # 监督层按阶段预算下发 land_fast 后，驱动原来自顾自继续跑阶段机（还会 SCAN→ROTVERIFY 死循环），
         # 于是"飞机早落地了、终端还一直 running"。这里一旦发现从"已解锁"变成"上锁"就收尾。
@@ -913,8 +996,9 @@ class ClosedLoopBase(FlightCheckBase):
                 count = int(distances.size)
                 # **高度门**（服务器侧 2026-10-17）：换算到世界 up 的顶部/底部高度。
                 # `verticals` 是机体 FLU 的 up（相对相机/机体），加当前 ENU 高度即世界 z。
-                _pos = self.position_enu()
-                flight_up = _pos[2] if _pos is not None else self.altitude
+                # 2026-10-17：当前高度改由 `_flight_up()` 统一取（px4 / airsim 可切换），
+                # 三路数值同时进 CSV，供离线定数据源。
+                flight_up = self._flight_up()
                 # 高度估计：**只用中位距离附近的点**（±max(1.5*MAD, 1 m)），
                 # 排除远处/天空/地形点（h1 实测：整扇区 max 会给出 33 m 的荒谬顶部）。
                 near_band = max(1.5 * mad, 1.0)
@@ -1101,11 +1185,17 @@ class ClosedLoopBase(FlightCheckBase):
                         return
                 # **高度门**（服务器侧 2026-10-17：在候选点、结构已进体素图时评估）：
                 # overflyable ⇔ 飞行高度 − 簇顶 ≥ overfly_clearance_m
+                # 簇 z 由 local_map 建在 PX4 local ENU 上；若高度门改用 AirSim 真值，
+                # 先用 `_to_flight_frame` 把簇顶搬到真值参考系，避免两路混用。
                 if self._cluster_zmax is not None:
-                    gap = current[2] - self._cluster_zmax
+                    flight_up = self._flight_up(current[2])
+                    cluster_top = self._to_flight_frame(self._cluster_zmax)
+                    cluster_bot = self._to_flight_frame(self._cluster_zmin)
+                    gap = flight_up - cluster_top
                     self.get_logger().info(
-                        f'候选点高度门：簇 z=[{self._cluster_zmin:.1f}, {self._cluster_zmax:.1f}] m、'
-                        f'水平跨度 {self._cluster_span_h:.1f} m，飞行高度 {current[2]:.1f} m，'
+                        f'候选点高度门：簇 z=[{cluster_bot:.1f}, {cluster_top:.1f}] m、'
+                        f'水平跨度 {self._cluster_span_h:.1f} m，飞行高度 {flight_up:.1f} m'
+                        f'（源 {self._height_source}），'
                         f'顶部净空 {gap:.2f} m（可飞越阈值 {self._overfly_clearance:.2f} m）')
                     if gap >= self._overfly_clearance:
                         self._overflyable += 1

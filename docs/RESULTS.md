@@ -1,0 +1,145 @@
+# 结果与证据（截至 2026-10-17）
+
+> 这份文档只回答一个问题：**哪些能力是真的跑过的，证据在哪里，哪些还没有。**
+> 规划与架构见 [README.md](../README.md)，逐条变更见 [CHANGELOG.md](../CHANGELOG.md)，
+> 与服务器侧（LightNav-0）的往来定案见 [docs/agent_comm/](agent_comm/README.md)。
+
+## 0. 证据口径（先读）
+
+- **"已验证"** = 有 SITL 飞行日志/CSV 或单元测试作为证据，不是"代码写了"。
+- 试验记录的口径**按版本分段**，不同批次的数字**不可直接相加**（改过判据/参数）。
+- 样本量小的地方都标了原始计数；n 小的时候百分比没有统计意义（Wilson CI 会很宽）。
+- 原始数据不入库（`.gitignore` 排除 `logs/`、`archive/`），本地保留约 **100 轮试验 CSV**。
+
+## 1. 一句话状态
+
+已经打通 **"深度寻障 → 转场 → 二次复验 → 对准 → 逼近 → 交权 VLM → 保持/绕行 → 恢复"** 的
+完整闭环，并配有四层安全兜底与 fail-closed 起飞门禁；**尚未具备**人员检测、任务级语言解析、
+区域覆盖搜索与语义地图。定位是**自主飞行 + 反应式避障平台原型**，不是完整搜救系统。
+
+## 2. 能力矩阵
+
+| 能力 | 状态 | 关键证据 |
+|---|---|---|
+| AirSim ↔ PX4 SITL ↔ uXRCE-DDS ↔ ROS 2 | ✅ | `Simulator connected on TCP port 4560`、`uxrce_dds_client synchronized` |
+| Offboard / ARM / 悬停 / 航点状态机 | ✅ | 5 m 方形航迹误差 0.15/0.26/0.44/0.45/0.46 m（判定 0.5 m） |
+| 相机 / 深度 / 点云接入 | ✅ | RGB 1280×720、深度 32FC1、点云 ~9440 点；受 LockStep 每 RPC ~330 ms 限制，约 1.3–2.2 Hz |
+| 人工接管（键盘 → MAVLink） | ✅ | F9 切 POSCTL、F10 交还 OFFBOARD；任务 PAUSED → 恢复当前航点 |
+| VLM 远端闭环（LightNav-0） | ✅ | 接口 v2、`meta.frame_seq` 严格递增、`waypoints` 优先、竖直分量恒 0；Step A 20 次往返 153–188 ms，Step B 327 次均值 237 ms |
+| 自动寻障 SEEK | ✅（概率性） | 深度图定方位 + 几何去地面（点数/垂跨度/MAD/中位距离）+ 多候选；命中率仍约五成 |
+| 交权前复验 | ✅ | 二次复验 + ±15° 微转 + 世界系簇质心；真大面三次复验 1.37/1.02/0.97 m |
+| 反应式避障闭环 | ✅ | 真实障碍上"压速 → 三帧确认 → 保持 + 朝宽侧转 + creep → 视野打开 → 恢复前进" |
+| 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
+| 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
+| fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
+| 单元测试 | ✅ | **122 passed / 1 skipped**（vlm 45 / perception 20(+1 skip) / px4_interface 20 / planner 18 / mapping 13 / mission 5 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 123 passed |
+| 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
+| 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
+| 传感器时间同步 / LiDAR | ❌ | 未做 |
+| 区域覆盖搜索 | ❌ | `frontier_explorer` 有代码，未进主线、未飞 |
+| 任务级自然语言解析 | ❌ | 当前只有"指向式导航"，没有 JSON 任务 schema |
+| 语义地图 / 语言—空间定位 | ❌ | 未开始 |
+| 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU 有 21 项单测 |
+| 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |
+| 目标跟踪 / 搜救报告 | ❌ | 未开始 |
+
+## 3. 量化结果（按批次，不跨版本合并）
+
+| 批次 | 日期 | 轮次 | 可绕闭合 | 快速闭合（20 帧） | 寻障命中 | 备注 |
+|---|---|---|---|---|---|---|
+| m4 手工点位 | 10-14 | 4 episode | **4/4** | — | — | 首次完整绕行；打分器校准 |
+| ③ 连跑 | 10-14 | 5 | **4/5 = 80%** | — | — | episode 级 5/6 |
+| d3–d7 | 10-15 | 5 | **3/5 = 60%** | — | 3/5 | d3 首次全链路闭合 |
+| 修复后冻结批 | 10-16 | 10 | **5/5 = 100%** | 4/5 | 5/10 | 只计"可绕"；不可绕 0 |
+| Batch1 | 10-16/17 | 5 | **1/1** | 1/1 | — | 累计报 8/8，Wilson [0.68, 1.00] |
+| t3（持久 track） | 10-17 | 1 | **1/1** | 15/50、11/20 | 1/1 | 60 s 逼近预算下首次到位 |
+
+口径说明：
+
+- **可绕闭合率** = 闭合轮次 / 有 episode 且判定"可绕"的轮次（主指标）；
+- **快速闭合** = episode 结束后 20 帧内 ≥5 帧前向非零（子指标）；
+- **寻障命中率** = 有 episode 的轮次 / 总轮次（服务器侧已定为**副指标**）；
+- "无 episode"单独计数，不计 FAIL。
+
+> n 最大也只有 10，Wilson 95% CI 下界约 0.68；**不要对外宣称"100% 成功率"**。
+
+## 3.5 离线检测评估（2026-10-18，perception 包）
+
+用已存的 1245 张 AirSim 帧抽样，**不上机**先做回归（`scripts/eval_detector.py`）：
+
+| 检测器 | 帧数 | 有检出帧 | 单帧耗时 mean | 结论 |
+|---|---|---|---|---|
+| `color`（橙色信标） | 60 | **19（31.7%）** | 57 ms | 稳定命中场景里的橙色球（bbox 固定在右侧），可作"目标物"demo |
+| `hog`（行人） | 60 | **0（0%）** | 8.9 ms | 场景里**没有人**，符合预期；不能据此判断检测器好坏 |
+
+说明：
+
+- 颜色 backend 不依赖 OpenCV；HOG/Haar 依赖 cv2（本机需 `PYTHONNOUSERSITE=1`，见 `scripts/run_detector.sh`）。
+- 检出率低是因为橙色球只在部分视角/位置入画，不是漏检。
+- **离线上机前的结论只有两条**：管线能跑、耗时够（相机 1.3 Hz，检测 57 ms）；
+  "能不能找到人"必须在有人的场景里重新评估。
+
+## 4. 安全验证（案例集见 [safety_casebook.md](safety_casebook.md)）
+
+| 场景 | 结果 |
+|---|---|
+| 高速转场撞障碍 | 已定位真因（位置目标点被 PX4 按巡航速度执行）→ 改速度控制 + 净空硬停；d19 三次转场全部到位 |
+| 传感器盲区仍前推 | 已加盲区底线（净空 ≤0.5 m 前向归零、保留偏航）；后续真实闭合轮次验证 |
+| 转角封顶仍硬推 | 封顶即前向归零；修复后 193 个 `yaw_capped` 帧里前向非零 = 0 |
+| 持续不可绕 | sup2：保持 >20 s → 脱困×2（0.92/0.91 m，各约 9 s）→ 重试用尽不再后退 → 监督层 RUN 151 s > 150 s → `land_fast` → 安全落地 |
+| 脱困越界 | 预判式上限：esc3 两次 0.91 m/9.1 s ≤ 1.00 m |
+| 误交权 / 误触发围栏 | 多批次记录 0 次误交权、0 次误围栏（逐轮 CSV 可查） |
+| 落地后进程不退出 | 修两处真 bug（驱动"曾解锁→上锁即收工"、SCAN 计时不重置）+ 脚本 `timeout 900` |
+
+## 5. 工程数据
+
+```text
+提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
+ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
+自研源码      ~6200 行 Python（不含 px4_msgs 与第三方）
+单元测试      ~1350 行，122 passed / 1 skipped（检测器入口下 123 passed）
+试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
+主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
+              APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）
+```
+
+## 6. 已知限制（诚实清单）
+
+1. **EKF 高度漂移**：AUTO_LAND 时 z 估计发散（真值约 4 s 触地，估计仍报 +1.8 m）；现在还会污染
+   高度门与世界系 z（c1：交权点 ENU 上 +0.1 m，`px4_z` 在 −3.52~+0.47 漂移）。高度门数据源待定。
+2. **自动寻障命中率约五成**：能筛出合格大结构，但"到点后能复验出可保持障碍"仍是瓶颈。
+3. **自动降落不是真降落**：现有收尾按时间判定，只适用于本仿真。
+4. **主驱动是单文件脚本**：单元测试覆盖叶子模块，覆盖不到这条主状态机。
+5. **强依赖三个易碎环节**：Windows AirSim、WSL2 本机、远程 GPU 服务 + SSH 隧道；任一掉线即停摆。
+6. **公开仓库的 `main` 长期停在初始提交**：外部评审只看默认分支，会得到与事实相反的结论。
+
+## 7. 复现入口
+
+```bash
+# 0) 前置：Windows 侧 AirSim 已运行；远程 LightNav-0 服务已启动
+# 1) 一键起链路（隧道 → Agent → PX4 → ROS 栈 → 监督层，并自检）
+scripts/dev_chain.sh start
+
+# 2) 单元测试
+source scripts/env.sh
+for p in px4_interface mission mapping planner vlm; do
+  ( cd ros2_px4_ws/src/$p && python3 -m pytest -q )
+done
+
+# 3) 一轮已知点位试验（清节点 → 新 session → preflight → 跑 → 打分）
+bash scripts/run_detour_trial.sh t1
+python3 scripts/analyze_detour.py logs/<日期>/t1_*.csv
+
+# 4) 收工
+scripts/dev_chain.sh stop
+```
+
+## 8. 下一步（当前方向）
+
+按 2026-10-17 决策：**先做 demo，A 收口 → B 人员检测纵切**。
+
+- A：三路高度记录并定高度门数据源 → 已知点位 n≥10 + Wilson 冻结 → 公开仓库同步；
+- B：AirSim RGB → 人员检测 → 世界坐标 → 疑似目标记录/报告。
+  已完成不可上机部分：`perception` 包 + 21 项单测 + 离线评估脚本；
+  **下一步需要在场景里放入人物/目标**，再做"悬停检测 → 世界坐标核对"的 SITL 验证；
+- 之后：区域覆盖搜索 → 任务级语言解析（JSON schema，VLM 只出任务不出控制）。

@@ -5,6 +5,7 @@
     ros2 launch bringup sim_stack.launch.py with_mission:=true    # 再加航点任务
     ros2 launch bringup sim_stack.launch.py with_vlm:=true        # 再加 VLM 导航
     ros2 launch bringup sim_stack.launch.py with_explorer:=true   # 再加自主探索
+    ros2 launch bringup sim_stack.launch.py with_detector:=true   # 再加人员/目标检测
     ros2 launch bringup sim_stack.launch.py airsim_host:=172.21.192.1
     ros2 launch bringup sim_stack.launch.py with_arbiter:=false   # 关掉速度仲裁（回到"直连"旧行为）
 
@@ -30,6 +31,8 @@ def generate_launch_description():
         DeclareLaunchArgument('with_mission', default_value='false'),
         DeclareLaunchArgument('with_vlm', default_value='false'),
         DeclareLaunchArgument('with_explorer', default_value='false'),
+        DeclareLaunchArgument('with_detector', default_value='false'),
+        DeclareLaunchArgument('detector_backend', default_value='color'),
         DeclareLaunchArgument('with_arbiter', default_value='true'),
     ]
     arbiter_on = LaunchConfiguration('with_arbiter')
@@ -87,4 +90,13 @@ def generate_launch_description():
         Node(package='planner', executable='frontier_explorer',
              name='frontier_explorer', output='screen',
              condition=IfCondition(LaunchConfiguration('with_explorer'))),
+        # 可选：人员/目标检测（只发布观测；世界点需要 PX4 位置新鲜）
+        # PYTHONNOUSERSITE=1：本机 cv2 是针对 numpy 1.x 编译的，避免 ~/.local 的 numpy 2.x 冲突。
+        Node(package='perception', executable='victim_detector',
+             name='victim_detector', output='screen',
+             parameters=[{
+                 'detector': LaunchConfiguration('detector_backend'),
+             }],
+             additional_env={'PYTHONNOUSERSITE': '1'},
+             condition=IfCondition(LaunchConfiguration('with_detector'))),
     ])

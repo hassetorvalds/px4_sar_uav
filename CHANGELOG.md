@@ -15,6 +15,64 @@
 
 ---
 
+## [2026-10-18] 收口：结果页/版本基线/check_stack 阈值化 + 三路高度 + perception 包（离线）
+
+### 新增
+
+- `docs/RESULTS.md`：对外可读的**结果与证据**页（能力矩阵、按批次的量化指标、
+  安全案例、已知限制、复现入口）；README 顶部加入链接。明确"不跨版本合并 n""不宣称 100%"。
+- `docs/VERSIONS.md`：版本基线（PX4 `d0c6c0df7f` / `px4_msgs 598c7aa` /
+  Agent `v2.4.2@57d0862` / ROS 2 Humble / AirSim 1.8.1 / LightNav-0 各 md5）。
+- `ros2_px4_ws/src/perception/`（新包）：
+  - `detectors.py`：`color`（颜色连通域，不依赖 cv2）/ `hog`（行人 SVM）/ `haar`（全身级联）；
+  - `geometry.py`：像素+深度 → 光学系 → 机体 FLU → 世界 ENU（与 `frames.py` 同一约定）；
+  - `victim_detector.py`：订阅 RGB/深度/CameraInfo + PX4 状态，发布
+    `~/detections`（JSON）与 `~/best`（PoseStamped）；**只观测，不发飞控指令**；
+  - 21 项单测（检测内核 + 几何/深度）。
+- `scripts/eval_detector.py`：离线评估检测器的检出率/耗时（用已存帧，不依赖 ROS）。
+- `scripts/run_detector.sh`：统一启动入口（`PYTHONNOUSERSITE=1`，规避本机 cv2 与 numpy 2.x 冲突）。
+- `scripts/analyze_height_sources.py`：对 CSV 的 `px4_up/truth_up/up_offset_m` 做漂移统计
+  （均值/标准差/极值/斜率/分阶段），给"高度门用哪路高度"提供数据。
+- `scripts/check_stack.sh` 新增 `logs/checks/check_stack_<时间>.log` 报告落盘。
+- `bringup/sim_stack.launch.py`：`with_detector:=true` + `detector_backend:=color|hog|haar`。
+
+### 变更
+
+- `scripts/vlm_closed_loop.py`：**三路高度**
+  - 新参数 `height_source`（`px4` 默认＝保持原行为 / `airsim`）与 `truth_sample_s`（默认 2 s）；
+  - 高度门统一走 `_flight_up()`；簇 z 用 `_to_flight_frame()` 换算，避免两路混用；
+  - CSV 新增 `px4_up` / `truth_up` / `up_offset_m` / `height_src`（`record` 与 `record_approach` 列集一致）。
+  - AirSim 真值采样按 `truth_sample_s` 节流（LockStep 单次 RPC ~330 ms，不能逐帧调）。
+- `scripts/run_detour_trial.sh`：新增 `HEIGHT_SOURCE` / `TRUTH_SAMPLE_S` 环境变量透传。
+- `scripts/env.sh`：`ROS_LOG_DIR` 默认指向 `logs/ros`（`~/.ros` 不可写时节点不再启动即失败）。
+- `scripts/check_stack.sh`：**频率阈值化**——`n/a`/无数据/低于阈值一律 FAIL 并非零退出，
+  不再"话题存在即 OK"（外部评审 P2）。
+
+### 验证
+
+```text
+· 单测：vlm 45 + perception 20(+1 skip) + px4_interface 20 + planner 18 + mapping 13
+        + mission 5 + px4_offboard 1(+1 skip) = **122 passed / 1 skipped**；
+        `PYTHONNOUSERSITE=1` 时 HOG 用例也跑 → **123 passed**
+· check_stack：无栈环境下 4 个 /fmu/out 话题全部 FAIL、退出码 1（旧版会打 OK）
+· 离线检测（60 张已存帧）：
+    color(橙色) 19/60 有检出、mean 57 ms → 稳定命中场景橙色球；
+    hog(行人)   0/60、mean 8.9 ms → 场景内确实没有人（不是检测器失效）
+· analyze_height_sources.py：合成 CSV 上 slope=+1.200 m/min 与设定一致
+· detector 节点冒烟：color/hog 两种 backend 均能启动（hog 在 PYTHONNOUSERSITE=1 下可用）
+```
+
+### 已知问题 / 待办
+
+- **场景里没有人物**：人员检测的"能不能找到人"必须先在 AirSim 里放入人物/目标再评估；
+  当前只能用橙色球做"目标物"demo。
+- 三路高度**只落地未飞验**；`height_source` 默认仍为 `px4`，等 Batch2 数据决定。
+- 本机 `~/.local` 的 numpy 2.2.6 与系统 cv2 4.5.4 冲突（不影响飞控栈，影响 CV）；
+  统一用 `scripts/run_detector.sh` / `PYTHONNOUSERSITE=1`。
+- `main` 分支仍停在初始提交；`dev` 已 116+ commits（本地多 2 个未推），推送需 GitHub 凭据。
+
+---
+
 ## [2026-10-17] c1/c2：RUN 窗口已扩（180/150/200）；c1 暴露 EKF 高度漂移影响高度门
 
 ### 变更

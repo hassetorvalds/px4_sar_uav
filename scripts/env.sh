@@ -48,6 +48,10 @@ else
     echo "[env] 警告：${ROS_WS}/install 未构建，先运行 scripts/build_ros_ws.sh" >&2
 fi
 
+# 3.5) ROS 日志放进项目内：避免 ~/.ros 不可写（沙箱/多用户）时节点启动即失败
+export ROS_LOG_DIR="${ROS_LOG_DIR:-${PX4_SAR_ROOT}/logs/ros}"
+mkdir -p "${ROS_LOG_DIR}" 2>/dev/null || true
+
 # 4) SITL 启动参数：AirSim 跑在 Windows 侧，PX4 需要知道对端地址
 export PX4_SYS_AUTOSTART="${PX4_SYS_AUTOSTART:-10016}"   # 10016 = none_iris
 if [ -z "${PX4_SIM_HOST_ADDR:-}" ]; then

@@ -116,7 +116,12 @@ fi
 # 硬超时兜底：即使驱动卡住，也不能让整条流水线无限挂着（2026-10-15：曾出现
 # "飞机已落地、终端仍 running"；驱动已加"被外力上锁即收工"，这里是第二道闸）
 TIMEOUT_DRIVER="${TIMEOUT_DRIVER:-900}"
+# 三路高度（2026-10-17）：默认 px4 = 保持原行为；HEIGHT_SOURCE=airsim 用真值参与高度门。
+# 无论哪路，CSV 都记 px4_up / truth_up / up_offset_m，便于离线定数据源。
+HEIGHT_SOURCE="${HEIGHT_SOURCE:-px4}"
+TRUTH_SAMPLE_S="${TRUTH_SAMPLE_S:-2.0}"
 timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -p start_altitude_m:=2.0 -p run_s:=180.0 \
+    -p height_source:="${HEIGHT_SOURCE}" -p truth_sample_s:=${TRUTH_SAMPLE_S} \
     -p seek_enabled:=${seek_flag} -p scan_points:="${points_arg}" -p scan_points_world:=${world_flag} \
     -p seek_yaw_rate_deg_s:=15.0 -p seek_s:=26.0 \
     -p seek_margin_m:=1.5 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
