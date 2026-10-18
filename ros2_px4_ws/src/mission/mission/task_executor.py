@@ -650,6 +650,9 @@ class TaskExecutor(Node):
             self._search_index += 1
             self.get_logger().info(
                 f'搜索航点 {self._search_index}/{len(self._search_wps)} 到位')
+            self._report('search_waypoint', index=self._search_index,
+                         total=len(self._search_wps),
+                         target=list(target))
             return
         self._publish_velocity(decision.east, decision.north, 0.0)
 

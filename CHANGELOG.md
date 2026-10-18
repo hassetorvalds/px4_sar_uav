@@ -63,6 +63,11 @@
   - takeoff：地面 LCL 0.02 + 任务 REL 2.0 → LCL 2.008，帧换算正确
   - land_fast → command_completed → done；arming_state=1、landed=true、at_rest=true
   - 报告：logs/tasks/report_20261018-092416-359.jsonl
+· 小半径搜索真机复飞（东南侧 center E5/N-3、r=3 m、8 航点）：
+  - takeoff LCL 2.01 vs REL 2.0；search_plan 8 航点
+  - search_waypoint 1/8 … 8/8 全部到位（7.0→74.8 s），无 abort / 无 clearance_blocked
+  - land_fast → done；AirSim 真值 north 0.02 / east 2.14（最后一个航点）、仅 Ground_5 碰撞
+  - 报告：logs/tasks/report_20261018-092917-110.jsonl
 ```
 
 ### 已知问题

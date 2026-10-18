@@ -116,6 +116,19 @@ command_sent(offboard) → command_ack → command_completed(offboard)
 
 ## 4. Step 3：搜索 + 检测（可选）
 
+先飞**小半径、已验证**的搜索（东南侧，避开正前方墙体）：
+
+```bash
+FLY_TASK_CONFIRM=1 scripts/fly_task.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 3 米、半径 3 米的区域，高度 2 米，降落" \
+  --execute
+```
+
+预期报告事件：`search_plan(8 航点)` → `search_waypoint 1/8 … 8/8`
+→ `land_fast → done`；无 `abort` / `clearance_blocked`。
+
+再试带检测的版本：
+
 ```bash
 # 另起一个终端，把检测节点加进栈（橙色 backend，默认就是橙色）
 ros2 run perception victim_detector --ros-args -p detector:=color &

@@ -309,6 +309,7 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 
 真机复飞：最小任务 3 次（前两次 arm ACK 超时→重试成功；加 `arm_settle_s=0.5` 后
 arm ACK 0.011 s、offboard 0.016 s，takeoff LCL 2.008 / REL 2.0，安全上锁落地）。
+小半径搜索也已真机飞通：东南侧 r=3 m、8/8 航点（7–75 s）、无 abort、仅地面碰撞。
 未做：VLM 实际接入（只留了 `--remote-intent` 接口）。
 
 ## 8. 参考仓库的许可证提醒

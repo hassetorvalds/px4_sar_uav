@@ -36,9 +36,9 @@
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
-| 区域覆盖搜索 | ⚠️ 航迹生成已测，未飞 | `mission/search_pattern.py`：弓字形覆盖；执行器按航点飞 |
+| 区域覆盖搜索 | ✅ 小半径真机飞通 | `mission/search_pattern.py`：弓字形；东南侧 r=3 m、8/8 航点到位（7–75 s），无 abort；大区域未飞 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
-| 通用任务执行（起飞/航点/悬停/返航/搜索） | ⚠️ 最小/前进/返航已飞验；搜索未飞 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |
+| 通用任务执行（起飞/航点/悬停/返航/搜索） | ✅ 最小/前进/返航/小半径搜索均已飞验 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |
 | 语义地图 / 语言—空间定位 | ❌ | 未开始 |
 | 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU；多帧关联（世界距离/IoU + N 帧确认） |
 | 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |
