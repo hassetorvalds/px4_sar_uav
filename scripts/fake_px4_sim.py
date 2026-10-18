@@ -59,6 +59,7 @@ class FakePx4(Node):
         self._target_at = 0.0
         self._velocity = None
         self._velocity_at = 0.0
+        self._yaw_rate_enu = 0.0
         self._heading_ned = 0.0
         self._finish_at = None
 
@@ -124,6 +125,7 @@ class FakePx4(Node):
     def _on_velocity(self, msg: Twist) -> None:
         self._velocity = (float(msg.linear.x), float(msg.linear.y),
                           float(msg.linear.z))
+        self._yaw_rate_enu = float(msg.angular.z)
         self._velocity_at = time.monotonic()
 
     def _publish_map(self) -> None:
@@ -160,6 +162,9 @@ class FakePx4(Node):
                 self._east += vx * dt
                 self._north += vy * dt
                 self._up = max(0.0, self._up + vz * dt)
+                # ENU 偏航角速度正=左/逆时针 → NED heading 减小
+                self._heading_ned = math.remainder(
+                    self._heading_ned - self._yaw_rate_enu * dt, 2.0 * math.pi)
             elif self._target is not None and now - self._target_at < 2.0:
                 self._move_toward_target(dt)
 

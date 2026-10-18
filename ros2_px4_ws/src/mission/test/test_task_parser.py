@@ -133,3 +133,17 @@ def test_lawnmower_rejects_bad_input():
         lawnmower(0, 0, 0, 1)
     with pytest.raises(ValueError):
         lawnmower(0, 0, 1, 0)
+
+
+def test_yaw_left_and_scan():
+    spec = parse_task('起飞到 2 米，向左转 90 度，原地扫描 15 秒，降落')
+    types = [step.type for step in spec.steps]
+    assert types == ['takeoff', 'yaw', 'scan', 'land']
+    assert spec.steps[1].params['degrees'] == pytest.approx(90.0)
+    assert spec.steps[2].params['seconds'] == pytest.approx(15.0)
+
+
+def test_yaw_right_is_negative():
+    spec = parse_task('起飞到 2 米，向右转 45 度，降落')
+    yaw = [step for step in spec.steps if step.type == 'yaw'][0]
+    assert yaw.params['degrees'] == pytest.approx(-45.0)

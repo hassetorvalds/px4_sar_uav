@@ -96,6 +96,8 @@ def generate_launch_description():
              name='victim_detector', output='screen',
              parameters=[{
                  'detector': LaunchConfiguration('detector_backend'),
+                 # 统一到全局话题：执行器默认订阅 /perception/best
+                 'best_topic': '/perception/best',
              }],
              additional_env={'PYTHONNOUSERSITE': '1'},
              condition=IfCondition(LaunchConfiguration('with_detector'))),

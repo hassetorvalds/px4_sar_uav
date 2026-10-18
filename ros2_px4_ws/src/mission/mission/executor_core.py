@@ -62,6 +62,17 @@ def inside_geofence(current_enu, origin_enu, radius_m: float, *, margin_m: float
     return distance <= float(radius_m) + float(margin_m)
 
 
+def yaw_rate_to_target(current_enu: float, target_enu: float, *,
+                       max_rate_rad_s: float, tolerance_rad: float = 0.05,
+                       gain: float = 1.5):
+    """朝目标航向的角速度（ENU，正=左/逆时针）；返回 (rate, done)。"""
+    error = math.remainder(float(target_enu) - float(current_enu), 2.0 * math.pi)
+    if abs(error) <= tolerance_rad:
+        return 0.0, True
+    rate = max(-float(max_rate_rad_s), min(float(max_rate_rad_s), gain * error))
+    return rate, False
+
+
 def forward_target(current_enu, heading_enu: float, meters: float):
     """机体前向 ``meters`` 米对应的世界 ENU 目标点（高度保持不变）。"""
     return (float(current_enu[0]) + float(meters) * math.cos(heading_enu),
@@ -95,6 +106,12 @@ def step_timeout_s(spec_step, *, speed_mps: float, min_s: float = 15.0,
     if kind == 'forward':
         meters = float(spec_step.params.get('meters', 0.0))
         return max(min_s, meters / max(speed_mps, 0.1) * 2.0 + extra_s)
+    if kind == 'yaw':
+        degrees = abs(float(spec_step.params.get('degrees', 90.0)))
+        rate = max(float(spec_step.params.get('rate_deg_s', 20.0)), 1.0)
+        return max(min_s, degrees / rate * 2.0 + extra_s)
+    if kind == 'scan':
+        return float(spec_step.params.get('seconds', 20.0)) + extra_s
     if kind == 'search':
         # 搜索整体由任务级 max_duration 兜底，这里给单点足够时间
         return max(min_s, 60.0)

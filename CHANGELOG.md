@@ -15,6 +15,48 @@
 
 ---
 
+## [2026-10-18] 搜索+检测闭环：yaw/scan 原语 + victim_detector 接入（真机）
+
+### 新增
+
+- `TaskSpec`/解析器/执行器新增 **`yaw`（原地转向）** 与 **`scan`（原地扫描）**：
+  - `yaw`：相对角度 ±1–360°、速率 5–60°/s，ENU 正=左；
+  - `scan`：1–120 s、速率 5–60°/s，扫描期间如果收到确认目标会暂停偏航；
+  - 解析支持"向左/右转 N 度""原地扫描 N 秒"；报告新增 `yaw_start/yaw_complete/scan_complete`。
+- 执行器 `hold_once_per_step`（默认 true）：单步内只对第一个确认目标悬停一次，
+  避免目标持续可见时反复触发、扫描永远走不完。
+- 检测器接线：`best_topic` 统一到 `/perception/best`（launch 与 `run_detector.sh`），
+  执行器默认订阅同一话题。
+
+### 修复
+
+- `perception/victim_detector.py`：`state.position_ned()` 误当方法调用（property 实际是 tuple），
+  与执行器同源 bug；改为 `state.position_ned`。
+- 检测器 `max_depth_m` 30 → **60 m**：场景目标实测 32 m，原来刚好被上限滤掉，
+  表现为"检出但 depth_m/world_enu 全 null"。
+
+### 验证
+
+```text
+· 单测：mission 75 passed；全包 202 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 203）
+· 假 PX4 自检：yaw_complete → scan_complete → done PASS
+· 真机扫描（起飞 2 m → 原地扫描 40 s → 降落）：
+  target_confirmed world=[30.77, 27.82, 5.01]（step=scan）
+  scan_complete → land_fast → done；arming_state=1、landed=true、at_rest=true
+  报告：logs/tasks/report_20261018-093926-672.jsonl
+· 目标为场景内橙色物体（depth≈32 m，检测器 bbox 在画面右侧稳定命中）
+```
+
+### 已知问题
+
+- 起飞阶段也会收到 `target_confirmed`（执行器只在 scan/search 阶段暂停，不影响起飞）；
+- 目标世界 z≈5.0 m，与 `OrangeBall` 位姿 z≈3.7 m 有偏差（深度/像素近似），
+  作为"发现并上报"够用，精确三维定位另做；
+- "搜索路径 + 扫描"组合任务尚未真机飞（当前是原地扫描闭环）。
+
+---
+
 ## [2026-10-18] P0：IntentFrame + 高度帧 + 命令 ACK 生命周期（假 PX4 自检）
 
 ### 新增

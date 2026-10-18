@@ -82,7 +82,7 @@ class VictimDetector(Node):
         self.declare_parameter('max_rate_hz', 5.0)
         self.declare_parameter('depth_patch_px', 2)
         self.declare_parameter('min_depth_m', 0.3)
-        self.declare_parameter('max_depth_m', 30.0)
+        self.declare_parameter('max_depth_m', 60.0)
         self.declare_parameter('detections_topic', '~/detections')
         self.declare_parameter('best_topic', '~/best')
         self.declare_parameter('tracks_topic', '~/tracks')
@@ -180,8 +180,8 @@ class VictimDetector(Node):
         state = self._monitor.snapshot()
         position_enu = None
         heading_enu = None
-        if state.position_ned() is not None and not math.isnan(state.heading):
-            position_enu = np.array(ned_to_enu(*state.position_ned()))
+        if state.position_ned is not None and not math.isnan(state.heading):
+            position_enu = np.array(ned_to_enu(*state.position_ned))
             heading_enu = ned_yaw_to_enu_yaw(state.heading)
         pose_fresh = self._monitor.position_fresh()
 

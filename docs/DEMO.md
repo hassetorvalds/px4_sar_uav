@@ -116,7 +116,17 @@ command_sent(offboard) → command_ack → command_completed(offboard)
 
 ## 4. Step 3：搜索 + 检测（可选）
 
-先飞**小半径、已验证**的搜索（东南侧，避开正前方墙体）：
+**先飞"扫描→发现"闭环**（需要检测节点在线：`with_detector:=true` 或
+`scripts/run_detector.sh`）：
+
+```bash
+FLY_TASK_CONFIRM=1 scripts/fly_task.py "起飞到 2 米，原地扫描 40 秒，降落" --execute
+```
+
+预期报告：`target_confirmed world=[...]` → `scan_complete` → `land_fast → done`。
+目标为场景内橙色物体（实测 depth≈32 m）。
+
+再飞**小半径搜索**（东南侧，避开正前方墙体）：
 
 ```bash
 FLY_TASK_CONFIRM=1 scripts/fly_task.py \

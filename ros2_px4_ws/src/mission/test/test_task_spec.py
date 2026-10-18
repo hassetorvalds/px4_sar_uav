@@ -92,3 +92,23 @@ def test_altitude_frame_rejects_unknown():
     with pytest.raises(TaskError, match='高度帧'):
         _spec([Step('takeoff', {}), Step('land', {})],
               altitude_frame='AGL').validate()
+
+
+def test_yaw_and_scan_validation():
+    spec = _spec([Step('takeoff', {}),
+                  Step('yaw', {'degrees': 90.0, 'rate_deg_s': 20.0}),
+                  Step('scan', {'seconds': 10.0, 'rate_deg_s': 15.0}),
+                  Step('land', {})]).validate()
+    assert [step.type for step in spec.steps] == ['takeoff', 'yaw', 'scan', 'land']
+
+
+def test_yaw_zero_degrees_rejected():
+    with pytest.raises(TaskError, match='yaw.degrees'):
+        _spec([Step('takeoff', {}), Step('yaw', {'degrees': 0.0}),
+               Step('land', {})]).validate()
+
+
+def test_scan_seconds_range():
+    with pytest.raises(TaskError, match='scan.seconds'):
+        _spec([Step('takeoff', {}), Step('scan', {'seconds': 0.0}),
+               Step('land', {})]).validate()

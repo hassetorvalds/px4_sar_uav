@@ -32,8 +32,14 @@ SEARCH_SPACING_MIN_M = 1.0
 SEARCH_SPACING_MAX_M = 10.0
 HOVER_MIN_S = 1.0
 HOVER_MAX_S = 120.0
+YAW_DEG_MAX = 360.0
+YAW_RATE_MIN_DEG_S = 5.0
+YAW_RATE_MAX_DEG_S = 60.0
+SCAN_SECONDS_MIN = 1.0
+SCAN_SECONDS_MAX = 120.0
 
-STEP_TYPES = ('takeoff', 'goto', 'forward', 'search', 'hover', 'land', 'return_home')
+STEP_TYPES = ('takeoff', 'goto', 'forward', 'search', 'yaw', 'scan', 'hover',
+              'land', 'return_home')
 
 
 class TaskError(ValueError):
@@ -143,6 +149,16 @@ class TaskSpec:
                 raise TaskError('search.target 必须是含 kind 的对象')
             if target['kind'] not in ('color', 'person', 'marker', 'any'):
                 raise TaskError(f'未知 target.kind {target["kind"]!r}')
+        elif step.type == 'yaw':
+            _check_range('yaw.degrees', abs(float(p.get('degrees', 90.0))),
+                         1.0, YAW_DEG_MAX)
+            _check_range('yaw.rate_deg_s', float(p.get('rate_deg_s', 20.0)),
+                         YAW_RATE_MIN_DEG_S, YAW_RATE_MAX_DEG_S)
+        elif step.type == 'scan':
+            _check_range('scan.seconds', float(p.get('seconds', 20.0)),
+                         SCAN_SECONDS_MIN, SCAN_SECONDS_MAX)
+            _check_range('scan.rate_deg_s', float(p.get('rate_deg_s', 15.0)),
+                         YAW_RATE_MIN_DEG_S, YAW_RATE_MAX_DEG_S)
         elif step.type == 'hover':
             _check_range('hover.seconds', float(p.get('seconds', 5.0)),
                          HOVER_MIN_S, HOVER_MAX_S)
@@ -212,6 +228,12 @@ class TaskSpec:
             elif step.type == 'search':
                 parts.append(f'搜索 半径 {step.params.get("radius_m", 10):.1f} m'
                              f'（{step.params.get("target", {}).get("kind", "target")}）')
+            elif step.type == 'yaw':
+                degrees = float(step.params.get('degrees', 90.0))
+                direction = '向左' if degrees > 0 else '向右'
+                parts.append(f'{direction}转 {abs(degrees):.0f}°')
+            elif step.type == 'scan':
+                parts.append(f'原地扫描 {step.params.get("seconds", 20):.0f} s')
             elif step.type == 'hover':
                 parts.append(f'悬停 {step.params.get("seconds", 5):.0f} s')
             elif step.type == 'land':

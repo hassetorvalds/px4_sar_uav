@@ -92,3 +92,18 @@ def test_step_timeout_is_positive_and_scales():
     far = step_timeout_s(Step('goto', {'east_m': 30.0}), speed_mps=0.5)
     assert far > short
     assert step_timeout_s(Step('hover', {'seconds': 5.0}), speed_mps=0.5) >= 15.0
+
+
+def test_yaw_rate_sign_and_done():
+    from mission.executor_core import yaw_rate_to_target
+
+    rate, done = yaw_rate_to_target(0.0, math.pi / 2, max_rate_rad_s=1.0)
+    assert rate > 0 and not done
+    rate, done = yaw_rate_to_target(0.0, -math.pi / 2, max_rate_rad_s=1.0)
+    assert rate < 0 and not done
+    rate, done = yaw_rate_to_target(0.0, 0.01, max_rate_rad_s=1.0,
+                                    tolerance_rad=0.05)
+    assert done and rate == 0.0
+    rate, done = yaw_rate_to_target(math.radians(350), math.radians(10),
+                                    max_rate_rad_s=1.0)
+    assert rate > 0 and not done

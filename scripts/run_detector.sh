@@ -19,4 +19,5 @@ source "${_dir}/env.sh" >/dev/null 2>&1
 export PYTHONNOUSERSITE=1
 _detector="${DETECTOR:-color}"
 
-exec ros2 run perception victim_detector --ros-args -p detector:="${_detector}" "$@"
+exec ros2 run perception victim_detector --ros-args -p detector:="${_detector}" \
+    -p best_topic:=/perception/best "$@"

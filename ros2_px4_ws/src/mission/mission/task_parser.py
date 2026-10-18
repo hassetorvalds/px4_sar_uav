@@ -50,6 +50,13 @@ _RE_FORWARD = re.compile(
     rf'(?P<num>{_NUM})\s*{_UNIT}', re.IGNORECASE)
 _RE_HOVER = re.compile(
     rf'(?:悬停|等待|hover|wait)\s*(?P<num>{_NUM})?\s*(?:秒|s|seconds?)?', re.IGNORECASE)
+_RE_YAW_LEFT = re.compile(
+    rf'(?:向左|左转|left)\s*(?P<num>{_NUM})?\s*(?:度|deg|°)', re.IGNORECASE)
+_RE_YAW_RIGHT = re.compile(
+    rf'(?:向右|右转|right)\s*(?P<num>{_NUM})?\s*(?:度|deg|°)', re.IGNORECASE)
+_RE_SCAN = re.compile(
+    rf'(?:原地)?(?:扫描|扫视|scan|sweep)\s*(?P<num>{_NUM})?\s*(?:秒|s|seconds?)?',
+    re.IGNORECASE)
 _RE_TAKEOFF = re.compile(r'起飞|升空|take\s*-?\s*off', re.IGNORECASE)
 _RE_LAND = re.compile(r'降落|着陆|落地|land(?:ing)?\b', re.IGNORECASE)
 _RE_RETURN = re.compile(r'返航|返回|回来|回到起飞点|return|rtl', re.IGNORECASE)
@@ -151,6 +158,10 @@ def _intent(clause: str):
         return 'land'
     if _RE_SEARCH.search(clause):
         return 'search'
+    if _RE_SCAN.search(clause):
+        return 'scan'
+    if _RE_YAW_LEFT.search(clause) or _RE_YAW_RIGHT.search(clause):
+        return 'yaw'
     if _RE_TAKEOFF.search(clause):
         return 'takeoff'
     if _RE_HOVER.search(clause):
@@ -229,6 +240,20 @@ def parse_task(text: str) -> TaskSpec:
                 'altitude_m': altitude,
             }))
             pending_target = None
+            continue
+        if intent == 'scan':
+            match = _RE_SCAN.search(clause)
+            seconds = _num(match.group('num')) if match and match.group('num') else 20.0
+            steps.append(Step('scan', {'seconds': seconds, 'rate_deg_s': 15.0}))
+            continue
+        if intent == 'yaw':
+            left = _RE_YAW_LEFT.search(clause)
+            right = _RE_YAW_RIGHT.search(clause)
+            match = left or right
+            degrees = _num(match.group('num')) if match and match.group('num') else 90.0
+            if right is not None and left is None:
+                degrees = -degrees
+            steps.append(Step('yaw', {'degrees': degrees, 'rate_deg_s': 20.0}))
             continue
         if intent == 'hover':
             match = _RE_HOVER.search(clause)

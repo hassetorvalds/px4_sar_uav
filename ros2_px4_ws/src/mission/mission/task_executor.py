@@ -38,7 +38,8 @@ from .altitude import format_altitude
 from .altitude import to_dict as altitude_dict
 from .command_tracker import CommandState, CommandTracker
 from .executor_core import (apply_clearance_gate, forward_target, inside_geofence,
-                            search_waypoints, step_timeout_s, velocity_toward)
+                            search_waypoints, step_timeout_s, velocity_toward,
+                            yaw_rate_to_target)
 from .search_pattern import estimate_duration_s
 from .task_spec import TaskError, TaskSpec
 
@@ -83,6 +84,7 @@ class TaskExecutor(Node):
         self.declare_parameter('report_path', '')
         self.declare_parameter('dry_run', True)
         self.declare_parameter('hold_on_target', True)
+        self.declare_parameter('hold_once_per_step', True)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -102,6 +104,7 @@ class TaskExecutor(Node):
 
         self._dry_run = bool(self.get_parameter('dry_run').value)
         self._hold_on_target = bool(self.get_parameter('hold_on_target').value)
+        self._hold_once_per_step = bool(self.get_parameter('hold_once_per_step').value)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
         self._clearance_stop = float(self.get_parameter('clearance_stop_m').value)
@@ -130,12 +133,14 @@ class TaskExecutor(Node):
         self._step_index = 0
         self._step_started = time.monotonic()
         self._step_target = None
+        self._yaw_target_enu = None
         self._search_wps = []
         self._search_index = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
         self._last_target_report_at = 0.0
+        self._target_hold_count = 0
         self._manual_override = False
         self._last_target_pose = None
         self._origin_enu = (0.0, 0.0, 0.0)
@@ -303,6 +308,7 @@ class TaskExecutor(Node):
         self._task_started = None
         self._step_index = 0
         self._step_target = None
+        self._yaw_target_enu = None
         self._search_wps = []
         self._search_index = 0
         self._takeoff_stable_at = None
@@ -337,9 +343,12 @@ class TaskExecutor(Node):
         if not self._hold_on_target or self._phase != PHASE_RUN:
             return
         now = time.monotonic()
+        if self._hold_once_per_step and self._target_hold_count >= 1:
+            return
         # 去抖：同一目标持续可见时不要把搜索无限期拖住
         if now - self._last_target_report_at < 5.0:
             return
+        self._target_hold_count += 1
         self._last_target_report_at = now
         world = [round(float(msg.pose.position.x), 2),
                  round(float(msg.pose.position.y), 2),
@@ -500,11 +509,13 @@ class TaskExecutor(Node):
         self._step_index = index
         self._step_started = time.monotonic()
         self._step_target = None
+        self._yaw_target_enu = None
         self._search_wps = []
         self._search_index = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
+        self._target_hold_count = 0
         step = self._current_step()
         if step is None:
             self._begin_land()
@@ -553,6 +564,10 @@ class TaskExecutor(Node):
                 self._step_target = forward_target(
                     position, self._heading_enu, float(step.params.get('meters', 0.0)))
             self._run_goto(position, self._step_target)
+        elif step.type == 'yaw':
+            self._run_yaw(step, position)
+        elif step.type == 'scan':
+            self._run_scan(step, position, now)
         elif step.type == 'hover':
             self._run_hover(step, position, now)
         elif step.type == 'search':
@@ -613,6 +628,42 @@ class TaskExecutor(Node):
             self._advance_step()
             return
         self._publish_velocity(decision.east, decision.north, 0.0)
+
+    def _run_yaw(self, step, position) -> None:
+        if self._heading_enu is None:
+            return
+        if self._yaw_target_enu is None:
+            self._yaw_target_enu = (self._heading_enu
+                                    + math.radians(float(step.params.get('degrees', 90.0))))
+            self._report('yaw_start',
+                         target_enu_deg=round(math.degrees(self._yaw_target_enu), 1))
+        rate, done = yaw_rate_to_target(
+            self._heading_enu, self._yaw_target_enu,
+            max_rate_rad_s=math.radians(float(step.params.get('rate_deg_s', 20.0))),
+            tolerance_rad=math.radians(3.0))
+        if done:
+            self._stop_velocity()
+            self._report('yaw_complete',
+                         heading_enu_deg=round(math.degrees(self._heading_enu), 1))
+            self._advance_step()
+            return
+        self._publish_velocity(0.0, 0.0, 0.0, yaw_rate=rate)
+
+    def _run_scan(self, step, position, now) -> None:
+        if self._target_hold_until > now:
+            self._stop_velocity()
+            return
+        seconds = float(step.params.get('seconds', 20.0))
+        if now - self._step_started >= seconds:
+            self._stop_velocity()
+            self._report('scan_complete', seconds=seconds,
+                         heading_enu_deg=(None if self._heading_enu is None
+                                          else round(math.degrees(self._heading_enu), 1)))
+            self._advance_step()
+            return
+        self._publish_velocity(
+            0.0, 0.0, 0.0,
+            yaw_rate=math.radians(float(step.params.get('rate_deg_s', 15.0))))
 
     def _run_hover(self, step, position, now) -> None:
         self._publish_target(position[0], position[1], position[2])
@@ -691,14 +742,15 @@ class TaskExecutor(Node):
         pose.pose.orientation.w = 1.0
         self._target_pub.publish(pose)
 
-    def _publish_velocity(self, east: float, north: float, up: float) -> None:
+    def _publish_velocity(self, east: float, north: float, up: float,
+                          yaw_rate: float = 0.0) -> None:
         if self._dry_run:
             return
         msg = Twist()
         msg.linear.x = float(east)
         msg.linear.y = float(north)
         msg.linear.z = float(up)
-        msg.angular.z = 0.0
+        msg.angular.z = float(yaw_rate)
         self._velocity_pub.publish(msg)
 
     def _stop_velocity(self) -> None:
