@@ -72,6 +72,9 @@ SIMCHECK_TIMEOUT=80 SIMCHECK_TAKEOVER_AFTER=14 \
 
 每个场景最后都会打印事件序列与 `PASS/FAIL`（退出码 0 = PASS）。
 
+> `simcheck` 默认跑在 **ROS_DOMAIN_ID=77**，与真实栈隔离；真实 PX4/bridge 在线时
+> 默认拒绝启动（exit 2），确需并跑设 `SIMCHECK_ALLOW_LIVE=1`。
+
 ## 2. Step 1：只解析，不飞（随时可演示）
 
 ```bash
@@ -194,4 +197,5 @@ pkill -f flight_supervisor || true
 | 场景里没有人 | 只能验证"目标物"检测，不能宣称人员检测 | 需要给场景加人物/假人，或换有人的环境 |
 | 规则解析覆盖面有限 | 复杂/歧义指令会被拒绝 | 拒绝是**预期行为**；后续换 VLM parser，接口不变；`--remote-intent` 已定义合并契约 |
 | 首条 arm 依赖 0.5 s 静置 | `arm_settle_s` 已默认开启；否则首条 ACK 可能丢 | 若首条命令无 ACK，先看 `command_timeout` 与 DDS 订阅匹配 |
+| 实机电池检查 | SITL 无电池读数时按 unknown/warn | 实机设 `require_battery:=true` + `min_battery_ratio` |
 | 搜索步骤未飞验 | 起飞/悬停/降落、向前/返航已飞通；搜索航点尚未实飞 | 先小半径（r=3 m）验证，再放大 |

@@ -15,6 +15,48 @@
 
 ---
 
+## [2026-10-18] P1 安全加固：arm 前健康检查 + 自检域隔离 + 高度门帧标签
+
+### 新增
+
+- `mission/health.py`：起飞前健康检查（纯逻辑）——PX4 状态新鲜、本地位置有效/新鲜、
+  `pre_flight_checks_pass`、failsafe、电池（可选 require）五项；返回逐项结果与失败原因。
+- 执行器订阅 `/fmu/out/battery_status_v1`；PHASE_ARM 在 `arm_settle` 后先过健康检查，
+  **不通过就不发 arm**（fail-closed），报告/状态新增 `health_check` 与 `health`。
+- `scripts/task_executor_simcheck.sh`：
+  - 默认 `ROS_DOMAIN_ID=77`，与真实栈物理隔离；
+  - 保留"检测到真实 PX4/offboard_bridge 默认拒绝"的互锁（`SIMCHECK_ALLOW_LIVE=1` 才并跑）。
+- `scripts/vlm_closed_loop.py`：高度门/CSV 补帧标签 `px4_frame=LCL`、`truth_frame=TRUTH`、
+  `gate_frame=LCL|TRUTH`；`height_source=airsim` 时打印"TRUTH 仅诊断"警告；
+  SEEK/DESCEND 日志带帧。
+
+### 验证
+
+```text
+· 单测：mission 86 passed；全包 213 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 214）
+· 真机（起飞 2m→悬停 5s→降落）：
+  health_check 在 0.53/1.63 s 因 status/position 未就绪而拒绝 arm；
+  2.03 s 通过（px4_status age=0.10s、position age=0.02s、preflight=True、failsafe=False、
+  battery=unknown/warn）→ arm ACK 0.008 s、offboard ACK 0.012 s；
+  takeoff LCL 1.986 / REL 2.0 → done；arming_state=1、landed=true。
+  报告：logs/tasks/report_20261018-095424-586.jsonl
+· 互锁：真实栈在线时 simcheck 默认 exit 2、fake 进程 0；
+  SIMCHECK_ALLOW_LIVE=1 + 域 77 时 simcheck PASS，真机仍 arming_state=1、landed=true。
+· 假 PX4 自检（域 77）：health_check → command_ack → command_completed → done PASS。
+```
+
+### 已知问题
+
+- SITL 的 `battery_status_v1` 无消息 → 电池按未知处理（warn，不阻断）；
+  实机/有电池仿真应设 `require_battery:=true` 并给阈值。
+- 旧驱动 `vlm_closed_loop.py` 只补了帧标签与警告，**未复飞**；高度门数据源仍是
+  px4/airsim 二选一，下一步可切到"相对高度"并统一到 `mission.altitude`。
+- 健康检查目前不查 EKF flags（只依赖 `pre_flight_checks_pass` + 位置新鲜）；
+  若需要更严格，可接 `estimator_status_flags`。
+
+---
+
 ## [2026-10-18] 安全事件：simcheck 与真实栈同域误 arm；已加互锁 + 安全案例 6
 
 ### 事件

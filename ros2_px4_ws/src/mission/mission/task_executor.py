@@ -30,7 +30,7 @@ from geometry_msgs.msg import Twist
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
 from px4_interface.qos import px4_qos
 from px4_interface.state import Px4StateMonitor
-from px4_msgs.msg import VehicleCommand, VehicleCommandAck
+from px4_msgs.msg import BatteryStatus, VehicleCommand, VehicleCommandAck
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
 
@@ -41,6 +41,7 @@ from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_targ
                             inside_geofence,
                             search_waypoints, step_timeout_s, velocity_toward,
                             yaw_rate_to_target)
+from .health import check_prearm
 from .search_pattern import estimate_duration_s
 from .task_spec import TaskError, TaskSpec
 
@@ -102,6 +103,9 @@ class TaskExecutor(Node):
         self.declare_parameter('ack_topic', '/fmu/out/vehicle_command_ack_v1')
         self.declare_parameter('ack_timeout_s', 1.5)
         self.declare_parameter('ack_max_attempts', 3)
+        self.declare_parameter('min_battery_ratio', 0.3)
+        self.declare_parameter('require_battery', False)
+        self.declare_parameter('max_position_age_s', 0.5)
 
         self._dry_run = bool(self.get_parameter('dry_run').value)
         self._hold_on_target = bool(self.get_parameter('hold_on_target').value)
@@ -121,6 +125,14 @@ class TaskExecutor(Node):
         self._exit_on_done = bool(self.get_parameter('exit_on_done').value)
         self._ack_timeout = float(self.get_parameter('ack_timeout_s').value)
         self._ack_max_attempts = max(int(self.get_parameter('ack_max_attempts').value), 1)
+        self._min_battery = float(self.get_parameter('min_battery_ratio').value)
+        self._require_battery = bool(self.get_parameter('require_battery').value)
+        self._max_position_age = float(self.get_parameter('max_position_age_s').value)
+        self._battery_ratio = None
+        self._battery_warning = None
+        self._battery_at = 0.0
+        self._last_health = None
+        self._last_health_at = 0.0
         self._tracker = CommandTracker(ack_timeout_s=self._ack_timeout,
                                        max_attempts=self._ack_max_attempts)
         self._ground_up_lcl = None       # 起飞点在地面时的 PX4 local up（LCL 帧）
@@ -181,6 +193,8 @@ class TaskExecutor(Node):
         self.create_subscription(
             VehicleCommandAck, str(self.get_parameter('ack_topic').value),
             self._on_command_ack, px4_qos())
+        self.create_subscription(
+            BatteryStatus, '/fmu/out/battery_status_v1', self._on_battery, px4_qos())
 
         self._open_report()
         self._load_task()
@@ -229,6 +243,41 @@ class TaskExecutor(Node):
                 self._spec.altitude_m, self._spec.altitude_frame, 'task')
         self._report_handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
         self._report_handle.flush()
+
+    def _on_battery(self, msg: BatteryStatus) -> None:
+        remaining = float(msg.remaining)
+        self._battery_ratio = remaining if remaining >= 0.0 else None
+        self._battery_warning = int(msg.warning)
+        self._battery_at = time.monotonic()
+
+    def _prearm_report(self):
+        state = self._monitor.snapshot()
+        battery_age = (None if self._battery_at <= 0.0
+                       else time.monotonic() - self._battery_at)
+        return check_prearm(
+            status_fresh=self._monitor.status_fresh(),
+            status_age_s=self._monitor.status_age_s(),
+            position_valid=state.position_ned is not None,
+            position_age_s=self._monitor.position_age_s(),
+            preflight_ok=state.pre_flight_checks_pass,
+            failsafe=state.failsafe,
+            battery_ratio=self._battery_ratio,
+            battery_warning=self._battery_warning,
+            battery_age_s=battery_age,
+            min_battery_ratio=self._min_battery,
+            require_battery=self._require_battery,
+            max_position_age_s=self._max_position_age)
+
+    def _publish_health(self, report, now: float) -> None:
+        payload = report.to_dict()
+        if payload != self._last_health or now - self._last_health_at > 1.0:
+            self._last_health = payload
+            self._last_health_at = now
+            self._report('health_check', **payload)
+            if not report.ok:
+                self.get_logger().warn(
+                    '起飞前检查未通过：' + '；'.join(report.reasons()),
+                    throttle_duration_sec=1.0)
 
     def _on_command_ack(self, msg: VehicleCommandAck) -> None:
         record = self._tracker.on_ack(msg.command, msg.result)
@@ -456,6 +505,12 @@ class TaskExecutor(Node):
             # 启动静置：等 ACK 订阅/命令链路稳定后再发第一条 arm，
             # 避免第一条命令的 ACK 在 DDS 匹配完成前丢失（2026-10-18 实测）。
             if self._phase_elapsed() < self._arm_settle:
+                return
+            report = self._prearm_report()
+            self._publish_health(report, now)
+            if not report.ok:
+                if self._phase_elapsed() > self._arm_timeout:
+                    self._abort('起飞前检查未通过：' + '；'.join(report.reasons()))
                 return
             self._send_command('arm')
             if state.armed:
@@ -849,6 +904,7 @@ class TaskExecutor(Node):
             'altitude_lcl': altitude_dict(None if position is None else position[2],
                                           'LCL', 'px4_local'),
             'commands': self._tracker.to_dicts(),
+            'health': self._last_health,
         }
         if self._spec is not None:
             payload['task_altitude'] = altitude_dict(

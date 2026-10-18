@@ -25,7 +25,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped, Twist
 from px4_interface.frames import enu_to_ned, enu_yaw_to_ned_yaw
 from px4_interface.qos import px4_qos
-from px4_msgs.msg import (VehicleCommand, VehicleCommandAck,
+from px4_msgs.msg import (BatteryStatus, VehicleCommand, VehicleCommandAck,
                           VehicleLocalPosition, VehicleStatus)
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -69,6 +69,8 @@ class FakePx4(Node):
         self._position_pub = self.create_publisher(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1', qos)
         self._map_pub = self.create_publisher(String, '/local_map/status', 5)
+        self._battery_pub = self.create_publisher(
+            BatteryStatus, '/fmu/out/battery_status_v1', qos)
         self._ack_pub = self.create_publisher(
             VehicleCommandAck, '/fmu/out/vehicle_command_ack_v1', qos)
 
@@ -215,6 +217,13 @@ class FakePx4(Node):
         position.xy_valid = True
         position.z_valid = True
         self._position_pub.publish(position)
+
+        battery = BatteryStatus()
+        battery.timestamp = status.timestamp
+        battery.remaining = 0.9
+        battery.warning = 0
+        battery.connected = True
+        self._battery_pub.publish(battery)
 
     # ------------------------------------------------------------------
 

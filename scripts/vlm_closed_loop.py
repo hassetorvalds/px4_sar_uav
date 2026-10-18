@@ -276,6 +276,10 @@ class ClosedLoopBase(FlightCheckBase):
             self.get_logger().warn(
                 f'height_source={self._height_source!r} 不识别 → 回退 px4（可选 px4/airsim）')
             self._height_source = 'px4'
+        if self._height_source == 'airsim':
+            self.get_logger().warn(
+                'height_source=airsim：用 AirSim 真值（TRUTH）参与高度门，'
+                '仅限 SITL 诊断，不要用于实机控制')
         self._echo_probes_used = 0
         self._echo_back_total = 0.0
         self.enable_pub = self.create_publisher(
@@ -527,6 +531,9 @@ class ClosedLoopBase(FlightCheckBase):
                             if (self.px4_z is not None
                                 and self._truth_up_local is not None) else None),
             'height_src': self._height_source,
+            'px4_frame': 'LCL',
+            'truth_frame': 'TRUTH',
+            'gate_frame': ('TRUTH' if self._height_source == 'airsim' else 'LCL'),
             'px4_x': None if math.isnan(self.px4_x) else round(self.px4_x, 3),
             'px4_y': None if math.isnan(self.px4_y) else round(self.px4_y, 3),
             'drift_m': None if drift is None else round(drift, 3),
@@ -565,6 +572,9 @@ class ClosedLoopBase(FlightCheckBase):
                             if (self.px4_z is not None
                                 and self._truth_up_local is not None) else None),
             'height_src': self._height_source,
+            'px4_frame': 'LCL',
+            'truth_frame': 'TRUTH',
+            'gate_frame': ('TRUTH' if self._height_source == 'airsim' else 'LCL'),
             'px4_x': None if math.isnan(self.px4_x) else round(self.px4_x, 3),
             'px4_y': None if math.isnan(self.px4_y) else round(self.px4_y, 3),
             'forward_clear_m': (self.clearance[0] if self.clearance else None),
@@ -661,6 +671,10 @@ class ClosedLoopBase(FlightCheckBase):
             self._truth_up0 = truth_up
         if self._truth_up0 is not None:
             self._truth_up_local = truth_up - self._truth_up0
+
+    def _gate_frame(self):
+        """当前高度门使用的帧：LCL（PX4 local）或 TRUTH（仅 SITL 诊断）。"""
+        return 'TRUTH' if self._height_source == 'airsim' else 'LCL'
 
     def _flight_up(self, fallback=None):
         """高度门使用的"飞行高度"（与 height_source 一致）。"""
@@ -1038,7 +1052,7 @@ class ClosedLoopBase(FlightCheckBase):
                         'OK' if c['ok'] else c['fail']) for c in
                        sorted(candidates, key=lambda c: c['median'])]
             self.get_logger().info(
-                f'深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 顶部z, 底部z, 判定）'
+                f'深度寻障统计（扇区, 中位 m, 点数, 垂跨度°, MAD m, 顶部z({self._gate_frame()}), 底部z, 判定）'
                 f'[门限：点≥{self._seek_min_points}/跨度≥{self._seek_min_span}°/'
                 f'MAD≤{self._seek_max_mad}/中位≥{self._seek_min_median}m]：' + str(summary))
             if not good:
@@ -1195,7 +1209,7 @@ class ClosedLoopBase(FlightCheckBase):
                     self.get_logger().info(
                         f'候选点高度门：簇 z=[{cluster_bot:.1f}, {cluster_top:.1f}] m、'
                         f'水平跨度 {self._cluster_span_h:.1f} m，飞行高度 {flight_up:.1f} m'
-                        f'（源 {self._height_source}），'
+                        f'（源 {self._height_source}，帧 {self._gate_frame()}），'
                         f'顶部净空 {gap:.2f} m（可飞越阈值 {self._overfly_clearance:.2f} m）')
                     if gap >= self._overfly_clearance:
                         self._overflyable += 1

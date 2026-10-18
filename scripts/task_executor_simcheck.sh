@@ -12,6 +12,11 @@ _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_dir}/env.sh" >/dev/null 2>&1
 cd "${PX4_SAR_ROOT}"
 
+# ============ ROS 域隔离（2026-10-18 误 arm 事故后加） ============
+# 假 PX4/自检执行器默认跑在独立 ROS_DOMAIN_ID，物理上不可能与真实栈共享
+# /fmu/out 或 /offboard_bridge/command。需要与真实栈同域时显式覆盖。
+export ROS_DOMAIN_ID="${SIMCHECK_DOMAIN_ID:-77}"
+
 # ============ 安全互锁（2026-10-18 实测事故后加） ============
 # 假 PX4 与真实栈共用 /offboard_bridge/command 和 /fmu/out：
 # 真实 bridge 在跑时，自检执行器的 arm/offboard 会被转发给真 PX4，可能误起飞。
@@ -41,6 +46,7 @@ sim_duration="$((exec_timeout + 10))"
 
 python3 scripts/fly_task.py "${task_text}" --json > "${task_file}"
 
+echo "[simcheck] ROS_DOMAIN_ID=${ROS_DOMAIN_ID}（与真实栈隔离）"
 echo "[simcheck] task=${task_file}"
 echo "[simcheck] report=${report}"
 
