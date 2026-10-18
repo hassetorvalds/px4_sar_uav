@@ -15,6 +15,38 @@
 
 ---
 
+## [2026-10-18] 安全事件：simcheck 与真实栈同域误 arm；已加互锁 + 安全案例 6
+
+### 事件
+
+真实栈在线时运行 `task_executor_simcheck.sh`。假 PX4 与真实栈共用
+`/offboard_bridge/command` 和 `/fmu/out`，自检执行器的 `arm/offboard` 被真实
+`offboard_bridge` 转发给真 PX4，真机被 arm 到 OFFBOARD，AirSim 高度约 1.8 m。
+
+### 处置
+
+- 立即 kill 假 PX4/自检执行器；
+- 向 `/offboard_bridge/command` 发 `land_fast`；
+- 8 s 后：`arming_state=1`、`landed=true`、`at_rest=true`、AirSim z≈-0.06 m；
+  无碰撞、无损伤。
+
+### 修复
+
+- `scripts/task_executor_simcheck.sh` 增加**安全互锁**：检测到真实 PX4 或
+  `offboard_bridge` 在跑时默认拒绝启动（exit 2）；确需并跑必须显式
+  `SIMCHECK_ALLOW_LIVE=1`；
+- `docs/safety_casebook.md` 增加案例 6；
+- 通则：假飞行器/回放/自检必须与真实控制链路隔离（不同 `ROS_DOMAIN_ID` 或显式互锁）。
+
+### 验证
+
+```text
+· 真实栈在线时运行 simcheck → 退出码 2，fake_px4_sim 进程数 0（互锁生效）
+· 误 arm 后 land_fast → arming_state=1、landed=true、AirSim z≈-0.06 m
+```
+
+---
+
 ## [2026-10-18] 搜索+检测闭环：yaw/scan 原语 + victim_detector 接入（真机）
 
 ### 新增

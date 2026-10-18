@@ -159,6 +159,10 @@ class TaskSpec:
                          SCAN_SECONDS_MIN, SCAN_SECONDS_MAX)
             _check_range('scan.rate_deg_s', float(p.get('rate_deg_s', 15.0)),
                          YAW_RATE_MIN_DEG_S, YAW_RATE_MAX_DEG_S)
+            _check_range('scan.step_deg', float(p.get('step_deg', 45.0)),
+                         10.0, 90.0)
+            _check_range('scan.dwell_s', float(p.get('dwell_s', 1.5)),
+                         0.5, 5.0)
         elif step.type == 'hover':
             _check_range('hover.seconds', float(p.get('seconds', 5.0)),
                          HOVER_MIN_S, HOVER_MAX_S)

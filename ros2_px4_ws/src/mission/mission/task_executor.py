@@ -134,6 +134,9 @@ class TaskExecutor(Node):
         self._step_started = time.monotonic()
         self._step_target = None
         self._yaw_target_enu = None
+        self._scan_phase = 'dwell'
+        self._scan_target_enu = None
+        self._scan_dwell_until = 0.0
         self._search_wps = []
         self._search_index = 0
         self._takeoff_stable_at = None
@@ -309,6 +312,9 @@ class TaskExecutor(Node):
         self._step_index = 0
         self._step_target = None
         self._yaw_target_enu = None
+        self._scan_phase = 'dwell'
+        self._scan_target_enu = None
+        self._scan_dwell_until = 0.0
         self._search_wps = []
         self._search_index = 0
         self._takeoff_stable_at = None
@@ -517,6 +523,11 @@ class TaskExecutor(Node):
         self._target_hold_until = 0.0
         self._target_hold_count = 0
         step = self._current_step()
+        self._scan_phase = 'dwell'
+        self._scan_target_enu = None
+        self._scan_dwell_until = (time.monotonic()
+                                  + float(step.params.get('dwell_s', 1.5))
+                                  if step is not None else 0.0)
         if step is None:
             self._begin_land()
             return
@@ -650,6 +661,11 @@ class TaskExecutor(Node):
         self._publish_velocity(0.0, 0.0, 0.0, yaw_rate=rate)
 
     def _run_scan(self, step, position, now) -> None:
+        """步进+驻留扫描：转 step_deg，停 dwell_s，重复，直到总时长用完。
+
+        连续匀速扫（15°/s）时，远处小目标在视野里只停留不到一帧；驻留 1.5 s
+        约等于相机 2.5 Hz 的 3–4 帧，刚好够检测器做 3 帧确认。
+        """
         if self._target_hold_until > now:
             self._stop_velocity()
             return
@@ -661,9 +677,28 @@ class TaskExecutor(Node):
                                           else round(math.degrees(self._heading_enu), 1)))
             self._advance_step()
             return
-        self._publish_velocity(
-            0.0, 0.0, 0.0,
-            yaw_rate=math.radians(float(step.params.get('rate_deg_s', 15.0))))
+        if self._heading_enu is None:
+            return
+        dwell = float(step.params.get('dwell_s', 1.5))
+        step_deg = float(step.params.get('step_deg', 45.0))
+        rate = math.radians(float(step.params.get('rate_deg_s', 20.0)))
+        if self._scan_phase == 'dwell':
+            self._stop_velocity()
+            if now >= self._scan_dwell_until:
+                self._scan_target_enu = self._heading_enu + math.radians(step_deg)
+                self._scan_phase = 'turn'
+            return
+        yaw_rate, done = yaw_rate_to_target(
+            self._heading_enu, self._scan_target_enu,
+            max_rate_rad_s=rate, tolerance_rad=math.radians(3.0))
+        if done:
+            self._stop_velocity()
+            self._scan_phase = 'dwell'
+            self._scan_dwell_until = now + dwell
+            self._report('scan_dwell',
+                         heading_enu_deg=round(math.degrees(self._heading_enu), 1))
+            return
+        self._publish_velocity(0.0, 0.0, 0.0, yaw_rate=yaw_rate)
 
     def _run_hover(self, step, position, now) -> None:
         self._publish_target(position[0], position[1], position[2])

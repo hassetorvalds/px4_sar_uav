@@ -67,3 +67,19 @@
 · 不调用 AirSim reset()（会断 lockstep）；重启 PX4 ≠ 把飞机搬回世界出生点（只重设本地原点）；
 · 窗口类判据必须 ≥ 对应的时间预算（例：闭合窗口 ≥ 保持+脱困；20 帧 ≈9 s < 20 s+10 s ≈44+22 帧）。
 ```
+
+## 案例 6：同域跑假 PX4 自检 → 真机被误 arm（2026-10-18）
+
+```text
+现象：真实栈在线（PX4 + offboard_bridge），另起 task_executor_simcheck.sh；
+      自检执行器把 arm/offboard 发到共享 /offboard_bridge/command，真实 bridge 转发给真 PX4；
+      真机 arming_state=2、nav_state=14，AirSim z=-1.77（约 1.8 m 高）。
+根因：假 PX4 与真栈共用 ROS 域和话题；自检没有检查真实链路是否在跑；
+      bridge 对命令来源没有隔离（它只认话题，不认进程）。
+修法：simcheck 启动前检查 px4/offboard_bridge，默认拒绝（exit 2）；
+      SIMCHECK_ALLOW_LIVE=1 仅显式覆盖。
+处置：kill 假 PX4/自检执行器 → 发 /offboard_bridge/command land_fast
+      → 8 s 后 arming_state=1、landed=true、AirSim z≈-0.06；无碰撞/无损伤。
+通则：任何"假飞行器/回放/自检"必须与真实控制链路隔离
+      （不同 ROS_DOMAIN_ID，或显式互锁）；共享话题的半实物测试默认拒绝。
+```

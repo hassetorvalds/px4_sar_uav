@@ -12,6 +12,23 @@ _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_dir}/env.sh" >/dev/null 2>&1
 cd "${PX4_SAR_ROOT}"
 
+# ============ 安全互锁（2026-10-18 实测事故后加） ============
+# 假 PX4 与真实栈共用 /offboard_bridge/command 和 /fmu/out：
+# 真实 bridge 在跑时，自检执行器的 arm/offboard 会被转发给真 PX4，可能误起飞。
+# 默认拒绝在真实 PX4/offboard_bridge 运行时启动自检；确需并跑请显式设
+# SIMCHECK_ALLOW_LIVE=1（仅限已确认安全的场景）。
+if [ "${SIMCHECK_ALLOW_LIVE:-0}" != "1" ]; then
+    live=0
+    pgrep -f "px4_sitl_default/bin/p[x]4" >/dev/null 2>&1 && live=1
+    pgrep -f "px4_interface/offboard_bridg[e]" >/dev/null 2>&1 && live=1
+    if [ "$live" -eq 1 ]; then
+        echo "[simcheck] 拒绝运行：检测到真实 PX4 / offboard_bridge 在跑。" >&2
+        echo "           simcheck 与真实栈共用话题，可能把 arm/offboard 转发给真机。" >&2
+        echo "           请先 scripts/dev_chain.sh stop；确需并跑请设 SIMCHECK_ALLOW_LIVE=1。" >&2
+        exit 2
+    fi
+fi
+
 stamp="$(date +%Y%m%d-%H%M%S)"
 mkdir -p logs/tasks
 task_file="logs/tasks/simcheck_${stamp}.task.json"
