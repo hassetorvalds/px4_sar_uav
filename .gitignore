@@ -38,3 +38,7 @@ venv/
 .env
 *.pem
 *.key
+
+# ---------- 工具会话记录 / 外部审查（本地留存，不入库） ----------
+codex-session-*.md
+px4_sar_uav_review*.md
