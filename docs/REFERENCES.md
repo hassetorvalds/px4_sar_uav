@@ -24,6 +24,14 @@ Offboard 丢失策略 / 四层落地兜底，证据在 [RESULTS.md](RESULTS.md) 
 | `Auterion/px4-ros2-interface-lib` | 3.5 MB | **BSD-3-Clause** | 外部模式（ModeBase）、任务执行器（MissionExecutor）、健康/解锁检查、failsafe 延迟 | **重点借鉴设计**，暂不换库 |
 | `PX4/px4_ros_com` | 428 KB | **BSD-3-Clause** | 官方 Offboard 示例、QoS/时间戳/话题命名基线 | 作为回归对照，不引入 |
 | `alireza787b/mavsdk_drone_show` | 92 MB | **PolyForm 多许可（非宽松）** | Simurgh 的 typed intent / 确认门 / 命令生命周期 / 证据链；QuickScout 的 SAR 覆盖规划与发现物模型 | **只借概念，不抄代码** |
+| `Jaeyoung-Lim/px4-offboard` | 320 KB | **BSD-3-Clause** | 最小 Offboard 示例 + RViz visualizer | 参考 visualizer；控制层我们已更强 |
+| `AhmedHisham1/UAV-Search` | 2.3 MB | **无 LICENSE（默认保留所有权利）** | 学生 SAR 项目：A* 离线规划 + MAVSDK 任务；YOLO/SSD 检测；**正下视相机**像素→全局定位 | **只借思路**，不复制 |
+| `JacopoPan/aerial-autonomy-stack` | 3.1 MB（partial） | **MIT** | **ROS 2 Action 飞行原语 + YAML 行为树任务 + 黑板上条件 + 弓字搜索/锁定** | **首选架构参考**；可借鉴代码（保留版权） |
+| `casy-lab/PX4_Firmware` | 336 KB（partial，未 checkout） | PX4 原 BSD-3 派生 | 雪崩 ARVA 的 extremum seeking + IMB 控制（学术分支 `airborne`） | 领域不同，**仅概念参考** |
+
+> `PX4_Firmware` 的默认分支只是 PX4 1.12 派生文档；真正的 ARVA/ES 代码在 `airborne` 分支的
+> `src/modules/extremum_seeking` 与 `mc_att_control/IMBControl`，需要单独 fetch 该分支才有内容。
+> 与当前"视觉/语言指挥"方向不同，未继续深入。
 
 未拉（下一阶段按需）：`HKUST-Aerial-Robotics/Fast-Planner`、`FUEL`（规划/探索，ROS 1 为主，
 注意 GPL 类许可）、`vlmaps`、`vlm_nav`（语义/VLM 导航）。
@@ -149,12 +157,73 @@ intent frame、provenance、显式确认计划、命令生命周期、证据摘�
 对照我们的 `mission/search_pattern.py`：目前只是**外接正方形的固定弓字形**，
 没有多边形、扫掠角、重叠率、转场腿、发现物模型。这些是下一阶段升级点，不是现在必须做。
 
+### 4.5 你指定的另外三个仓库（2026-10-18 第二轮）
+
+#### `Jaeyoung-Lim/px4-offboard`（BSD-3，320 KB）
+
+- `px4_offboard/offboard_control.py`：20 Hz 位置设定点 + 状态回调；**不发 arm/offboard
+  命令**，假定由 QGC 切模式并解锁；没有 ACK/看门狗。
+- `px4_offboard/visualizer.py`：RViz 显示 vehicle pose / velocity / path / setpoint path，
+  带 `path_clearing_timeout`。**这是我们 demo 可以补的可视化参考**。
+- 结论：控制层我们已更强；**只借 visualizer 的"计划轨迹 vs 实际轨迹"可视化**。
+
+#### `AhmedHisham1/UAV-Search`（无 LICENSE，2.3 MB）
+
+学生毕业设计，VTOL + MAVSDK + Jetson Nano 的 SAR：
+
+- **A\* 2D 离线规划**：在地图上点选禁飞区，规划 home→goal，路径作为 Mission Waypoints
+  上传（`planning_utils.py` / `path_planning.py` / `mavsdk_utils.py`）。
+- **检测**：YOLOv3 / SSD-MobileNet / TensorRT，面向 UAV Challenge 的"人"。
+- **正下视相机定位**：像素中心 + 无人机位置/航向 + 高度，用三角相似换算全局坐标；
+  假设相机始终朝下（`cv_utils.py`）。
+
+对照我们：我们用**深度图 + 相机内参 + 倾斜相机**做像素→ENU（更通用）；
+他们的"正下视 + 高度"是更简单但受限的特例。结论：**只借思路**（离线规划→任务上传、
+检测→定位的数据流），代码不可复制（无许可）。
+
+#### `JacopoPan/aerial-autonomy-stack`（MIT，3.1 MB partial）——**首选架构参考**
+
+这是三份新仓库里最值得深入看的：
+
+- `aircraft/aircraft_ws/src/autopilot_interface_msgs/action/`：
+  **ROS 2 Action 飞行原语**（`Takeoff / Land / Orbit / Offboard`），goal/result/feedback；
+- `aircraft/aircraft_ws/src/mission/mission/behaviors.py`：
+  `BaseActionBehavior` 非阻塞 action client：等 server → 发 goal → 处理
+  `accepted/rejected`（最多重试 20 tick）→ 等 result → **中断时 cancel_goal_async**；
+- `tree_builder.py` + `aircraft_resources/missions/*.yaml`：
+  **YAML → py_trees 行为树**（Sequence/Selector/Repeat），动作参数化；
+- `mission_node.py`：黑板上放 `yolo_detections / ground_tracks / lat/lon/alt`，
+  用 `check_blackboard` 条件节点等"检测到目标"再动作；
+- `offboard_control/src/px4_offboard.cpp`：
+  `traj_ref_lawnmower_search()` —— 东西向扫、向北换行、leg separation、速度上限；
+  检测 fix 要 **6 次一致** 才动作、10 s 过期、保持 3 m 地面距离/2.5 m 高度"盯着看"；
+- 同时支持 PX4 Offboard、`px4-ros2-interface-lib` 外部模式和 ArduPilot/Betaflight。
+
+**对我们的直接启发**：
+
+| AAS 做法 | 我们的现状 | 建议 |
+|---|---|---|
+| ROS 2 Action 原语 + cancel | `String` 命令 + 阶段超时 | **P1 改成 action 接口**（takeoff/land/goto/hover/search），abort 走 cancel |
+| YAML 行为树任务 | flat `TaskSpec.steps` | P2 可选；先用"step 列表 + Selector"即可 |
+| 黑板上等检测 | `~/best` 回调 + 悬停 | 可借"条件节点"概念，但不必上 py_trees |
+| 弓字搜索 + fix 确认/stand-off | `lawnmower` + tracker 3 帧 | 借参数：确认帧数、过期、保持距离/高度 |
+| Action feedback | JSONL 报告 | 加 feedback 进度（当前 step/剩余航点） |
+
+#### `casy-lab/PX4_Firmware`（PX4 派生，学术分支）
+
+雪崩救援 ARVA 的 **extremum seeking**（寻找信号极值）+ IMB 姿态控制。它的"搜索"是
+**信号源搜索**，不是视觉/语言任务；与当前 demo 方向不同。结论：**仅作领域概念参考**，
+不纳入代码参考；若以后做"信号源/信标搜索"再回来看 `airborne` 分支。
+
 ## 5. 差距清单（按优先级）
 
 | 维度 | 我们现在 | 参考做法 | 建议 | 优先级 |
 |---|---|---|---|---|
 | 意图/确认 | CLI `FLY_TASK_CONFIRM=1` | typed intent frame + operator plan + 确认门 | 增加 IntentFrame（含 provenance/confidence/missing）与"计划确认"输出 | **P0** |
 | 命令生命周期 | bridge 日志有 ACK，执行器不跟踪 | queued→awaiting_ack→accepted→executing→… | 执行器跟踪每条命令的 ACK/超时/结果，写进报告 | **P0** |
+| 飞行原语接口 | `String` 命令 + 阶段超时 | **ROS 2 Action**（takeoff/land/orbit/offboard，cancel/feedback） | AAS 的 `BaseActionBehavior`：P1 改成 action 接口，abort 走 cancel | P1 |
+| 任务编排 | flat steps | YAML → py_trees（Sequence/Selector/Repeat） | 先保留 step 列表；需要条件/回退时再引入 BT 或 Selector | P2 |
+| 搜索锁定 | 确认 3 帧 + 悬停 5 s | 6 次一致、10 s 过期、3 m/2.5 m stand-off | 借 AAS 的 fix 确认/过期/stand-off 参数 | P2 |
 | 高度帧 | `px4_z`/ENU 裸值混用 | REL/LCL/BARO/MSL 标注，unknown 不猜 | TaskSpec/报告/高度门全部带 frame 标签 | **P0** |
 | 解锁前健康检查 | `preflight.sh` + 飞控检查 | `checkArmingAndRunConditions` | 执行器 arm 前做一次显式检查（位置新鲜/EKF/围栏/电池） | P1 |
 | 任务 schema | flat steps | `version + defaults + items` | 兼容式对齐（保留 steps 加载器，新增 defaults/items） | P1 |
@@ -200,11 +269,15 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 **第 2 步（P1）**
 - TaskSpec 兼容式对齐 `defaults + items`（保留旧 steps 加载）；
 - arm 前健康检查；
+- **飞行原语改 ROS 2 Action**（takeoff/land/goto/hover/search + cancel/feedback），
+  参考 AAS `autopilot_interface_msgs/action` 与 `BaseActionBehavior`；
 - 报告生成 Markdown 证据摘要（含 ULog 路径/哈希）。
 
 **第 3 步（P2）**
 - 覆盖规划升级（多边形/扫掠角/重叠/转场腿）；
 - findings 模型（person/priority/status/confidence）；
+- 搜索锁定参数对齐 AAS（确认帧数/过期/stand-off）；
+- 需要条件/回退时再引入 py_trees / YAML 任务；
 - 再谈 VLM 解析器替换（仍受"不得覆盖本地事实"约束）。
 
 **暂不做**
@@ -218,6 +291,10 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 |---|---|---|
 | `px4-ros2-interface-lib` | BSD-3-Clause | 可以（保留版权/许可声明） |
 | `px4_ros_com` | BSD-3-Clause | 可以（保留版权/许可声明） |
+| `Jaeyoung-Lim/px4-offboard` | BSD-3-Clause | 可以（保留版权/许可声明） |
+| `JacopoPan/aerial-autonomy-stack` | **MIT** | 可以（保留版权/许可声明） |
 | `mavsdk_drone_show` | PolyForm 多许可 | **不要直接复制**；只借概念/接口形状，自行实现 |
+| `AhmedHisham1/UAV-Search` | **无 LICENSE** | **不要复制**（默认保留所有权利）；只借思路 |
+| `casy-lab/PX4_Firmware` | PX4 BSD-3 派生 | 理论可复制，但领域不同；仅概念参考 |
 
 > 本文件只记录设计对照，不包含任何从参考仓库复制的代码。

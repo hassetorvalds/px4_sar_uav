@@ -53,10 +53,16 @@
 
 ### 新增
 
-- `docs/REFERENCES.md`：三份参考仓库的对照与设计结论（意图帧/确认门/命令生命周期/
+- `docs/REFERENCES.md`：参考仓库对照与设计结论（意图帧/确认门/命令生命周期/
   高度帧/覆盖规划/发现物模型；哪些借、哪些不借）。
-- 本地 `reference/` 克隆（已 gitignore）：`px4-ros2-interface-lib`（BSD-3）、
-  `px4_ros_com`（BSD-3）、`mavsdk_drone_show`（PolyForm，仅概念参考，未复制代码）。
+- 本地 `reference/` 克隆（已 gitignore）：
+  - `px4-ros2-interface-lib`（BSD-3）、`px4_ros_com`（BSD-3）；
+  - `mavsdk_drone_show`（PolyForm，仅概念参考，未复制代码）；
+  - `px4-offboard`（BSD-3，最小 Offboard + RViz visualizer）；
+  - `UAV-Search`（无 LICENSE，仅思路：正下视定位/离线规划→任务上传）；
+  - `aerial-autonomy-stack`（**MIT，首选架构参考**：ROS 2 Action 飞行原语 +
+    YAML 行为树 + 黑板上条件 + 弓字搜索的 fix 确认/stand-off）；
+  - `PX4_Firmware`（casy-lab，partial；雪崩 ARVA/ES 学术分支，领域不同，未深入）。
 
 ### 已知问题
 
