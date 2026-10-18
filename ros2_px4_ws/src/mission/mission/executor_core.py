@@ -73,6 +73,20 @@ def yaw_rate_to_target(current_enu: float, target_enu: float, *,
     return rate, False
 
 
+def altitude_hold_vz(target_up, current_up, *, gain: float = 0.6,
+                     max_rate_mps: float = 0.3) -> float:
+    """速度模式的高度保持：vz = clamp(gain * (target - current), ±max_rate)。
+
+    2026-10-18 实测：vz 恒 0 时高度会缓慢下沉；低到地面回波进入前向锥后
+    会触发净空门。显式 P 控制把高度拉回任务值。
+    """
+    if target_up is None or current_up is None:
+        return 0.0
+    return max(-float(max_rate_mps),
+               min(float(max_rate_mps),
+                   float(gain) * (float(target_up) - float(current_up))))
+
+
 def forward_target(current_enu, heading_enu: float, meters: float):
     """机体前向 ``meters`` 米对应的世界 ENU 目标点（高度保持不变）。"""
     return (float(current_enu[0]) + float(meters) * math.cos(heading_enu),

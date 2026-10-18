@@ -107,3 +107,12 @@ def test_yaw_rate_sign_and_done():
     rate, done = yaw_rate_to_target(math.radians(350), math.radians(10),
                                     max_rate_rad_s=1.0)
     assert rate > 0 and not done
+
+
+def test_altitude_hold_vz_clamped_and_sign():
+    from mission.executor_core import altitude_hold_vz
+
+    assert altitude_hold_vz(2.0, 2.0) == 0.0
+    assert altitude_hold_vz(2.0, 1.0) == pytest.approx(0.3)     # 需要上升，正 up
+    assert altitude_hold_vz(2.0, 5.0) == pytest.approx(-0.3)    # 需要下降
+    assert altitude_hold_vz(None, 1.0) == 0.0

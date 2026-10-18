@@ -126,6 +126,20 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py "起飞到 2 米，原地扫描 40 秒，
 预期报告：`target_confirmed world=[...]` → `scan_complete` → `land_fast → done`。
 目标为场景内橙色物体（实测 depth≈32 m）。
 
+**组合任务（搜索 + 步进扫描 + 发现）**：
+
+```bash
+FLY_TASK_CONFIRM=1 scripts/fly_task.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，原地扫描 30 秒，降落" \
+  --execute
+```
+
+预期：`search_waypoint 1/8 … 8/8` → `scan_dwell`（45° 一步，停 1.5 s）
+→ `target_confirmed world=[...]` → `scan_complete → done`。
+
+> 搜索区要放在**出生点以南/东**；朝北的航点会被前方净空门拦下（这是安全行为，
+> 不是 bug）。场景正前方约 2 m 处就是墙体。
+
 再飞**小半径搜索**（东南侧，避开正前方墙体）：
 
 ```bash

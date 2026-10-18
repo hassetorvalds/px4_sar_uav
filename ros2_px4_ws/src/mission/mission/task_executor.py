@@ -37,7 +37,8 @@ from std_msgs.msg import Bool, String
 from .altitude import format_altitude
 from .altitude import to_dict as altitude_dict
 from .command_tracker import CommandState, CommandTracker
-from .executor_core import (apply_clearance_gate, forward_target, inside_geofence,
+from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_target,
+                            inside_geofence,
                             search_waypoints, step_timeout_s, velocity_toward,
                             yaw_rate_to_target)
 from .search_pattern import estimate_duration_s
@@ -616,6 +617,24 @@ class TaskExecutor(Node):
         else:
             self._takeoff_stable_at = None
 
+    def _target_up_lcl(self):
+        """任务高度换算到 PX4 LCL 帧（REL → ground_lcl + altitude）。"""
+        if self._spec is None:
+            return None
+        if self._spec.altitude_frame == 'LCL':
+            return float(self._spec.altitude_m)
+        ground = self._ground_up_lcl if self._ground_up_lcl is not None else 0.0
+        return ground + float(self._spec.altitude_m)
+
+    def _altitude_hold_vz(self, position) -> float:
+        """速度模式下的高度保持：vz = clamp(0.6 * (target_lcl - current_lcl), ±0.3)。
+
+        2026-10-18 实测：速度指令 vz 恒 0 时高度会缓慢下沉（1.77→0.24 m），
+        低到地面回波进入前向锥后触发净空门。必须显式做高度保持。
+        """
+        return altitude_hold_vz(self._target_up_lcl(),
+                                None if position is None else position[2])
+
     def _run_goto(self, position, target) -> None:
         decision = velocity_toward(position, target,
                                    max_speed_mps=self._spec.max_speed_mps,
@@ -638,7 +657,8 @@ class TaskExecutor(Node):
             self._stop_velocity()
             self._advance_step()
             return
-        self._publish_velocity(decision.east, decision.north, 0.0)
+        self._publish_velocity(decision.east, decision.north,
+                               self._altitude_hold_vz(position))
 
     def _run_yaw(self, step, position) -> None:
         if self._heading_enu is None:
@@ -658,7 +678,8 @@ class TaskExecutor(Node):
                          heading_enu_deg=round(math.degrees(self._heading_enu), 1))
             self._advance_step()
             return
-        self._publish_velocity(0.0, 0.0, 0.0, yaw_rate=rate)
+        self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position),
+                               yaw_rate=rate)
 
     def _run_scan(self, step, position, now) -> None:
         """步进+驻留扫描：转 step_deg，停 dwell_s，重复，直到总时长用完。
@@ -683,7 +704,7 @@ class TaskExecutor(Node):
         step_deg = float(step.params.get('step_deg', 45.0))
         rate = math.radians(float(step.params.get('rate_deg_s', 20.0)))
         if self._scan_phase == 'dwell':
-            self._stop_velocity()
+            self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
             if now >= self._scan_dwell_until:
                 self._scan_target_enu = self._heading_enu + math.radians(step_deg)
                 self._scan_phase = 'turn'
@@ -698,10 +719,11 @@ class TaskExecutor(Node):
             self._report('scan_dwell',
                          heading_enu_deg=round(math.degrees(self._heading_enu), 1))
             return
-        self._publish_velocity(0.0, 0.0, 0.0, yaw_rate=yaw_rate)
+        self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position),
+                               yaw_rate=yaw_rate)
 
     def _run_hover(self, step, position, now) -> None:
-        self._publish_target(position[0], position[1], position[2])
+        self._publish_target(position[0], position[1], self._target_up_lcl())
         self._stop_velocity()
         seconds = float(step.params.get('seconds', 5.0))
         if now - self._step_started >= seconds:
@@ -710,7 +732,7 @@ class TaskExecutor(Node):
     def _run_search(self, position, now) -> None:
         # 目标悬停优先：期间保持当前位置，不再推进航点
         if self._target_hold_until > now:
-            self._publish_target(position[0], position[1], position[2])
+            self._publish_target(position[0], position[1], self._target_up_lcl())
             self._stop_velocity()
             return
         if self._search_index >= len(self._search_wps):

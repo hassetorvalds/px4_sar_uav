@@ -59,6 +59,8 @@
   避免目标持续可见时反复触发、扫描永远走不完。
 - 检测器接线：`best_topic` 统一到 `/perception/best`（launch 与 `run_detector.sh`），
   执行器默认订阅同一话题。
+- **速度模式高度保持**：`_altitude_hold_vz()`（P 控制，±0.3 m/s）；扫描改**步进 45° + 驻留 1.5 s**，
+  给检测器 3–4 帧确认时间。
 
 ### 修复
 
@@ -70,14 +72,20 @@
 ### 验证
 
 ```text
-· 单测：mission 75 passed；全包 202 passed / 2 skipped
-  （PYTHONNOUSERSITE=1 时 203）
+· 单测：mission 76 passed；全包 203 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 204）
 · 假 PX4 自检：yaw_complete → scan_complete → done PASS
 · 真机扫描（起飞 2 m → 原地扫描 40 s → 降落）：
   target_confirmed world=[30.77, 27.82, 5.01]（step=scan）
   scan_complete → land_fast → done；arming_state=1、landed=true、at_rest=true
   报告：logs/tasks/report_20261018-093926-672.jsonl
-· 目标为场景内橙色物体（depth≈32 m，检测器 bbox 在画面右侧稳定命中）
+· 组合任务（南侧搜索 8 航点 + 步进扫描 30 s）：
+  search_waypoint 1/8 … 8/8 → scan_dwell（126/171/-144/-99/-54°）
+  → target_confirmed world=[27.41, 30.66, 4.95]（t=76.1, step=scan）
+  → scan_complete → land_fast → done；无 abort；报告
+  logs/tasks/report_20261018-094737-473.jsonl
+· 观测：搜索段 LCL z 1.39→0.67（EKF 漂移），扫描驻留段回到 2.01；
+  无触地；说明帧标签/漂移仍需在 P1 统一处理。
 ```
 
 ### 已知问题
