@@ -48,7 +48,8 @@ wait "${sim_pid}"
 rc=$?
 
 kill "${exec_pid}" 2>/dev/null || true
-pkill -f "mission/task_executo[r]" 2>/dev/null || true
+# 不再用 pkill -f：模式可能匹配到调用它的 shell/作业本身（实测会把外层任务一起 SIGTERM）。
+wait "${exec_pid}" 2>/dev/null || true
 sleep 1
 
 echo "[simcheck] 退出码 ${rc}（0=PASS）"

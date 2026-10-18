@@ -15,7 +15,58 @@
 
 ---
 
-## [2026-10-18] 自然语言指挥飞行：TaskSpec/解析器/执行器（未飞验）
+## [2026-10-18] 真机复验 + local_map 回归修复 + 参考仓库对照
+
+### 修复
+
+- `mapping/voxel_grid.cluster_centroid_in_cone`：空地图提前返回 **3 元组**，而调用方解包 6 个
+  → `local_map` 启动即崩（`not enough values to unpack`）。改为始终返回 6 元组
+  `(None, 0, inf, None, None, None)`，并补两条回归测试（空地图/高度范围）。
+  与 b1–b5 的崩溃同源；此前只重启栈、未修根因。
+- `mission/task_executor.py`：
+  - 启动时 `status_age_s()=inf` 被误判为"PX4 状态陈旧"，报告里写了 3 条假 `abort`；
+    现在 ARM/OFFBOARD 阶段等待首个状态，由阶段超时兜底；
+  - 任务完成后节点常驻、CLI 一直挂到超时；新增 `exit_on_done`（默认 true），
+    先写 `done` 再退出；
+  - `_finish_done()` 统一收尾，避免"退出早于写 done"。
+- `scripts/fly_task.py`：子进程找不到 `ros2`（未 source 环境）→ 自动
+  `bash -c 'source scripts/env.sh && exec …'`。
+- `scripts/task_executor_simcheck.sh`：去掉 `pkill -f`（模式可能匹配外层作业，实测会
+  把整条命令 SIGTERM）；改为 `kill` + `wait`。
+
+### 验证（真机复验，**不是新能力**）
+
+```text
+最小任务（起飞 2 m → 悬停 5 s → 降落）：
+  report_20261018-090236-211.jsonl
+  task_accepted → ARM → OFFBOARD → RUN → takeoff_complete(1.9 m) → hover → land
+  → done(15.8 s)，无 abort；arming_state=1、landed=true、at_rest=true
+
+前进/返航（起飞 2 m → 向前 3 m → 悬停 3 s → 返航降落）：
+  report_20261018-090305-803.jsonl
+  takeoff_complete(1.85 m) → forward（~2.6 m）→ hover → return_home → land → done(24.4 s)
+  无 abort；安全上锁；AirSim 碰撞对象 Ground_2
+
+观测：done 时 PX4 local z = -0.54 / -0.57（EKF 触地漂移），AirSim 真值在地面
+  → 直接支持 docs/REFERENCES.md 的"高度必须标帧（REL/LCL/BARO/MSL）"结论
+```
+
+### 新增
+
+- `docs/REFERENCES.md`：三份参考仓库的对照与设计结论（意图帧/确认门/命令生命周期/
+  高度帧/覆盖规划/发现物模型；哪些借、哪些不借）。
+- 本地 `reference/` 克隆（已 gitignore）：`px4-ros2-interface-lib`（BSD-3）、
+  `px4_ros_com`（BSD-3）、`mavsdk_drone_show`（PolyForm，仅概念参考，未复制代码）。
+
+### 已知问题
+
+- `local_map` 修复后建议 `colcon build --symlink-install --packages-select mapping`，
+  确保 `build/` 副本与源码一致。
+- 参考仓库只做设计对照；`docs/REFERENCES.md` 中不含任何复制代码。
+
+---
+
+## [2026-10-18] 自然语言指挥飞行：TaskSpec/解析器/执行器（最小/前进/返航已飞验）
 
 ### 新增
 
@@ -67,7 +118,7 @@
 
 ### 已知问题 / 待办
 
-- **执行器未真机飞验**：状态机已用假 PX4 集成自检（4 场景 PASS），但尚未在 AirSim/PX4 上真实起飞。
+- **执行器飞验范围**：最小/前进/返航已在 AirSim+PX4 上飞通；**搜索步骤尚未飞验**。
 - **AirSim 4560 不可用（2026-10-18 现场）**：UE4Editor 在跑、RPC 45000 正常，
   但 4560 处于 `CloseWait`，Windows 本机也连不上 → 需要 UE 里 Stop → Play 重启场景。
 - 规则解析覆盖面有限：复杂/歧义指令会被拒绝（这是预期行为，后续换 VLM parser）。

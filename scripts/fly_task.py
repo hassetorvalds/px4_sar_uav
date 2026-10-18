@@ -18,6 +18,8 @@
 import argparse
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -120,6 +122,12 @@ def main(argv=None):
     if args.no_hold_on_target:
         cmd += ['-p', 'hold_on_target:=false']
     timeout = args.timeout or (spec.max_duration_s + 60.0)
+    # 子进程不会自动带 ROS 环境：没找到 ros2 时用 `bash -c 'source env.sh && exec ...'`。
+    if shutil.which('ros2') is None:
+        env_script = os.path.join(_ROOT, 'scripts', 'env.sh')
+        inner = ' '.join(shlex.quote(part) for part in cmd)
+        cmd = ['bash', '-c',
+               f'source {shlex.quote(env_script)} >/dev/null 2>&1 && exec {inner}']
     print(f'\n启动执行器（timeout {timeout:.0f} s）：\n  ' + ' '.join(cmd))
     try:
         completed = subprocess.run(cmd, timeout=timeout, check=False)
@@ -127,6 +135,9 @@ def main(argv=None):
         print(f'\n执行超时（{timeout:.0f} s）——请确认飞机已落地/上锁，'
               f'必要时 scripts/stop_stack.sh 收尾', file=sys.stderr)
         return 4
+    except FileNotFoundError:
+        print('\n找不到 ros2：请先 `source scripts/env.sh` 再运行本脚本', file=sys.stderr)
+        return 5
     print(f'\n执行结束（退出码 {completed.returncode}）')
     print(f'报告：{report}')
     return completed.returncode

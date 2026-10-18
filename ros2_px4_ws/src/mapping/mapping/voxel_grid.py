@@ -177,10 +177,12 @@ class VoxelGrid:
         于是"世界点一致"判据对大平面天然失效（a2 的候选 2 漂了 3.49 m 就是这么来的）。
         用**连通簇质心**代表"一个物体"，小姿态变化下就稳定得多。
 
-        返回 ``(centroid_delta, size, distance)``；无合格簇时 ``(None, 0, inf)``。
+        返回 ``(centroid_delta, size, distance, z_min, z_max, span_h)``；
+        无合格簇时六个字段全为 ``None``/0/inf（**必须保持 6 元组**，
+        否则调用方解包会在启动空地图时崩——2026-10-18 实测）。
         """
         if not self._voxels:
-            return None, 0, float('inf')
+            return None, 0, float('inf'), None, None, None
         origin = np.asarray(origin_enu, dtype=float)
         cos_limit = math.cos(math.radians(half_angle_deg))
         forward = np.array([math.cos(heading_enu), math.sin(heading_enu), 0.0], dtype=float)

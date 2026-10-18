@@ -3,7 +3,7 @@
 > 面向灾害搜救场景的语言驱动、人机协同、安全自主四旋翼无人机系统规划文档  
 > 当前仿真平台：**Windows 11 + UE4.27 + AirSim 1.8.1 + WSL2 Ubuntu 22.04 + ROS 2 Humble + PX4 1.18 + Micro XRCE-DDS Agent 2.4.2**
 >
-> 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · 开发排期：[docs/roadmap.md](docs/roadmap.md)
+> 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · 开发排期：[docs/roadmap.md](docs/roadmap.md)
 
 ---
 

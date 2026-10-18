@@ -133,3 +133,37 @@ def test_ground_below_is_not_treated_as_forward_obstacle():
     grid.insert(np.array([[2.5, 0.0, 0.1]]), origin_enu=(0, 0, 0), now=0.0)
     assert 2.0 <= grid.nearest_in_cone(
         (0, 0, 0), heading_enu=0.0, half_angle_deg=30.0, vertical_tolerance_m=0.6) <= 3.0
+
+
+def test_cluster_centroid_empty_map_is_six_tuple():
+    """回归：空地图时必须返回 6 元组。
+
+    2026-10-18 实测：启动瞬间地图为空，旧实现提前返回 3 元组，
+    local_map 解包 6 个变量直接崩溃（`not enough values to unpack`）。
+    """
+    grid = VoxelGrid(resolution=0.5, extent=5.0)
+    result = grid.cluster_centroid_in_cone((0, 0, 0), heading_enu=0.0)
+    assert len(result) == 6
+    assert result[0] is None
+    assert result[1] == 0
+    assert math.isinf(result[2])
+    assert result[3:] == (None, None, None)
+
+
+def test_cluster_centroid_returns_height_range():
+    """高度门需要簇的 z 范围/水平跨度；返回元组的后三项必须有效。"""
+    grid = VoxelGrid(resolution=0.5, extent=10.0)
+    points = np.array([[3.0, y, z] for z in (1.0, 1.5, 2.0)
+                       for y in (-0.3, 0.0, 0.3)])
+    grid.insert(points, origin_enu=(0, 0, 0), now=0.0)
+    result = grid.cluster_centroid_in_cone(
+        (0, 0, 0), heading_enu=0.0, half_angle_deg=30.0, max_distance=6.0,
+        vertical_tolerance_m=3.0, vertical_down_tolerance_m=3.0,
+        min_cluster_points=3)
+    delta, size, distance, z_min, z_max, span_h = result
+    assert delta is not None
+    assert size >= 3
+    assert 2.5 <= distance <= 4.5
+    assert z_min == pytest.approx(1.0, abs=0.3)
+    assert z_max == pytest.approx(2.0, abs=0.3)
+    assert span_h >= 0.5

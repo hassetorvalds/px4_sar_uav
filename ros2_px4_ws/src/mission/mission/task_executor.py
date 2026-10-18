@@ -76,6 +76,7 @@ class TaskExecutor(Node):
         self.declare_parameter('blocked_abort_s', 10.0)
         self.declare_parameter('status_timeout_s', 2.0)
         self.declare_parameter('heartbeat_s', 0.5)
+        self.declare_parameter('exit_on_done', True)
 
         self._dry_run = bool(self.get_parameter('dry_run').value)
         self._hold_on_target = bool(self.get_parameter('hold_on_target').value)
@@ -90,6 +91,7 @@ class TaskExecutor(Node):
         self._blocked_abort = float(self.get_parameter('blocked_abort_s').value)
         self._status_timeout = float(self.get_parameter('status_timeout_s').value)
         self._heartbeat_s = float(self.get_parameter('heartbeat_s').value)
+        self._exit_on_done = bool(self.get_parameter('exit_on_done').value)
 
         self._monitor = Px4StateMonitor(self)
         self._phase = PHASE_IDLE
@@ -271,6 +273,13 @@ class TaskExecutor(Node):
         self._phase_started = time.monotonic()
         self.get_logger().info(f'→ 阶段 {phase}')
         self._report('phase', to=phase)
+        if phase == PHASE_DONE and self._exit_on_done:
+            # 一次性任务：上锁后直接退出，避免 CLI/脚本一直挂着等超时
+            self.get_logger().info('任务完成，执行器退出（exit_on_done=true）')
+            if self._report_handle is not None:
+                self._report_handle.close()
+                self._report_handle = None
+            raise SystemExit(0)
 
     def _phase_elapsed(self) -> float:
         return time.monotonic() - self._phase_started
@@ -296,7 +305,12 @@ class TaskExecutor(Node):
             return
 
         # 安全闸：状态陈旧 / 越界 / 总时限
-        if self._monitor.status_age_s() > self._status_timeout:
+        # 启动阶段还没收到过 PX4 状态（age=inf）不算"陈旧"：ARM/OFFBOARD 阶段各有超时兜底，
+        # 这里不要写 abort（否则报告里会出现假的 abort，2026-10-18 实飞踩到）。
+        status_age = self._monitor.status_age_s()
+        waiting_first_status = (math.isinf(status_age)
+                                and self._phase in (PHASE_ARM, PHASE_OFFBOARD))
+        if not waiting_first_status and status_age > self._status_timeout:
             self.get_logger().error('PX4 状态陈旧 → 停止发指令')
             self._report('abort', reason='stale_px4')
             self._stop_velocity()
@@ -362,15 +376,18 @@ class TaskExecutor(Node):
                 self._land_command_sent = True
                 self._report('land_fast')
             if self._ever_armed and not state.armed:
-                self._enter(PHASE_DONE)
-                self._report('done', report_path=self._report_path)
-                self.get_logger().info('已上锁，任务结束')
+                self._finish_done()
             elif self._phase_elapsed() > self._land_timeout:
                 self.get_logger().warn('降落超时 → 强制上锁')
                 self._send_command('disarm_force')
-                self._enter(PHASE_DONE)
-                self._report('done', forced=True)
+                self._finish_done(forced=True)
             return
+
+    def _finish_done(self, *, forced: bool = False) -> None:
+        # 先写 done（_enter(PHASE_DONE) 在 exit_on_done 时会把进程结束掉）
+        self._report('done', report_path=self._report_path, forced=forced)
+        self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
+        self._enter(PHASE_DONE)
 
     # ------------------------------------------------------------------
     # step 执行
