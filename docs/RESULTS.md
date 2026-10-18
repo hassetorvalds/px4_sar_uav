@@ -41,7 +41,8 @@
 | 搜索→检测→悬停→上报 | ✅ 组合闭环 | 搜索 8/8 + 步进扫描 30 s；`target_confirmed world=[27.41, 30.66, 4.95]`（t=76.1），scan 完成、安全落地；无 abort |
 | 目标自动对准 | ✅ 真机验证 | 确认后 yaw 到世界点，`target_centered error=-3.4°`；search hold 不偏航 |
 | Markdown 证据页 | ✅ | `mission/report.py` 生成 `report_*.md`：健康检查/目标/命令/时间线 |
-| ROS 2 Action 接口 | ✅ 假 PX4 + 真机 | `ExecuteTask`：TaskSpec goal、阶段/进度 feedback、report result、cancel 落地上锁；复用现有执行器 |
+| ROS 2 Action 接口 | ✅ 假 PX4 + 真机 | `ExecuteTask`：TaskSpec goal、阶段/进度 feedback、report result、cancel 落地上锁；真机完整搜索+检测 `success=True` |
+| Action 完整任务 | ✅ 真机 | 搜索 8/8 → 扫描 60 s → 目标 `[29.19,30.78,4.87]` → 对准 3.5° → 落地；result `success=True` |
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |

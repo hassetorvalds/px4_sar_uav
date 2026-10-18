@@ -44,6 +44,12 @@ scripts/run_action_server.sh
 python3 scripts/fly_task.py "起飞到 2 米，悬停 3 秒，降落" --json > /tmp/task.json
 ros2 run mission task_action_client --task-file /tmp/task.json --timeout 60
 
+# 完整搜索+检测（真机已飞通）
+python3 scripts/fly_task.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，原地扫描 60 秒，降落" \
+  --json > /tmp/task_search.json
+ros2 run mission task_action_client --task-file /tmp/task_search.json --timeout 240
+
 # 可选：4 秒后取消
 ros2 run mission task_action_client --task-file /tmp/task.json --cancel-after 4
 ```
@@ -64,7 +70,10 @@ ACTION_SIMCHECK_CANCEL_AFTER=4 bash scripts/action_simcheck.sh   # 取消路径
 - 假 PX4 取消：4 s 取消 → `success=False, message=cancel_requested`，报告有
   `abort + done`，安全落地；
 - 真机最小任务：goal 接受 → `success=True`，arm ACK 0.007 s、offboard 0.012 s，
-  takeoff LCL 2.011 / REL 2.0，上锁落地。
+  takeoff LCL 2.011 / REL 2.0，上锁落地；
+- 真机完整任务：搜索 8/8 → 扫描 60 s → `target_confirmed [29.19,30.78,4.87]`
+  → `target_centered 3.5°` → `success=True`，上锁落地
+  （`report_action_full_20261018-170422.jsonl`）。
 
 ## 限制
 

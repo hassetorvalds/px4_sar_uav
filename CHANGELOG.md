@@ -15,6 +15,33 @@
 
 ---
 
+## [2026-10-18] Action 完整任务复飞：搜索 8/8 + 扫描检测 + 对准 + 落地
+
+### 验证
+
+```text
+· Action goal = 完整 TaskSpec：
+  起飞 2 m → 搜索东侧 5 m/南侧 6 m、r=3 m（8 航点）→ 原地扫描 60 s → 降落
+· feedback：IDLE → ARM → RUN(takeoff/search/scan/land) → LAND → DONE
+· search_waypoint 1/8 … 8/8（30.5–87.1 s）
+· scan_dwell 167/-147/-103/-59/-14/29/94/139/-176°
+  → target_confirmed world=[29.19, 30.78, 4.87]（t=123.96, step=scan）
+  → target_centered error=3.5°
+  → scan_complete → done
+· health_check 通过；takeoff LCL 1.971 / REL 2.0；
+  arm/offboard/land_fast 全 completed；arming_state=1、landed=true
+· result：success=True，report_path=logs/tasks/report_action_full_20261018-170422.jsonl
+· 证据页：logs/tasks/report_action_full_20261018-170422.md
+```
+
+### 结论
+
+- `ExecuteTask` 不只能跑最小任务，完整 TaskSpec（搜索+扫描+检测）可直接作为 goal；
+- 单测不变：217 passed / 2 skipped（mission 90）；
+- README/CHANGELOG 已同步。
+
+---
+
 ## [2026-10-18] P2：ExecuteTask ROS 2 Action 接口（复用 TaskSpec/执行器）
 
 ### 新增

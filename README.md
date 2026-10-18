@@ -3,6 +3,7 @@
 > 面向灾害搜救场景的语言驱动、人机协同、安全自主四旋翼无人机系统规划文档  
 > 当前仿真平台：**Windows 11 + UE4.27 + AirSim 1.8.1 + WSL2 Ubuntu 22.04 + ROS 2 Humble + PX4 1.18 + Micro XRCE-DDS Agent 2.4.2**
 >
+> 最近验证（2026-10-18）：Action goal 提交完整任务（搜索 8/8 → 扫描 → 目标 `[29.19, 30.78, 4.87]` → 对准 3.5° → 安全落地）。
 > 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · **Action 接口：[docs/ACTION.md](docs/ACTION.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · 开发排期：[docs/roadmap.md](docs/roadmap.md)
 
 ---
@@ -263,8 +264,15 @@ archive/
 
 ## 4.3 已实现并验证的能力
 
+> 2026-10-18 新增：自然语言任务 → 搜索/扫描/检测/对准；`ExecuteTask` Action；
+> arm 前健康检查；自检域隔离；Markdown 证据页。详见 [RESULTS](docs/RESULTS.md)、
+> [ACTION](docs/ACTION.md)、[CHANGELOG](CHANGELOG.md)。
+
 | 能力 | 状态 | 实测证据 |
 |---|---|---|
+| 自然语言任务闭环 | ✅ | 规则解析 + IntentFrame；起飞/搜索/扫描/检测/对准/降落，真机多次飞通 |
+| `ExecuteTask` Action | ✅ | goal=TaskSpec JSON；feedback 阶段/进度/LCL 高度；result 带报告；cancel 落地上锁；真机完整搜索+检测 `success=True` |
+| 安全加固 | ✅ | arm 前健康检查（状态/位置/preflight/failsafe/电池）；simcheck 独立域 77 + 真机互锁；`report_*.md` 证据页 |
 | AirSim ↔ PX4 SITL 仿真链路 | ✅ | `Simulator connected on TCP port 4560` |
 | PX4 ↔ uXRCE-DDS ↔ ROS 2 桥接 | ✅ | `uxrce_dds_client synchronized`，全部 `/fmu/out` 数据写入器创建成功 |
 | ROS 2 读取 PX4 状态 | ✅ | `/fmu/out/vehicle_odometry`、`vehicle_attitude`、`vehicle_status_v4`、`vehicle_local_position_v1` |
