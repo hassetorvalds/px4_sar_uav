@@ -89,6 +89,7 @@ class TaskExecutor(Node):
         self.declare_parameter('arrive_tol_m', 0.4)
         self.declare_parameter('takeoff_tol_m', 0.25)
         self.declare_parameter('arm_timeout_s', 15.0)
+        self.declare_parameter('arm_settle_s', 0.5)
         self.declare_parameter('offboard_timeout_s', 15.0)
         self.declare_parameter('land_timeout_s', 25.0)
         self.declare_parameter('blocked_abort_s', 10.0)
@@ -107,6 +108,7 @@ class TaskExecutor(Node):
         self._arrive_tol = float(self.get_parameter('arrive_tol_m').value)
         self._takeoff_tol = float(self.get_parameter('takeoff_tol_m').value)
         self._arm_timeout = float(self.get_parameter('arm_timeout_s').value)
+        self._arm_settle = float(self.get_parameter('arm_settle_s').value)
         self._offboard_timeout = float(self.get_parameter('offboard_timeout_s').value)
         self._land_timeout = float(self.get_parameter('land_timeout_s').value)
         self._blocked_abort = float(self.get_parameter('blocked_abort_s').value)
@@ -120,6 +122,7 @@ class TaskExecutor(Node):
         self._ground_up_lcl = None       # 起飞点在地面时的 PX4 local up（LCL 帧）
 
         self._monitor = Px4StateMonitor(self)
+        self._clock_started = time.monotonic()
         self._phase = PHASE_IDLE
         self._phase_started = time.monotonic()
         self._spec = None
@@ -199,7 +202,7 @@ class TaskExecutor(Node):
         position = (None if state.position_ned is None
                     else ned_to_enu(*state.position_ned))
         entry = {
-            't': round(time.monotonic() - (self._task_started or time.monotonic()), 2),
+            't': round(time.monotonic() - self._clock_started, 2),
             'event': event,
             'phase': self._phase,
             'step': self._step_index,
@@ -224,8 +227,8 @@ class TaskExecutor(Node):
             return
         self._report('command_ack', name=record.name,
                      vehicle_command=int(msg.command), result=int(msg.result),
-                     state=record.state, latency_s=record.latency_s,
-                     attempts=record.attempts)
+                     result_code=int(msg.result), state=record.state,
+                     latency_s=record.latency_s, attempts=record.attempts)
         self.get_logger().info(
             f'命令 ACK：{record.name} result={int(msg.result)} → {record.state}'
             f'（{record.latency_s} s）')
@@ -434,6 +437,10 @@ class TaskExecutor(Node):
             return
 
         if self._phase == PHASE_ARM:
+            # 启动静置：等 ACK 订阅/命令链路稳定后再发第一条 arm，
+            # 避免第一条命令的 ACK 在 DDS 匹配完成前丢失（2026-10-18 实测）。
+            if self._phase_elapsed() < self._arm_settle:
+                return
             self._send_command('arm')
             if state.armed:
                 self._enter(PHASE_OFFBOARD)

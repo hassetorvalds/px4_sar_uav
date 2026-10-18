@@ -38,6 +38,8 @@
     command_timeout / command_completed / commands`；
   - arm/offboard ACK 被拒绝或重试用尽 → 收工降落；
   - `takeoff` 用 `ground_lcl + altitude_rel` 生成 LCL 目标，**比较不再跨帧**；
+  - 新增 `arm_settle_s`（默认 0.5 s）：进 ARM 后先静置再发第一条 arm，避免 ACK 订阅
+    尚未匹配时首条命令 ACK 丢失。
   - 报告/状态新增 `altitude_lcl` 与 `task_altitude`（带帧/来源）。
 - `scripts/fly_task.py`：改用 `parse_intent()`；打印来源/置信度/缺失/provenance；
   新增 `--intent-json`、`--remote-intent`；落盘 `intent_<stamp>.json` 并传给执行器
@@ -55,12 +57,18 @@
   → command_sent(offboard) → command_ack → command_completed
   → takeoff → ... → land_fast → command_completed → commands → done
 · CLI 合并：本地"向北 10 m" + 远端"向北 20 m" → 保留 10 m 并打印拒绝 warning
+· 真机复飞（3 次，AirSim+PX4）：
+  - 前两次：首条 arm 的 ACK 没收到 → command_timeout → 重试后 accepted（0.815–0.914 s）
+  - 加 arm_settle_s=0.5 后：arm ACK **0.011 s**、offboard **0.016 s**，首次即 accepted
+  - takeoff：地面 LCL 0.02 + 任务 REL 2.0 → LCL 2.008，帧换算正确
+  - land_fast → command_completed → done；arming_state=1、landed=true、at_rest=true
+  - 报告：logs/tasks/report_20261018-092416-359.jsonl
 ```
 
 ### 已知问题
 
-- **改动后未真机复飞**：ACK/高度帧只在假 PX4 自检通过；下次飞行前先跑
-  `task_executor_simcheck.sh`，再按 DEMO Step 2 飞一轮。
+- 首条 arm 命令依赖 0.5 s 静置（`arm_settle_s`）才能稳定拿到 ACK；
+  若后续出现首条命令 ACK 丢失，优先检查 DDS 订阅匹配与 `arm_settle_s`。
 - 真实 PX4 的 ACK 话题为 `/fmu/out/vehicle_command_ack_v1`；若 PX4 版本变化需同步。
 - 高度门（`vlm_closed_loop.py`）仍用 `height_source` 二选一，尚未统一到本次帧标签；
   这是下一步（P1）的事。

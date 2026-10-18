@@ -285,7 +285,7 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 - 换成 MAVSDK / PX4 Mission Mode（与现有 Offboard 栈是不同路线）；
 - 大改行为树/多机/真实飞机（demo 阶段不需要）。
 
-## 7.5 P0 落地（2026-10-18，仅假 PX4 自检，未真机复飞）
+## 7.5 P0 落地（2026-10-18，假 PX4 + 真机复飞）
 
 按上面的 P0 做了三件最小改动，不换栈：
 
@@ -307,7 +307,9 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 · CLI：本地"向北 10 m" + 远端"向北 20 m" → 保留 10 m，warning 写明拒绝
 ```
 
-未做：真机复飞（这轮结束后栈已停）；VLM 实际接入（只留了 `--remote-intent` 接口）。
+真机复飞：最小任务 3 次（前两次 arm ACK 超时→重试成功；加 `arm_settle_s=0.5` 后
+arm ACK 0.011 s、offboard 0.016 s，takeoff LCL 2.008 / REL 2.0，安全上锁落地）。
+未做：VLM 实际接入（只留了 `--remote-intent` 接口）。
 
 ## 8. 参考仓库的许可证提醒
 

@@ -44,7 +44,7 @@
 | 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |
 | 目标跟踪 / 搜救报告 | ⚠️ 跟踪内核已测，报告未做 | `perception/tracking.py`：确认目标（默认连续 3 帧、世界 2 m 门限、2 s 过期） |
 | 高度帧（REL/LCL/BARO/MSL/TRUTH） | ✅ 已进 schema/报告 | `mission/altitude.py`；`TaskSpec.altitude_frame`；报告 `altitude_lcl`/`task_altitude`；TRUTH 仅诊断且被拒绝作为任务帧 |
-| 命令 ACK 生命周期 | ✅ 假 PX4 自检通过 | `mission/command_tracker.py`：awaiting_ack→accepted→completed / timeout→delivery_unknown；arm/offboard/land_fast 已接 |
+| 命令 ACK 生命周期 | ✅ 假 PX4 + 真机复飞通过 | `mission/command_tracker.py`：awaiting_ack→accepted→completed / timeout→delivery_unknown；真机 arm ACK 0.011 s、offboard 0.016 s；前两次首条 arm 超时后重试成功 |
 
 ## 3. 量化结果（按批次，不跨版本合并）
 
