@@ -116,3 +116,15 @@ def test_altitude_hold_vz_clamped_and_sign():
     assert altitude_hold_vz(2.0, 1.0) == pytest.approx(0.3)     # 需要上升，正 up
     assert altitude_hold_vz(2.0, 5.0) == pytest.approx(-0.3)    # 需要下降
     assert altitude_hold_vz(None, 1.0) == 0.0
+
+
+def test_search_waypoints_rectangle():
+    waypoints = search_waypoints({
+        'shape': 'rectangle', 'center_east_m': 5.0, 'center_north_m': -6.0,
+        'width_m': 8.0, 'height_m': 6.0, 'spacing_m': 3.0,
+        'altitude_m': 2.0}, altitude_m=2.0)
+    assert min(p[0] for p in waypoints) == pytest.approx(1.0)
+    assert max(p[0] for p in waypoints) == pytest.approx(9.0)
+    assert min(p[1] for p in waypoints) == pytest.approx(-9.0)
+    assert max(p[1] for p in waypoints) == pytest.approx(-3.0)
+    assert all(p[2] == pytest.approx(2.0) for p in waypoints)

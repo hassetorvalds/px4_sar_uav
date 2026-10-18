@@ -144,6 +144,16 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 > 搜索区要放在**出生点以南/东**；朝北的航点会被前方净空门拦下（这是安全行为，
 > 不是 bug）。场景正前方约 2 m 处就是墙体。
 
+矩形覆盖（可带角度）：
+
+```bash
+FLY_TASK_CONFIRM=1 scripts/fly_task.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、宽 6 米、长 4 米的矩形区域，降落" \
+  --execute
+```
+
+预期：`search_plan` 带 `area_m2/path_length_m/estimated_s`，`search_waypoint 6/6`。
+
 再飞**小半径搜索**（东南侧，避开正前方墙体）：
 
 ```bash

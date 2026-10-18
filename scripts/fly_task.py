@@ -30,7 +30,8 @@ sys.path.insert(0, os.path.join(_ROOT, 'ros2_px4_ws', 'src', 'mission'))
 from mission.executor_core import search_waypoints  # noqa: E402
 from mission.intent import IntentFrame, merge_intent, parse_intent  # noqa: E402
 from mission.report import summarize  # noqa: E402
-from mission.search_pattern import estimate_duration_s, lawnmower  # noqa: E402
+from mission.executor_core import search_waypoints  # noqa: E402
+from mission.search_pattern import estimate_duration_s, path_length  # noqa: E402
 from mission.task_spec import TaskError  # noqa: E402
 
 
@@ -66,11 +67,10 @@ def _print_plan(spec, json_only=False):
     for index, step in enumerate(spec.steps, start=1):
         if step.type == 'search':
             params = step.params
-            waypoints = lawnmower(params['center_east_m'], params['center_north_m'],
-                                  params['radius_m'], params['spacing_m'])
+            waypoints = search_waypoints(params, altitude_m=spec.altitude_m)
             estimate = estimate_duration_s(waypoints, spec.max_speed_mps)
             print(f'  搜索展开：{len(waypoints)} 个航点，'
-                  f'折线 {estimate * spec.max_speed_mps:.0f} m，预计 {estimate:.0f} s')
+                  f'折线 {path_length(waypoints):.0f} m，预计 {estimate:.0f} s')
     if spec.notes:
         print('-' * 64)
         for note in spec.notes:

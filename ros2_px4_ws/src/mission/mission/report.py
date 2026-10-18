@@ -107,8 +107,12 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         lines.append(f'- 起飞：LCL {_fmt(altitude.get("value_m"))} m / '
                      f'任务 {_fmt(target.get("value_m"))} m {target.get("frame", "")}')
     if plan:
-        lines.append(f'- 搜索：{plan.get("waypoints", "?")} 航点，'
-                     f'到位 {len(waypoints)} 个')
+        detail = f'- 搜索：{plan.get("waypoints", "?")} 航点，到位 {len(waypoints)} 个'
+        if plan.get('area_m2') is not None:
+            detail += (f'；面积 {_fmt(plan.get("area_m2"), 1)} m²'
+                       f'，折线 {_fmt(plan.get("path_length_m"), 1)} m'
+                       f'，预计 {_fmt(plan.get("estimated_s"), 0)} s')
+        lines.append(detail)
     if scan_complete:
         lines.append('- 扫描：完成')
     if targets:

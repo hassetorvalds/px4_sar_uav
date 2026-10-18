@@ -30,6 +30,12 @@ SEARCH_RADIUS_MIN_M = 1.0
 SEARCH_RADIUS_MAX_M = 30.0
 SEARCH_SPACING_MIN_M = 1.0
 SEARCH_SPACING_MAX_M = 10.0
+SEARCH_WIDTH_MIN_M = 1.0
+SEARCH_WIDTH_MAX_M = 60.0
+SEARCH_HEIGHT_MIN_M = 1.0
+SEARCH_HEIGHT_MAX_M = 60.0
+SEARCH_ANGLE_MIN_DEG = -180.0
+SEARCH_ANGLE_MAX_DEG = 180.0
 HOVER_MIN_S = 1.0
 HOVER_MAX_S = 120.0
 YAW_DEG_MAX = 360.0
@@ -135,15 +141,32 @@ class TaskSpec:
             _check_range('forward.meters', float(p.get('meters', 0.0)), 0.1,
                          self.geofence_radius_m)
         elif step.type == 'search':
-            _check_range('search.radius_m', float(p.get('radius_m', 10.0)),
-                         SEARCH_RADIUS_MIN_M, SEARCH_RADIUS_MAX_M)
+            shape = str(p.get('shape', 'square')).lower()
+            if shape not in ('square', 'rectangle'):
+                raise TaskError(f'search.shape 必须是 square/rectangle，得到 {shape!r}')
             _check_range('search.spacing_m', float(p.get('spacing_m', 4.0)),
                          SEARCH_SPACING_MIN_M, SEARCH_SPACING_MAX_M)
             center_east = float(p.get('center_east_m', 0.0))
             center_north = float(p.get('center_north_m', 0.0))
-            if math.hypot(center_east, center_north) + float(p.get('radius_m', 10.0)) \
-                    > self.geofence_radius_m:
-                raise TaskError('search 区域超出围栏（中心距 + 半径 > geofence）')
+            center_distance = math.hypot(center_east, center_north)
+            if shape == 'rectangle':
+                width = float(p.get('width_m', 10.0))
+                height = float(p.get('height_m', 10.0))
+                _check_range('search.width_m', width,
+                             SEARCH_WIDTH_MIN_M, SEARCH_WIDTH_MAX_M)
+                _check_range('search.height_m', height,
+                             SEARCH_HEIGHT_MIN_M, SEARCH_HEIGHT_MAX_M)
+                _check_range('search.angle_deg', float(p.get('angle_deg', 0.0)),
+                             SEARCH_ANGLE_MIN_DEG, SEARCH_ANGLE_MAX_DEG)
+                if center_distance + math.hypot(width / 2.0, height / 2.0) \
+                        > self.geofence_radius_m:
+                    raise TaskError('search 矩形区域超出围栏（中心距 + 半对角线 > geofence）')
+            else:
+                _check_range('search.radius_m', float(p.get('radius_m', 10.0)),
+                             SEARCH_RADIUS_MIN_M, SEARCH_RADIUS_MAX_M)
+                if center_distance + float(p.get('radius_m', 10.0)) \
+                        > self.geofence_radius_m:
+                    raise TaskError('search 区域超出围栏（中心距 + 半径 > geofence）')
             target = p.get('target') or {}
             if not isinstance(target, dict) or 'kind' not in target:
                 raise TaskError('search.target 必须是含 kind 的对象')
@@ -230,8 +253,14 @@ class TaskSpec:
             elif step.type == 'forward':
                 parts.append(f'向前 {step.params.get("meters", 0):.1f} m')
             elif step.type == 'search':
-                parts.append(f'搜索 半径 {step.params.get("radius_m", 10):.1f} m'
-                             f'（{step.params.get("target", {}).get("kind", "target")}）')
+                if str(step.params.get('shape', 'square')).lower() == 'rectangle':
+                    parts.append(
+                        f'搜索 矩形 {step.params.get("width_m", 10):.1f}×'
+                        f'{step.params.get("height_m", 10):.1f} m'
+                        f'（{step.params.get("target", {}).get("kind", "target")}）')
+                else:
+                    parts.append(f'搜索 半径 {step.params.get("radius_m", 10):.1f} m'
+                                 f'（{step.params.get("target", {}).get("kind", "target")}）')
             elif step.type == 'yaw':
                 degrees = float(step.params.get('degrees', 90.0))
                 direction = '向左' if degrees > 0 else '向右'

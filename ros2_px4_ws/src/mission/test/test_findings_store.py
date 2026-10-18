@@ -67,3 +67,10 @@ def test_render_empty_summary():
     text = render_summary(summarize_records([]))
     assert '任务数：0' in text
     assert '| — |' in text
+
+
+def test_task_id_strips_report_suffix(tmp_path):
+    info = persist_findings(findings=[], task_summary='x',
+                            report_path='logs/tasks/simcheck_1.report.jsonl',
+                            findings_dir=str(tmp_path))
+    assert info['task_id'] == 'simcheck_1'

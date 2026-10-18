@@ -12,7 +12,7 @@ ROS 节点只负责"读状态 → 调这里 → 发指令"，所有会出错的�
 import math
 from dataclasses import dataclass
 
-from .search_pattern import lawnmower
+from .search_pattern import lawnmower, lawnmower_rectangle
 
 
 @dataclass(frozen=True)
@@ -101,7 +101,15 @@ def search_waypoints(step_params, *, altitude_m: float):
     radius = float(step_params.get('radius_m', 10.0))
     spacing = float(step_params.get('spacing_m', 4.0))
     up = float(step_params.get('altitude_m', altitude_m))
-    flat = lawnmower(center_east, center_north, radius, spacing)
+    shape = str(step_params.get('shape', 'square')).lower()
+    if shape == 'rectangle':
+        flat = lawnmower_rectangle(
+            center_east, center_north,
+            float(step_params.get('width_m', 10.0)),
+            float(step_params.get('height_m', 10.0)),
+            spacing, float(step_params.get('angle_deg', 0.0)))
+    else:
+        flat = lawnmower(center_east, center_north, radius, spacing)
     return [(east, north, up) for east, north in flat]
 
 

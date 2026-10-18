@@ -147,3 +147,35 @@ def test_yaw_right_is_negative():
     spec = parse_task('起飞到 2 米，向右转 45 度，降落')
     yaw = [step for step in spec.steps if step.type == 'yaw'][0]
     assert yaw.params['degrees'] == pytest.approx(-45.0)
+
+
+def test_lawnmower_rectangle_bounds_and_rotation():
+    from mission.search_pattern import lawnmower_rectangle
+
+    waypoints = lawnmower_rectangle(0, 0, 8, 6, 3)
+    xs = [p[0] for p in waypoints]
+    ys = [p[1] for p in waypoints]
+    assert min(xs) == pytest.approx(-4)
+    assert max(xs) == pytest.approx(4)
+    assert min(ys) == pytest.approx(-3)
+    assert max(ys) == pytest.approx(3)
+
+    rotated = lawnmower_rectangle(0, 0, 8, 6, 3, 90)
+    xs = [p[0] for p in rotated]
+    ys = [p[1] for p in rotated]
+    assert min(xs) == pytest.approx(-3)
+    assert max(xs) == pytest.approx(3)
+    assert min(ys) == pytest.approx(-4)
+    assert max(ys) == pytest.approx(4)
+
+
+def test_parse_rectangle_search():
+    spec = parse_task('起飞到 2 米，搜索东侧 5 米、南侧 6 米、'
+                      '宽 8 米、长 6 米的矩形区域，降落')
+    search = [step for step in spec.steps if step.type == 'search'][0]
+    assert search.params['shape'] == 'rectangle'
+    assert search.params['center_east_m'] == pytest.approx(5.0)
+    assert search.params['center_north_m'] == pytest.approx(-6.0)
+    assert search.params['width_m'] == pytest.approx(8.0)
+    assert search.params['height_m'] == pytest.approx(6.0)
+    assert search.params['spacing_m'] == pytest.approx(3.0)

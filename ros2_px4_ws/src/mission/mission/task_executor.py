@@ -44,7 +44,7 @@ from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_targ
 from .findings import FindingsBook, priority_for_kind
 from .findings_store import persist_findings
 from .health import check_prearm
-from .search_pattern import estimate_duration_s
+from .search_pattern import estimate_duration_s, search_metrics
 from .task_spec import TaskError, TaskSpec
 
 _CLEARANCE_RE = re.compile(r'nearest_forward_m=([0-9.]+|inf)')
@@ -677,7 +677,10 @@ class TaskExecutor(Node):
         if step.type == 'search':
             self._search_wps = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
-            self._report('search_plan', waypoints=len(self._search_wps))
+            metrics = search_metrics(step.params, self._search_wps,
+                                     self._spec.max_speed_mps)
+            self._report('search_plan', waypoints=len(self._search_wps),
+                         **metrics)
         if step.type == 'return_home':
             self._step_target = (self._origin_enu[0], self._origin_enu[1],
                                  self._origin_enu[2])

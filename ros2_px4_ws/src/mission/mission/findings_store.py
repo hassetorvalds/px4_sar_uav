@@ -17,6 +17,8 @@ def _task_id_from_report(report_path: str) -> str:
     stem = os.path.splitext(base)[0]
     if stem.startswith('report_'):
         stem = stem[len('report_'):]
+    if stem.endswith('.report'):
+        stem = stem[:-len('.report')]
     if stem:
         return stem
     return time.strftime('%Y%m%d-%H%M%S') + f'-{os.getpid()}'

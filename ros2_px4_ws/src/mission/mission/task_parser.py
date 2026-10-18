@@ -18,7 +18,7 @@
 import re
 import unicodedata
 
-from .search_pattern import estimate_duration_s, lawnmower
+from .search_pattern import estimate_duration_s, lawnmower, lawnmower_rectangle
 from .task_spec import DURATION_MAX_S, Step, TaskError, TaskSpec
 
 _CN_DIGITS = {
@@ -50,6 +50,14 @@ _RE_FORWARD = re.compile(
     rf'(?P<num>{_NUM})\s*{_UNIT}', re.IGNORECASE)
 _RE_HOVER = re.compile(
     rf'(?:悬停|等待|hover|wait)\s*(?P<num>{_NUM})?\s*(?:秒|s|seconds?)?', re.IGNORECASE)
+_RE_WIDTH = re.compile(
+    rf'(?:宽|宽度|width)\s*(?P<num>{_NUM})?\s*(?:米|m)?', re.IGNORECASE)
+_RE_HEIGHT = re.compile(
+    rf'(?:长|长度|高|高度|height|length)\s*(?P<num>{_NUM})?\s*(?:米|m)?',
+    re.IGNORECASE)
+_RE_ANGLE = re.compile(
+    rf'(?:角度|斜向|旋转|angle)\s*(?P<num>{_NUM})?\s*(?:度|°|deg)?',
+    re.IGNORECASE)
 _RE_YAW_LEFT = re.compile(
     rf'(?:向左|左转|left)\s*(?P<num>{_NUM})?\s*(?:度|deg|°)', re.IGNORECASE)
 _RE_YAW_RIGHT = re.compile(
@@ -214,7 +222,10 @@ def parse_task(text: str) -> TaskSpec:
             continue
         if intent == 'search':
             radius_match = _RE_RADIUS.search(clause) or _RE_RADIUS_ALT.search(clause)
-            has_area = (radius_match is not None
+            width_match = _RE_WIDTH.search(clause)
+            height_match = _RE_HEIGHT.search(clause)
+            is_rect = width_match is not None or height_match is not None
+            has_area = (radius_match is not None or is_rect
                         or abs(east) > 1e-6 or abs(north) > 1e-6)
             target = _target_from_clause(clause)
             if not has_area:
@@ -227,18 +238,39 @@ def parse_task(text: str) -> TaskSpec:
                 continue
             radius = _num(radius_match.group('num')) if radius_match else 10.0
             spacing_match = _RE_SPACING.search(clause)
-            spacing = (_num(spacing_match.group('num')) if spacing_match
-                       else max(radius / 2.0, 2.0))
-            if target['kind'] == 'any' and pending_target is not None:
-                target = pending_target
-            steps.append(Step('search', {
+            target = pending_target if (target['kind'] == 'any'
+                                        and pending_target is not None) else target
+            params = {
                 'center_east_m': east,
                 'center_north_m': north,
-                'radius_m': radius,
-                'spacing_m': spacing,
                 'target': target,
                 'altitude_m': altitude,
-            }))
+            }
+            if is_rect:
+                width = (_num(width_match.group('num'))
+                         if width_match and width_match.group('num') else 10.0)
+                if height_match and height_match.group('num'):
+                    height = _num(height_match.group('num'))
+                elif width_match and width_match.group('num'):
+                    height = width
+                else:
+                    height = 10.0
+                if not (width_match and width_match.group('num')):
+                    width = height
+                angle = (_num(_RE_ANGLE.search(clause).group('num'))
+                         if _RE_ANGLE.search(clause)
+                         and _RE_ANGLE.search(clause).group('num') else 0.0)
+                spacing = (_num(spacing_match.group('num')) if spacing_match
+                           else max(min(width, height) / 2.0, 2.0))
+                params.update({'shape': 'rectangle', 'width_m': width,
+                               'height_m': height, 'angle_deg': angle,
+                               'spacing_m': spacing})
+            else:
+                spacing = (_num(spacing_match.group('num')) if spacing_match
+                           else max(radius / 2.0, 2.0))
+                params.update({'shape': 'square', 'radius_m': radius,
+                               'spacing_m': spacing})
+            steps.append(Step('search', params))
             pending_target = None
             continue
         if intent == 'scan':
@@ -291,8 +323,14 @@ def parse_task(text: str) -> TaskSpec:
         if step.type != 'search':
             continue
         params = step.params
-        waypoints = lawnmower(params['center_east_m'], params['center_north_m'],
-                              params['radius_m'], params['spacing_m'])
+        if str(params.get('shape', 'square')).lower() == 'rectangle':
+            waypoints = lawnmower_rectangle(
+                params['center_east_m'], params['center_north_m'],
+                params['width_m'], params['height_m'], params['spacing_m'],
+                params.get('angle_deg', 0.0))
+        else:
+            waypoints = lawnmower(params['center_east_m'], params['center_north_m'],
+                                  params['radius_m'], params['spacing_m'])
         estimate = estimate_duration_s(waypoints, 0.5)
         if estimate * 1.5 > max_duration:
             max_duration = min(DURATION_MAX_S, estimate * 1.5)

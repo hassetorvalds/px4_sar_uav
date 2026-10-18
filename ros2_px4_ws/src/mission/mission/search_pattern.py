@@ -51,11 +51,75 @@ def lawnmower(center_east: float, center_north: float, radius_m: float,
     return waypoints
 
 
+def lawnmower_rectangle(center_east: float, center_north: float, width_m: float,
+                       height_m: float, spacing_m: float,
+                       angle_deg: float = 0.0, *, include_edges: bool = True):
+    """矩形区域弓字搜索（可绕中心旋转）。
+
+    - 本地坐标：x 沿宽（东）、y 沿长（北），中心在原点；
+    - 航线沿 x，换行沿 y，间距 ≤ spacing；
+    - 绕中心逆时针旋转 angle_deg，再平移到 center。
+    """
+    width = float(width_m)
+    height = float(height_m)
+    spacing = float(spacing_m)
+    if width <= 0 or height <= 0:
+        raise ValueError('width_m / height_m 必须 > 0')
+    if spacing <= 0:
+        raise ValueError('spacing_m 必须 > 0')
+
+    half_w = width / 2.0
+    half_h = height / 2.0
+    lanes = []
+    y = -half_h
+    while y < half_h - 1e-9:
+        lanes.append(y)
+        y += spacing
+    if include_edges:
+        lanes.append(half_h)
+    else:
+        lanes.append(min(half_h, -half_h + max(spacing, height)))
+
+    local = []
+    for lane_index, lane_y in enumerate(lanes):
+        if lane_index % 2 == 0:
+            local.append((-half_w, lane_y))
+            local.append((half_w, lane_y))
+        else:
+            local.append((half_w, lane_y))
+            local.append((-half_w, lane_y))
+
+    theta = math.radians(float(angle_deg))
+    cos_t, sin_t = math.cos(theta), math.sin(theta)
+    waypoints = []
+    for x, y in local:
+        east = center_east + x * cos_t - y * sin_t
+        north = center_north + x * sin_t + y * cos_t
+        waypoints.append((east, north))
+    return waypoints
+
+
+def search_metrics(step_params, waypoints, speed_mps: float):
+    """覆盖指标：面积/折线长度/预计时间（与航点数量）。"""
+    shape = str(step_params.get('shape', 'square')).lower()
+    if shape == 'rectangle':
+        area = float(step_params.get('width_m', 0.0)) * float(
+            step_params.get('height_m', 0.0))
+    else:
+        radius = float(step_params.get('radius_m', 0.0))
+        area = (2.0 * radius) ** 2
+    return {
+        'area_m2': round(area, 1),
+        'path_length_m': round(path_length(waypoints), 1),
+        'estimated_s': round(estimate_duration_s(waypoints, speed_mps), 1),
+    }
+
+
 def path_length(waypoints):
     """折线总长度（米），用于估算搜索时长。"""
     total = 0.0
-    for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
-        total += math.hypot(x2 - x1, y2 - y1)
+    for first, second in zip(waypoints, waypoints[1:]):
+        total += math.hypot(second[0] - first[0], second[1] - first[1])
     return total
 
 

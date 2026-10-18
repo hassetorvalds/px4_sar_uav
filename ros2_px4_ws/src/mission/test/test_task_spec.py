@@ -112,3 +112,29 @@ def test_scan_seconds_range():
     with pytest.raises(TaskError, match='scan.seconds'):
         _spec([Step('takeoff', {}), Step('scan', {'seconds': 0.0}),
                Step('land', {})]).validate()
+
+
+def test_rectangle_search_validation_and_geofence():
+    spec = _spec([Step('takeoff', {}),
+                  Step('search', {'shape': 'rectangle',
+                                  'center_east_m': 5.0, 'center_north_m': -6.0,
+                                  'width_m': 8.0, 'height_m': 6.0,
+                                  'spacing_m': 3.0,
+                                  'target': {'kind': 'any'}}),
+                  Step('land', {})]).validate()
+    assert spec.steps[1].params['shape'] == 'rectangle'
+
+    with pytest.raises(TaskError, match='search.shape'):
+        _spec([Step('takeoff', {}),
+               Step('search', {'shape': 'triangle',
+                               'target': {'kind': 'any'}}),
+               Step('land', {})]).validate()
+
+    with pytest.raises(TaskError, match='围栏'):
+        _spec([Step('takeoff', {}),
+               Step('search', {'shape': 'rectangle',
+                               'center_east_m': 35.0, 'center_north_m': 0.0,
+                               'width_m': 20.0, 'height_m': 20.0,
+                               'spacing_m': 3.0,
+                               'target': {'kind': 'any'}}),
+               Step('land', {})]).validate()

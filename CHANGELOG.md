@@ -15,6 +15,40 @@
 
 ---
 
+## [2026-10-18] 覆盖规划升级：矩形/旋转搜索 + 覆盖指标（真机 6/6）
+
+### 新增
+
+- `search_pattern.lawnmower_rectangle()`：矩形区域、可绕中心旋转的弓字航点；
+- `search_metrics()`：面积/折线长度/预计时间；
+- `search` step 支持 `shape=rectangle`、`width_m/height_m/angle_deg`；
+- 解析器支持"搜索东侧 5 米、南侧 6 米、宽 6 米、长 4 米的矩形区域"；
+- 执行器 `search_plan` 报告带 `area_m2/path_length_m/estimated_s`；
+- 报告/CLI 打印矩形摘要与覆盖指标。
+
+### 验证
+
+```text
+· 单测：mission 107 passed；全包 234 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 235）
+· 假 PX4：矩形搜索 search_plan + 6/6 search_waypoint + done PASS
+· 真机（起飞 2m → 矩形 6×4 m、r=0、center E5/N-6 → 降落）：
+  takeoff LCL 1.977 / REL 2.0
+  search_plan 6 航点，area=24.0 m²，path=22.0 m，est=54.0 s
+  search_waypoint 1/6 … 6/6（22.8–64.2 s），z 1.72–2.10 m
+  → done；arming_state=1、landed=true
+  报告：logs/tasks/report_20261018-172142-008.jsonl
+  证据页：logs/tasks/report_20261018-172142-008.md
+```
+
+### 已知问题
+
+- 矩形只做轴对齐/绕中心旋转，多边形/障碍内裁剪未做；
+- 覆盖指标是几何估计，不含风/转弯半径/相机 FOV 重叠；
+- 旋转角超过 ±180° 未支持。
+
+---
+
 ## [2026-10-18] P3 收尾：findings 持久化 + 跨任务汇总
 
 ### 新增
