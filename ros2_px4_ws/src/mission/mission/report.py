@@ -71,6 +71,10 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
                 by_id[event['finding_id']] = event
         findings = list(by_id.values())
     scan_complete = any(e.get('event') == 'scan_complete' for e in events)
+    coverage = (done or {}).get('coverage')
+    if not coverage:
+        coverage = next((e for e in reversed(events)
+                         if e.get('event') == 'search_coverage'), None)
     waypoints = [e for e in events if e.get('event') == 'search_waypoint']
     plan = next((e for e in events if e.get('event') == 'search_plan'), None)
     mtime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(report_path)))
@@ -115,6 +119,15 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         lines.append(detail)
     if scan_complete:
         lines.append('- 扫描：完成')
+    if coverage:
+        lines.append(
+            f'- 观测覆盖：{coverage.get("observed_cells")}/'
+            f'{coverage.get("total_cells")} 格'
+            f'（{100.0 * float(coverage.get("coverage_ratio", 0.0)):.1f}%），'
+            f'漏扫 {coverage.get("missed_cells")} 格，'
+            f'已观测 {_fmt(coverage.get("observed_area_m2"), 1)} m²'
+            f'（地面点 {coverage.get("ground_points", "?")}，'
+            f'区域内 {coverage.get("points_in_polygon", "?")}）')
     if targets:
         lines.append(f'- 目标：{len(targets)} 次确认')
         for target in targets:

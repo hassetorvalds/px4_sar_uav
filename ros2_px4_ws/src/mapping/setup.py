@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'local_map = mapping.local_map:main',
+            'coverage_monitor = mapping.coverage_monitor:main',
         ],
     },
 )

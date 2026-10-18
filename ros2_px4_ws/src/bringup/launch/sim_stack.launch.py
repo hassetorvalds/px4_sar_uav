@@ -34,6 +34,7 @@ def generate_launch_description():
         DeclareLaunchArgument('with_detector', default_value='false'),
         DeclareLaunchArgument('detector_backend', default_value='color'),
         DeclareLaunchArgument('with_arbiter', default_value='true'),
+        DeclareLaunchArgument('with_coverage', default_value='true'),
     ]
     arbiter_on = LaunchConfiguration('with_arbiter')
     arbiter_if = IfCondition(arbiter_on)
@@ -73,6 +74,10 @@ def generate_launch_description():
         # 地图层：局部体素障碍地图 + 三向净空
         Node(package='mapping', executable='local_map',
              name='local_map', output='screen'),
+        # 覆盖层：相机点云 → ENU 地面网格，统计实际观测覆盖
+        Node(package='mapping', executable='coverage_monitor',
+             name='coverage_monitor', output='screen',
+             condition=IfCondition(LaunchConfiguration('with_coverage'))),
         # 规划层：目标跟踪 + 避障（经仲裁器；关掉仲裁时直连，保持旧行为）
         Node(package='planner', executable='local_planner',
              name='local_planner', output='screen',

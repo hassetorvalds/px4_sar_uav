@@ -95,6 +95,8 @@ class TaskExecutor(Node):
         self.declare_parameter('findings_merge_radius_m', 3.0)
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
+        self.declare_parameter('coverage_polygon_topic', '/coverage/polygon')
+        self.declare_parameter('coverage_status_topic', '/coverage/status')
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -128,6 +130,7 @@ class TaskExecutor(Node):
         self._findings_dir = str(self.get_parameter('findings_dir').value)
         self._persist_findings = bool(
             self.get_parameter('persist_findings').value)
+        self._coverage = None
         self._findings = FindingsBook(self._findings_radius)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
@@ -178,6 +181,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._target_centered_reported = False
+        self._coverage = None
         self._findings = FindingsBook(self._findings_radius)
         self._manual_override = False
         self._last_target_pose = None
@@ -202,6 +206,11 @@ class TaskExecutor(Node):
             String, str(self.get_parameter('heartbeat_topic').value), 10)
         self._status_pub = self.create_publisher(
             String, str(self.get_parameter('status_topic').value), 10)
+        self._coverage_pub = self.create_publisher(
+            String, str(self.get_parameter('coverage_polygon_topic').value), 10)
+        self.create_subscription(
+            String, str(self.get_parameter('coverage_status_topic').value),
+            self._on_coverage, 5)
         self.create_subscription(
             String, str(self.get_parameter('task_topic').value), self._on_task, 10)
         self.create_subscription(
@@ -270,6 +279,30 @@ class TaskExecutor(Node):
 
     def _now_t(self) -> float:
         return round(time.monotonic() - self._clock_started, 2)
+
+    def _search_polygon(self, step) -> list:
+        params = step.params
+        center_east = float(params.get('center_east_m', 0.0))
+        center_north = float(params.get('center_north_m', 0.0))
+        shape = str(params.get('shape', 'square')).lower()
+        if shape == 'polygon':
+            points = params.get('polygon') or params.get('vertices') or []
+            return [[center_east + float(e), center_north + float(n)]
+                    for e, n in points]
+        if shape == 'rectangle':
+            width = float(params.get('width_m', 10.0))
+            height = float(params.get('height_m', 10.0))
+            angle = math.radians(float(params.get('angle_deg', 0.0)))
+            local = [(-width / 2, -height / 2), (width / 2, -height / 2),
+                     (width / 2, height / 2), (-width / 2, height / 2)]
+            cos_t, sin_t = math.cos(angle), math.sin(angle)
+            return [[center_east + x * cos_t - y * sin_t,
+                     center_north + x * sin_t + y * cos_t] for x, y in local]
+        radius = float(params.get('radius_m', 10.0))
+        return [[center_east - radius, center_north - radius],
+                [center_east + radius, center_north - radius],
+                [center_east + radius, center_north + radius],
+                [center_east - radius, center_north + radius]]
 
     def _target_kind(self) -> str:
         if self._spec is not None:
@@ -408,6 +441,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._target_centered_reported = False
+        self._coverage = None
         self._findings = FindingsBook(self._findings_radius)
         self._land_command_sent = False
         self._abort_reason = None
@@ -415,6 +449,12 @@ class TaskExecutor(Node):
         self._ground_up_lcl = None
         self._tracker = CommandTracker(ack_timeout_s=self._ack_timeout,
                                        max_attempts=self._ack_max_attempts)
+
+    def _on_coverage(self, msg: String) -> None:
+        try:
+            self._coverage = json.loads(msg.data)
+        except json.JSONDecodeError:
+            pass
 
     def _on_cancel(self, _msg: Empty) -> None:
         if self._phase in (PHASE_ARM, PHASE_OFFBOARD, PHASE_RUN, PHASE_PAUSED):
@@ -628,7 +668,8 @@ class TaskExecutor(Node):
                      commands=self._tracker.to_dicts(),
                      findings=self._findings.to_dicts(),
                      findings_path=findings_path,
-                     findings_task_id=findings_task_id)
+                     findings_task_id=findings_task_id,
+                     coverage=self._coverage)
         self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
         # 先发一条 DONE 状态再退出：Action server 依赖它收结果；
         # _enter(PHASE_DONE) 在 exit_on_done 时会直接 SystemExit。
@@ -679,8 +720,14 @@ class TaskExecutor(Node):
                 step.params, altitude_m=self._spec.altitude_m)
             metrics = search_metrics(step.params, self._search_wps,
                                      self._spec.max_speed_mps)
+            polygon = self._search_polygon(step)
+            self._coverage = None
+            if polygon:
+                self._coverage_pub.publish(String(data=json.dumps(
+                    {'polygon': polygon, 'cell_size_m': 1.0},
+                    ensure_ascii=False)))
             self._report('search_plan', waypoints=len(self._search_wps),
-                         **metrics)
+                         polygon=polygon, **metrics)
         if step.type == 'return_home':
             self._step_target = (self._origin_enu[0], self._origin_enu[1],
                                  self._origin_enu[2])
@@ -924,6 +971,8 @@ class TaskExecutor(Node):
             self._stop_velocity()
             return
         if self._search_index >= len(self._search_wps):
+            if self._coverage is not None:
+                self._report('search_coverage', **self._coverage)
             self._advance_step()
             return
         target = self._search_wps[self._search_index]
@@ -1043,6 +1092,7 @@ class TaskExecutor(Node):
             'commands': self._tracker.to_dicts(),
             'health': self._last_health,
             'findings': self._findings.to_dicts(),
+            'coverage': self._coverage,
         }
         if self._spec is not None:
             payload['task_altitude'] = altitude_dict(
