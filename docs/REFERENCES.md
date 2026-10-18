@@ -221,13 +221,13 @@ intent frame、provenance、显式确认计划、命令生命周期、证据摘�
 |---|---|---|---|---|
 | 意图/确认 | CLI `FLY_TASK_CONFIRM=1` | typed intent frame + operator plan + 确认门 | 增加 IntentFrame（含 provenance/confidence/missing）与"计划确认"输出 | **P0** |
 | 命令生命周期 | bridge 日志有 ACK，执行器不跟踪 | queued→awaiting_ack→accepted→executing→… | 执行器跟踪每条命令的 ACK/超时/结果，写进报告 | **P0** |
-| 飞行原语接口 | `String` 命令 + 阶段超时 | **ROS 2 Action**（takeoff/land/orbit/offboard，cancel/feedback） | AAS 的 `BaseActionBehavior`：P1 改成 action 接口，abort 走 cancel | P1 |
+| 飞行原语接口 | TaskSpec step + **ExecuteTask Action 适配层** | **ROS 2 Action**（takeoff/land/orbit/offboard，cancel/feedback） | ✅ P1：goal=TaskSpec，feedback/result/cancel 已通；独立 Takeoff/Goto Action 未拆 | 已落地 |
 | 任务编排 | flat steps | YAML → py_trees（Sequence/Selector/Repeat） | 先保留 step 列表；需要条件/回退时再引入 BT 或 Selector | P2 |
 | 搜索锁定 | 确认 3 帧 + 悬停 5 s | 6 次一致、10 s 过期、3 m/2.5 m stand-off | 借 AAS 的 fix 确认/过期/stand-off 参数 | P2 |
 | 高度帧 | `px4_z`/ENU 裸值混用 | REL/LCL/BARO/MSL 标注，unknown 不猜 | TaskSpec/报告/高度门全部带 frame 标签 | **P0** |
-| 解锁前健康检查 | `preflight.sh` + 飞控检查 | `checkArmingAndRunConditions` | 执行器 arm 前做一次显式检查（位置新鲜/EKF/围栏/电池） | P1 |
+| 解锁前健康检查 | `mission/health.py` + 执行器 | `checkArmingAndRunConditions` | ✅ 已做：状态/位置/preflight/failsafe/battery，失败不发 arm | 已落地 |
 | 任务 schema | flat steps | `version + defaults + items` | 兼容式对齐（保留 steps 加载器，新增 defaults/items） | P1 |
-| 证据/审计 | JSONL report | durable journal + ULog summary + hash | 报告末尾生成 Markdown 摘要 + ULog 路径 | P1 |
+| 证据/审计 | JSONL + `report_*.md` | durable journal + ULog summary + hash | ✅ Markdown 摘要已做；ULog 路径/哈希仍缺 | 部分落地 |
 | 覆盖规划 | 正方形弓字 | 多边形/扫掠角/重叠/转场腿 | 升级 `search_pattern` | P2 |
 | 发现物/报告 | 无 | findings schema | 加 `perception` 的 finding 模型（type/priority/status/confidence） | P2 |
 | 续跑/持久化 | 无 | persistence + file monitor | 后置 | P3 |
@@ -311,6 +311,27 @@ Evidence：JSONL journal + ULog 路径 + 证据摘要 + findings
 arm ACK 0.011 s、offboard 0.016 s，takeoff LCL 2.008 / REL 2.0，安全上锁落地）。
 小半径搜索也已真机飞通：东南侧 r=3 m、8/8 航点（7–75 s）、无 abort、仅地面碰撞。
 未做：VLM 实际接入（只留了 `--remote-intent` 接口）。
+
+## 7.6 P1 落地（2026-10-18）：健康检查 + 自检域隔离 + 帧标签
+
+- `mission/health.py`：arm 前五项检查，失败不发 arm；真机验证"状态/位置未就绪先拒绝"。
+- `task_executor_simcheck.sh`：默认 `ROS_DOMAIN_ID=77` + 真实栈互锁；真实栈在线时
+  默认拒绝，独立域下允许并跑也不会污染真机。
+- `vlm_closed_loop.py`：高度门/CSV 补 `px4_frame=LCL`、`truth_frame=TRUTH`、
+  `gate_frame`；`height_source=airsim` 打 "TRUTH 仅诊断" 警告。
+
+## 7.7 P2 落地（2026-10-18）：ExecuteTask Action
+
+参考 AAS 的 `autopilot_interface_msgs/action` 与 `BaseActionBehavior`，但**没有重写控制**：
+
+- 新增 `mission_interfaces/action/ExecuteTask.action`；goal 就是 TaskSpec JSON；
+- `task_action_server` 把 goal 发到 `/mission/task`，从 `/mission/status` 取
+  phase/step/altitude/report；feedback/result/cancel 全部复用现有执行器；
+- 取消走 `/mission/cancel`，执行器落地上锁；
+- 假 PX4 正常/取消两条路径 + 真机最小 Action 飞行均通过。
+
+未做：独立 `Takeoff/Goto/Search` Action 类型、并发/抢占、YAML/py_trees。
+下一步若要 BT，直接把 TaskSpec 作为 goal 即可，不需要再改执行器。
 
 ## 8. 参考仓库的许可证提醒
 

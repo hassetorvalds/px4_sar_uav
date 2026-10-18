@@ -28,6 +28,8 @@ setup(
             'task_executor = mission.task_executor:main',
             'task_parser = mission.task_parser:main',
             'task_report = mission.report:main',
+            'task_action_server = mission.task_action_server:main',
+            'task_action_client = mission.task_action_client:main',
         ],
     },
 )

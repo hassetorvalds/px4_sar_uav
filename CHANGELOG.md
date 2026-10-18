@@ -15,6 +15,45 @@
 
 ---
 
+## [2026-10-18] P2：ExecuteTask ROS 2 Action 接口（复用 TaskSpec/执行器）
+
+### 新增
+
+- `mission_interfaces/action/ExecuteTask.action`：goal = TaskSpec JSON；
+  feedback = 阶段/步数/步型/进度/LCL 高度；result = success/message/report_path。
+- `mission/task_action_server.py`：薄适配层，发布 `/mission/task`、订阅
+  `/mission/status`，不重写控制；一次一个 goal，非法/忙碌/状态过期直接拒绝。
+- `mission/task_action_client.py`：`--task-file/--task-json`、`--cancel-after`。
+- 执行器：`/mission/cancel`（Empty）→ `_abort('cancel_requested')` 落地上锁；
+  状态补 `step_total/report_path/aborted/abort_reason`；DONE 时先发一条状态再退出
+  （否则 Action server 收不到结果）。
+- `scripts/run_action_server.sh`、`scripts/action_simcheck.sh`；
+  Action 自检默认 `ROS_DOMAIN_ID=77`。
+- `docs/ACTION.md`。
+
+### 验证
+
+```text
+· 单测：mission 90 passed；全包 217 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 218）
+· 假 PX4 正常：goal 接受 → feedback ARM/RUN/LAND/DONE → success=True → 报告
+· 假 PX4 取消（4 s）：success=False, message=cancel_requested；
+  报告 abort(cancel_requested) + done；安全落地
+· 真机最小 Action：goal 接受 → success=True；
+  health 通过，arm ACK 0.007 s、offboard 0.012 s；
+  takeoff LCL 2.011 / REL 2.0 → done，arming_state=1、landed=true
+  报告：logs/tasks/report_action_20261018-170128.jsonl
+```
+
+### 已知问题
+
+- 仍是单 goal、无并发/抢占；飞行原语仍是 TaskSpec 的 step，不是独立
+  Takeoff/Goto/Search Action 类型；
+- cancel = 落地上锁，不支持取消后恢复；
+- 尚未接 YAML/BT；BT 可直接把 TaskSpec 作为 goal。
+
+---
+
 ## [2026-10-18] Demo 收口：目标自动对准 + Markdown 证据页
 
 ### 新增

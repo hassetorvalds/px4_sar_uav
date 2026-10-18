@@ -32,7 +32,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **215 passed / 2 skipped**（vlm 45 / mission 88 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 15 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 216 passed |
+| 单元测试 | ✅ | **217 passed / 2 skipped**（vlm 45 / mission 90 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 15 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 218 passed |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -41,6 +41,7 @@
 | 搜索→检测→悬停→上报 | ✅ 组合闭环 | 搜索 8/8 + 步进扫描 30 s；`target_confirmed world=[27.41, 30.66, 4.95]`（t=76.1），scan 完成、安全落地；无 abort |
 | 目标自动对准 | ✅ 真机验证 | 确认后 yaw 到世界点，`target_centered error=-3.4°`；search hold 不偏航 |
 | Markdown 证据页 | ✅ | `mission/report.py` 生成 `report_*.md`：健康检查/目标/命令/时间线 |
+| ROS 2 Action 接口 | ✅ 假 PX4 + 真机 | `ExecuteTask`：TaskSpec goal、阶段/进度 feedback、report result、cancel 落地上锁；复用现有执行器 |
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
@@ -107,7 +108,7 @@
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
 自研源码      ~8800 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~2700 行，215 passed / 2 skipped（检测器入口下 216 passed）
+单元测试      ~2800 行，217 passed / 2 skipped（检测器入口下 218 passed）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）

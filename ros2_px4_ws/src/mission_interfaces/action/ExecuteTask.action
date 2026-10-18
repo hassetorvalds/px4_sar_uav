@@ -1,0 +1,17 @@
+# 目标：提交一份 TaskSpec JSON（与 logs/tasks/task_*.json 同 schema）
+string task_json
+---
+# 结果
+bool success
+string message
+string report_path
+---
+# 反馈
+string phase
+int32 step_index
+int32 step_total
+string step_type
+float32 progress
+float32 altitude_lcl_m
+float32 target_altitude_m
+string status

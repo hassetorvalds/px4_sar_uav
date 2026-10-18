@@ -32,7 +32,7 @@ from px4_interface.qos import px4_qos
 from px4_interface.state import Px4StateMonitor
 from px4_msgs.msg import BatteryStatus, VehicleCommand, VehicleCommandAck
 from rclpy.node import Node
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Empty, String
 
 from .altitude import format_altitude
 from .altitude import to_dict as altitude_dict
@@ -74,8 +74,8 @@ class TaskExecutor(Node):
         self.declare_parameter('task_file', '')
         self.declare_parameter('task_json', '')
         self.declare_parameter('intent_path', '')
-        self.declare_parameter('task_topic', '~/task')
-        self.declare_parameter('status_topic', '~/status')
+        self.declare_parameter('task_topic', '/mission/task')
+        self.declare_parameter('status_topic', '/mission/status')
         self.declare_parameter('abort_topic', '~/abort')
         self.declare_parameter('command_topic', '/offboard_bridge/command')
         self.declare_parameter('target_topic', '/offboard_bridge/target_pose')
@@ -172,6 +172,7 @@ class TaskExecutor(Node):
         self._origin_enu = (0.0, 0.0, 0.0)
         self._ever_armed = False
         self._land_command_sent = False
+        self._abort_reason = None
         self._clearance_forward = None
         self._heading_enu = None
         self._last_heartbeat = 0.0
@@ -193,6 +194,7 @@ class TaskExecutor(Node):
             String, str(self.get_parameter('task_topic').value), self._on_task, 10)
         self.create_subscription(
             Bool, str(self.get_parameter('abort_topic').value), self._on_abort, 10)
+        self.create_subscription(Empty, '/mission/cancel', self._on_cancel, 10)
         self.create_subscription(
             String, str(self.get_parameter('map_status_topic').value),
             self._on_map_status, 10)
@@ -384,10 +386,15 @@ class TaskExecutor(Node):
         self._target_world = None
         self._target_centered_reported = False
         self._land_command_sent = False
+        self._abort_reason = None
         self._manual_override = False
         self._ground_up_lcl = None
         self._tracker = CommandTracker(ack_timeout_s=self._ack_timeout,
                                        max_attempts=self._ack_max_attempts)
+
+    def _on_cancel(self, _msg: Empty) -> None:
+        if self._phase in (PHASE_ARM, PHASE_OFFBOARD, PHASE_RUN, PHASE_PAUSED):
+            self._abort('cancel_requested')
 
     def _on_task(self, msg: String) -> None:
         if self._phase not in (PHASE_IDLE, PHASE_DONE):
@@ -568,6 +575,11 @@ class TaskExecutor(Node):
         self._report('done', report_path=self._report_path, forced=forced,
                      commands=self._tracker.to_dicts())
         self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
+        # 先发一条 DONE 状态再退出：Action server 依赖它收结果；
+        # _enter(PHASE_DONE) 在 exit_on_done 时会直接 SystemExit。
+        self._phase = PHASE_DONE
+        self._last_status = 0.0
+        self._publish_status()
         self._enter(PHASE_DONE)
 
     # ------------------------------------------------------------------
@@ -951,6 +963,10 @@ class TaskExecutor(Node):
             'phase': self._phase,
             'step': self._step_index,
             'step_type': self._current_step_type(),
+            'step_total': (len(self._spec.steps) if self._spec is not None else 0),
+            'report_path': self._report_path,
+            'aborted': self._abort_reason is not None,
+            'abort_reason': self._abort_reason,
             'dry_run': self._dry_run,
             'search_waypoint': self._search_index,
             'clearance_forward_m': (None if self._clearance_forward is None
@@ -977,6 +993,7 @@ class TaskExecutor(Node):
 
     def _abort(self, reason: str) -> None:
         self.get_logger().error(f'任务中止：{reason}')
+        self._abort_reason = str(reason)
         self._report('abort', reason=reason)
         self._begin_land()
 
