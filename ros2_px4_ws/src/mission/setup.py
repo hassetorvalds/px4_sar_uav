@@ -18,13 +18,15 @@ setup(
     zip_safe=True,
     maintainer='hassetorvalds',
     maintainer_email='hassetorvalds@users.noreply.github.com',
-    description='任务层：航点状态机（起飞、航点巡航、降落）',
+    description='任务层：航点状态机 + 自然语言任务解析/执行',
     license='TODO: License declaration',
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'waypoint_mission = mission.waypoint_mission:main',
             'approach_supervisor = mission.approach_supervisor:main',
+            'task_executor = mission.task_executor:main',
+            'task_parser = mission.task_parser:main',
         ],
     },
 )

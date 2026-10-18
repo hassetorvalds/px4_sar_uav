@@ -32,12 +32,13 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **130 passed / 2 skipped**（vlm 45 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 13 / mission 5 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 131 passed |
+| 单元测试 | ✅ | **169 passed / 2 skipped**（vlm 45 / mission 44 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 13 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 170 passed |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
-| 区域覆盖搜索 | ❌ | `frontier_explorer` 有代码，未进主线、未飞 |
-| 任务级自然语言解析 | ❌ | 当前只有"指向式导航"，没有 JSON 任务 schema |
+| 区域覆盖搜索 | ⚠️ 航迹生成已测，未飞 | `mission/search_pattern.py`：弓字形覆盖；执行器按航点飞 |
+| 自然语言 → 任务（规则解析） | ⚠️ 已实现+单测，未做 VLM | `mission/task_parser.py`：中英/全角/中文数字；非法指令拒绝；输出可校验 `TaskSpec` |
+| 通用任务执行（起飞/航点/悬停/返航/搜索） | ⚠️ 已实现+单测，**未飞验** | `mission/task_executor.py` + `executor_core.py`：围栏/净空门/总时限/人工接管暂停 |
 | 语义地图 / 语言—空间定位 | ❌ | 未开始 |
 | 检测内核 + 世界坐标反投影 | ⚠️ 已实现，未上机 | `perception`：color/hog/haar 三种 backend；像素+深度→ENU；多帧关联（世界距离/IoU + N 帧确认） |
 | 人员检测（真实人物） | ❌ | 场景内没有人物；HOG 在 60 张已存帧上 **0/60** |
@@ -96,8 +97,8 @@
 ```text
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
-自研源码      ~6200 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~1550 行，130 passed / 2 skipped（检测器入口下 131 passed）
+自研源码      ~7600 行 Python（不含 px4_msgs 与第三方）
+单元测试      ~1900 行，169 passed / 2 skipped（检测器入口下 170 passed）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）
@@ -136,10 +137,11 @@ scripts/dev_chain.sh stop
 
 ## 8. 下一步（当前方向）
 
-按 2026-10-17 决策：**先做 demo，A 收口 → B 人员检测纵切**。
+按 2026-10-18 决策：**先做"自然语言指挥飞行"的通用基底，人员检测/上层应用往后放**。
 
-- A：三路高度记录并定高度门数据源 → 已知点位 n≥10 + Wilson 冻结 → 公开仓库同步；
-- B：AirSim RGB → 人员检测 → 世界坐标 → 疑似目标记录/报告。
-  已完成不可上机部分：`perception` 包 + 21 项单测 + 离线评估脚本；
-  **下一步需要在场景里放入人物/目标**，再做"悬停检测 → 世界坐标核对"的 SITL 验证；
-- 之后：区域覆盖搜索 → 任务级语言解析（JSON schema，VLM 只出任务不出控制）。
+- 语言层：`mission/task_parser.py` 已能把中英指令解析成可校验的 `TaskSpec`（规则版，
+  后续换 VLM 只替换这一层）；`mission/task_spec.py` 做 schema/范围/顺序校验。
+- 执行层：`mission/task_executor.py` + `executor_core.py` 已实现
+  起飞/航点/前向/悬停/搜索/返航/降落，带围栏、前向净空门、总时限、人工接管暂停。
+- **待飞验**：等 AirSim 4560 恢复后，按 [docs/DEMO.md](DEMO.md) Step 2 → Step 3 验收。
+- 之后：感知（人员/目标）接入执行器 → 语义地图 → 真正的搜救任务。

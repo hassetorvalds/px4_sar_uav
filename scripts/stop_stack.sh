@@ -17,6 +17,9 @@ patterns=(
     "sensor_bridge/airsim_camera"
     "mapping/local_map"
     "planner/local_planner"
+    "perception/victim_detector"
+    "mission/task_executor"
+    "vlm/vlm_navigator"
 )
 
 for pattern in "${patterns[@]}"; do

@@ -15,6 +15,57 @@
 
 ---
 
+## [2026-10-18] 自然语言指挥飞行：TaskSpec/解析器/执行器（未飞验）
+
+### 新增
+
+- `mission/task_spec.py`：**唯一可控中间层**。`Step`（takeoff/goto/forward/search/hover/
+  land/return_home）+ `TaskSpec`，含 schema 版本、范围校验（高度 0.5–10 m、速度 0.1–1.0 m/s、
+  时限 10–600 s、围栏 2–50 m）、顺序校验（首个必须 takeoff、末尾必须 land/return_home）、
+  JSON 往返。
+- `mission/task_parser.py`：规则版自然语言 → TaskSpec。支持中英混合、全角数字、中文数字
+  （一–九十九）、方向/距离、机体前向、悬停、返航、搜索（中心/半径/间距/目标颜色/人员）；
+  无法识别或越界直接拒绝并给出原因。自动补起飞/降落、按搜索航迹自动放宽任务时限。
+- `mission/search_pattern.py`：弓字形覆盖航迹 + 折线长度/时长估算。
+- `mission/executor_core.py`：纯逻辑（P 控制限速、前向净空门、围栏、机体前向目标、
+  搜索航点展开、单步超时）。
+- `mission/task_executor.py`：ROS 执行节点。阶段 IDLE→ARM→OFFBOARD→RUN→LAND→DONE；
+  订阅 PX4 状态/地图净空/检测目标，发布 `offboard_bridge` 指令与
+  速度/位置目标；2 Hz 心跳；`~/status` JSON；JSONL 报告。
+  安全：默认 `dry_run=true`；围栏 + 前向净空门 + 任务总时限 + 状态陈旧 +
+  人工接管暂停（非 Offboard 立即停发，交还后恢复）+ 卡阶段超时 → `land_fast`。
+- `scripts/fly_task.py`：CLI。默认**只解析并打印计划**；`--execute` 且
+  `FLY_TASK_CONFIRM=1` 才执行；`--via-arbiter` 适配开着仲裁的栈。
+- `docs/DEMO.md`：从起链路到"一句话飞行/搜索"的完整步骤与预期输出。
+- `scripts/stop_stack.sh`：补 `perception/victim_detector`、`mission/task_executor`、
+  `vlm/vlm_navigator` 的清理。
+
+### 验证
+
+```text
+· 单测：mission 44 passed（task_spec 11 / parser+search 22 / executor_core 11）；
+        全包 169 passed / 2 skipped（PYTHONNOUSERSITE=1 时 170）
+· 解析示例：
+    "起飞到 2 米，向北飞 10 米，悬停 5 秒，降落"
+      → takeoff(2) → goto(北 10) → hover(5) → land
+    "搜索北侧 20 米、半径 10 米的区域，寻找橙色标记，高度 2 米，降落"
+      → takeoff(2) → search(center 北 20, r=10, spacing=5, orange) → land
+      → 展开 10 个航点、折线 129 m、预计 258 s（时限自动放宽到 387 s）
+· 非法指令："今天天气不错" → 拒绝并列出支持的句式
+· 执行器 dry_run 冒烟：接受任务、打印计划、写
+    logs/tasks/smoke.jsonl（task_accepted 含完整 TaskSpec）
+```
+
+### 已知问题 / 待办
+
+- **执行器未飞验**：代码/单测/dry_run 通过，尚未真实起飞。
+- **AirSim 4560 不可用（2026-10-18 现场）**：UE4Editor 在跑、RPC 45000 正常，
+  但 4560 处于 `CloseWait`，Windows 本机也连不上 → 需要 UE 里 Stop → Play 重启场景。
+- 规则解析覆盖面有限：复杂/歧义指令会被拒绝（这是预期行为，后续换 VLM parser）。
+- 场景内无人物；demo 先用橙色目标物验证"检测→世界坐标→悬停"链路。
+
+---
+
 ## [2026-10-18] 收口：结果页/版本基线/check_stack 阈值化 + 三路高度 + perception 包（离线）
 
 ### 新增

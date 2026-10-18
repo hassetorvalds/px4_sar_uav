@@ -1,0 +1,641 @@
+"""任务执行节点：把 :class:`TaskSpec` 变成安全的飞行动作。
+
+设计边界（与 README 的分层一致）：
+
+- **只认识 TaskSpec/Step**，不认识自然语言；解析在 ``mission.task_parser``。
+- **不直接碰 PX4**：所有指令经 ``offboard_bridge``（arm/offboard/land_fast/target/velocity）。
+- **安全优先**：围栏、前向净空门、任务总时限、状态陈旧、卡阶段超时都会收工降落；
+  默认 ``dry_run=true``，必须显式 ``dry_run:=false`` 才会解锁。
+- **只做低速任务**：速度上限来自 TaskSpec（默认 0.5 m/s），高度保持交给位置模式。
+
+用法::
+
+    ros2 run mission task_executor --ros-args \
+        -p task_file:=/tmp/task.json -p dry_run:=false
+
+    # 或直接给 JSON
+    ros2 run mission task_executor --ros-args \
+        -p task_json:='{"version":1,...}' -p dry_run:=false
+"""
+
+import json
+import math
+import os
+import re
+import time
+
+import rclpy
+from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Twist
+from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
+from px4_interface.state import Px4StateMonitor
+from rclpy.node import Node
+from std_msgs.msg import Bool, String
+
+from .executor_core import (apply_clearance_gate, forward_target, inside_geofence,
+                            search_waypoints, step_timeout_s, velocity_toward)
+from .search_pattern import estimate_duration_s
+from .task_spec import TaskError, TaskSpec
+
+_CLEARANCE_RE = re.compile(r'nearest_forward_m=([0-9.]+|inf)')
+
+PHASE_IDLE = 'IDLE'
+PHASE_ARM = 'ARM'
+PHASE_OFFBOARD = 'OFFBOARD'
+PHASE_RUN = 'RUN'
+PHASE_PAUSED = 'PAUSED'
+PHASE_LAND = 'LAND'
+PHASE_DONE = 'DONE'
+
+
+class TaskExecutor(Node):
+    def __init__(self) -> None:
+        super().__init__('task_executor')
+        self.declare_parameter('task_file', '')
+        self.declare_parameter('task_json', '')
+        self.declare_parameter('task_topic', '~/task')
+        self.declare_parameter('status_topic', '~/status')
+        self.declare_parameter('abort_topic', '~/abort')
+        self.declare_parameter('command_topic', '/offboard_bridge/command')
+        self.declare_parameter('target_topic', '/offboard_bridge/target_pose')
+        self.declare_parameter('velocity_topic', '/offboard_bridge/velocity_setpoint')
+        self.declare_parameter('heartbeat_topic', '/flight_heartbeat')
+        self.declare_parameter('map_status_topic', '/local_map/status')
+        self.declare_parameter('best_topic', '/perception/best')
+        self.declare_parameter('report_path', '')
+        self.declare_parameter('dry_run', True)
+        self.declare_parameter('hold_on_target', True)
+        self.declare_parameter('target_hold_s', 5.0)
+        self.declare_parameter('land_on_target', False)
+        self.declare_parameter('clearance_stop_m', 0.6)
+        self.declare_parameter('arrive_tol_m', 0.4)
+        self.declare_parameter('takeoff_tol_m', 0.25)
+        self.declare_parameter('arm_timeout_s', 15.0)
+        self.declare_parameter('offboard_timeout_s', 15.0)
+        self.declare_parameter('land_timeout_s', 25.0)
+        self.declare_parameter('blocked_abort_s', 10.0)
+        self.declare_parameter('status_timeout_s', 2.0)
+        self.declare_parameter('heartbeat_s', 0.5)
+
+        self._dry_run = bool(self.get_parameter('dry_run').value)
+        self._hold_on_target = bool(self.get_parameter('hold_on_target').value)
+        self._land_on_target = bool(self.get_parameter('land_on_target').value)
+        self._target_hold_s = float(self.get_parameter('target_hold_s').value)
+        self._clearance_stop = float(self.get_parameter('clearance_stop_m').value)
+        self._arrive_tol = float(self.get_parameter('arrive_tol_m').value)
+        self._takeoff_tol = float(self.get_parameter('takeoff_tol_m').value)
+        self._arm_timeout = float(self.get_parameter('arm_timeout_s').value)
+        self._offboard_timeout = float(self.get_parameter('offboard_timeout_s').value)
+        self._land_timeout = float(self.get_parameter('land_timeout_s').value)
+        self._blocked_abort = float(self.get_parameter('blocked_abort_s').value)
+        self._status_timeout = float(self.get_parameter('status_timeout_s').value)
+        self._heartbeat_s = float(self.get_parameter('heartbeat_s').value)
+
+        self._monitor = Px4StateMonitor(self)
+        self._phase = PHASE_IDLE
+        self._phase_started = time.monotonic()
+        self._spec = None
+        self._task_started = None
+        self._step_index = 0
+        self._step_started = time.monotonic()
+        self._step_target = None
+        self._search_wps = []
+        self._search_index = 0
+        self._takeoff_stable_at = None
+        self._blocked_since = None
+        self._target_hold_until = 0.0
+        self._last_target_report_at = 0.0
+        self._manual_override = False
+        self._last_target_pose = None
+        self._origin_enu = (0.0, 0.0, 0.0)
+        self._ever_armed = False
+        self._land_command_sent = False
+        self._clearance_forward = None
+        self._heading_enu = None
+        self._last_heartbeat = 0.0
+        self._last_status = 0.0
+        self._report_handle = None
+        self._report_path = str(self.get_parameter('report_path').value)
+
+        self._command_pub = self.create_publisher(
+            String, str(self.get_parameter('command_topic').value), 10)
+        self._target_pub = self.create_publisher(
+            PoseStamped, str(self.get_parameter('target_topic').value), 10)
+        self._velocity_pub = self.create_publisher(
+            Twist, str(self.get_parameter('velocity_topic').value), 10)
+        self._heartbeat_pub = self.create_publisher(
+            String, str(self.get_parameter('heartbeat_topic').value), 10)
+        self._status_pub = self.create_publisher(
+            String, str(self.get_parameter('status_topic').value), 10)
+        self.create_subscription(
+            String, str(self.get_parameter('task_topic').value), self._on_task, 10)
+        self.create_subscription(
+            Bool, str(self.get_parameter('abort_topic').value), self._on_abort, 10)
+        self.create_subscription(
+            String, str(self.get_parameter('map_status_topic').value),
+            self._on_map_status, 10)
+        self.create_subscription(
+            PoseStamped, str(self.get_parameter('best_topic').value),
+            self._on_best, 10)
+
+        self._open_report()
+        self._load_task()
+        self.create_timer(0.1, self._tick)
+        self.get_logger().info(
+            f'任务执行器就绪：dry_run={self._dry_run}，'
+            f'任务={"有" if self._spec else "无（等待 ~/task）"}')
+
+    # ------------------------------------------------------------------
+    # 任务装载 / 报告
+    # ------------------------------------------------------------------
+
+    def _open_report(self) -> None:
+        path = self._report_path
+        if not path:
+            stamp = time.strftime('%Y%m%d-%H%M%S')
+            path = os.path.join('logs', 'tasks', f'task_{stamp}.jsonl')
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        self._report_path = path
+        self._report_handle = open(path, 'a', encoding='utf-8')
+
+    def _report(self, event: str, **fields) -> None:
+        if self._report_handle is None:
+            return
+        state = self._monitor.snapshot()
+        entry = {
+            't': round(time.monotonic() - (self._task_started or time.monotonic()), 2),
+            'event': event,
+            'phase': self._phase,
+            'step': self._step_index,
+            'armed': bool(state.armed),
+            'nav_state': int(state.nav_state),
+            'position_enu': (None if state.position_ned is None
+                             else [round(float(v), 2)
+                                   for v in ned_to_enu(*state.position_ned)]),
+            **{key: value for key, value in fields.items()},
+        }
+        self._report_handle.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        self._report_handle.flush()
+
+    def _load_task(self) -> None:
+        task_json = str(self.get_parameter('task_json').value).strip()
+        task_file = str(self.get_parameter('task_file').value).strip()
+        if not task_json and task_file:
+            try:
+                with open(task_file, encoding='utf-8') as handle:
+                    task_json = handle.read()
+            except OSError as exc:
+                self.get_logger().error(f'读取任务文件失败：{exc}')
+                return
+        if not task_json:
+            return
+        self._accept_task_json(task_json)
+
+    def _accept_task_json(self, text: str) -> None:
+        try:
+            spec = TaskSpec.from_json(text)
+        except TaskError as exc:
+            self.get_logger().error(f'任务被拒绝：{exc}')
+            self._report('task_rejected', reason=str(exc))
+            return
+        self._spec = spec
+        self._reset_task_state()
+        self._report('task_accepted', summary=spec.summary(),
+                     spec=spec.to_dict())
+        self.get_logger().info(f'接受任务：{spec.summary()}')
+        if self._dry_run:
+            self.get_logger().warn(
+                'dry_run=true：只校验/打印任务，不解锁。要执行请设 dry_run:=false')
+        elif self._phase == PHASE_IDLE:
+            self._enter(PHASE_ARM)
+
+    def _reset_task_state(self) -> None:
+        self._phase = PHASE_IDLE
+        self._phase_started = time.monotonic()
+        self._task_started = None
+        self._step_index = 0
+        self._step_target = None
+        self._search_wps = []
+        self._search_index = 0
+        self._takeoff_stable_at = None
+        self._blocked_since = None
+        self._target_hold_until = 0.0
+        self._land_command_sent = False
+        self._manual_override = False
+
+    def _on_task(self, msg: String) -> None:
+        if self._phase not in (PHASE_IDLE, PHASE_DONE):
+            self.get_logger().warn('当前任务未结束，忽略新任务（先 abort/降落）')
+            return
+        self._accept_task_json(msg.data)
+
+    def _on_abort(self, msg: Bool) -> None:
+        if msg.data:
+            self.get_logger().error('收到 abort：立即收工降落')
+            self._report('abort')
+            self._begin_land()
+
+    def _on_map_status(self, msg: String) -> None:
+        match = _CLEARANCE_RE.search(msg.data)
+        if not match:
+            return
+        value = match.group(1)
+        self._clearance_forward = float('inf') if value == 'inf' else float(value)
+
+    def _on_best(self, msg: PoseStamped) -> None:
+        if not self._hold_on_target or self._phase != PHASE_RUN:
+            return
+        now = time.monotonic()
+        # 去抖：同一目标持续可见时不要把搜索无限期拖住
+        if now - self._last_target_report_at < 5.0:
+            return
+        self._last_target_report_at = now
+        world = [round(float(msg.pose.position.x), 2),
+                 round(float(msg.pose.position.y), 2),
+                 round(float(msg.pose.position.z), 2)]
+        self.get_logger().info(f'确认目标：world={world} → 悬停 {self._target_hold_s:.0f} s')
+        self._report('target_confirmed', world_enu=world,
+                     step_type=self._current_step_type())
+        self._target_hold_until = now + self._target_hold_s
+        if self._land_on_target:
+            self._begin_land()
+
+    # ------------------------------------------------------------------
+    # 状态机
+    # ------------------------------------------------------------------
+
+    def _enter(self, phase: str) -> None:
+        self._phase = phase
+        self._phase_started = time.monotonic()
+        self.get_logger().info(f'→ 阶段 {phase}')
+        self._report('phase', to=phase)
+
+    def _phase_elapsed(self) -> float:
+        return time.monotonic() - self._phase_started
+
+    def _position_enu(self):
+        state = self._monitor.snapshot()
+        if state.position_ned is None:
+            return None
+        return ned_to_enu(*state.position_ned)
+
+    def _tick(self) -> None:
+        now = time.monotonic()
+        self._update_heading()
+        self._update_heartbeat(now)
+        self._publish_status()
+        state = self._monitor.snapshot()
+        if state.armed:
+            self._ever_armed = True
+
+        if self._phase == PHASE_IDLE:
+            return
+        if self._phase == PHASE_DONE:
+            return
+
+        # 安全闸：状态陈旧 / 越界 / 总时限
+        if self._monitor.status_age_s() > self._status_timeout:
+            self.get_logger().error('PX4 状态陈旧 → 停止发指令')
+            self._report('abort', reason='stale_px4')
+            self._stop_velocity()
+            return
+
+        # 人工接管：非 Offboard 时**停止自主输出**，交还后自动恢复
+        if self._phase == PHASE_RUN and state.armed and not state.offboard:
+            if not self._manual_override:
+                self._manual_override = True
+                self._stop_velocity()
+                self._report('manual_override')
+                self.get_logger().warn('检测到人工接管（非 Offboard）→ 暂停自主输出')
+                self._enter(PHASE_PAUSED)
+            return
+        if self._phase == PHASE_PAUSED:
+            if not state.armed:
+                self._enter(PHASE_DONE)
+            elif state.offboard:
+                self._manual_override = False
+                self._report('manual_resume')
+                self._enter(PHASE_RUN)
+            return
+
+        if self._phase in (PHASE_RUN, PHASE_LAND) and self._position_enu() is not None:
+            if not inside_geofence(self._position_enu(), self._origin_enu,
+                                   self._spec.geofence_radius_m, margin_m=2.0):
+                self.get_logger().error('越界 → 立即收工降落')
+                self._report('abort', reason='geofence')
+                self._begin_land()
+                return
+        if (self._phase == PHASE_RUN and self._task_started is not None
+                and now - self._task_started > self._spec.max_duration_s):
+            self.get_logger().warn('任务总时限到 → 收工降落')
+            self._report('abort', reason='max_duration')
+            self._begin_land()
+            return
+
+        if self._phase == PHASE_ARM:
+            self._send_command('arm')
+            if state.armed:
+                self._enter(PHASE_OFFBOARD)
+            elif self._phase_elapsed() > self._arm_timeout:
+                self._abort('解锁超时')
+            return
+
+        if self._phase == PHASE_OFFBOARD:
+            self._send_command('offboard')
+            if state.offboard:
+                self._task_started = now
+                self._enter(PHASE_RUN)
+                self._enter_step(0)
+            elif self._phase_elapsed() > self._offboard_timeout:
+                self._abort('进入 Offboard 超时')
+            return
+
+        if self._phase == PHASE_RUN:
+            self._run_step(now)
+            return
+
+        if self._phase == PHASE_LAND:
+            if not self._land_command_sent:
+                self._send_command('land_fast')
+                self._land_command_sent = True
+                self._report('land_fast')
+            if self._ever_armed and not state.armed:
+                self._enter(PHASE_DONE)
+                self._report('done', report_path=self._report_path)
+                self.get_logger().info('已上锁，任务结束')
+            elif self._phase_elapsed() > self._land_timeout:
+                self.get_logger().warn('降落超时 → 强制上锁')
+                self._send_command('disarm_force')
+                self._enter(PHASE_DONE)
+                self._report('done', forced=True)
+            return
+
+    # ------------------------------------------------------------------
+    # step 执行
+    # ------------------------------------------------------------------
+
+    def _current_step(self):
+        if self._spec is None or self._step_index >= len(self._spec.steps):
+            return None
+        return self._spec.steps[self._step_index]
+
+    def _current_step_type(self):
+        step = self._current_step()
+        return None if step is None else step.type
+
+    def _enter_step(self, index: int) -> None:
+        self._step_index = index
+        self._step_started = time.monotonic()
+        self._step_target = None
+        self._search_wps = []
+        self._search_index = 0
+        self._takeoff_stable_at = None
+        self._blocked_since = None
+        self._target_hold_until = 0.0
+        step = self._current_step()
+        if step is None:
+            self._begin_land()
+            return
+        self.get_logger().info(f'执行 step {index + 1}/{len(self._spec.steps)}：{step.type}')
+        self._report('step', type=step.type, params=step.params)
+        if step.type == 'search':
+            self._search_wps = search_waypoints(
+                step.params, altitude_m=self._spec.altitude_m)
+            self._report('search_plan', waypoints=len(self._search_wps))
+        if step.type == 'return_home':
+            self._step_target = (self._origin_enu[0], self._origin_enu[1],
+                                 self._origin_enu[2])
+
+    def _advance_step(self) -> None:
+        if self._target_hold_until > time.monotonic():
+            return
+        self._enter_step(self._step_index + 1)
+
+    def _run_step(self, now: float) -> None:
+        step = self._current_step()
+        if step is None:
+            self._begin_land()
+            return
+        if now - self._step_started > self._step_timeout(step):
+            self.get_logger().warn(f'step {step.type} 超时 → 收工降落')
+            self._report('abort', reason=f'step_timeout:{step.type}')
+            self._begin_land()
+            return
+
+        position = self._position_enu()
+        if position is None:
+            return
+
+        if step.type == 'takeoff':
+            self._run_takeoff(step, position)
+        elif step.type == 'goto':
+            self._run_goto(position, (float(step.params.get('east_m', 0.0)),
+                                      float(step.params.get('north_m', 0.0)),
+                                      float(step.params.get('altitude_m',
+                                                            self._spec.altitude_m))))
+        elif step.type == 'forward':
+            if self._step_target is None:
+                if self._heading_enu is None:
+                    return
+                self._step_target = forward_target(
+                    position, self._heading_enu, float(step.params.get('meters', 0.0)))
+            self._run_goto(position, self._step_target)
+        elif step.type == 'hover':
+            self._run_hover(step, position, now)
+        elif step.type == 'search':
+            self._run_search(position, now)
+        elif step.type == 'return_home':
+            self._run_goto(position, self._step_target)
+        elif step.type == 'land':
+            self._begin_land()
+        else:
+            self._abort(f'未知 step {step.type}')
+
+    def _run_takeoff(self, step, position) -> None:
+        altitude = float(step.params.get('altitude_m', self._spec.altitude_m))
+        self._publish_target(position[0], position[1], altitude)
+        if abs(float(position[2]) - altitude) <= self._takeoff_tol:
+            if self._takeoff_stable_at is None:
+                self._takeoff_stable_at = time.monotonic()
+            elif time.monotonic() - self._takeoff_stable_at > 1.0:
+                self._origin_enu = (position[0], position[1], altitude)
+                self._report('takeoff_complete', altitude=altitude)
+                self._advance_step()
+        else:
+            self._takeoff_stable_at = None
+
+    def _run_goto(self, position, target) -> None:
+        decision = velocity_toward(position, target,
+                                   max_speed_mps=self._spec.max_speed_mps,
+                                   tolerance_m=self._arrive_tol)
+        decision = apply_clearance_gate(
+            decision, position, self._heading_enu or 0.0,
+            self._clearance_forward, stop_m=self._clearance_stop)
+        if decision.blocked:
+            if self._blocked_since is None:
+                self._blocked_since = time.monotonic()
+                self._report('clearance_blocked', distance=self._clearance_forward)
+            elif time.monotonic() - self._blocked_since > self._blocked_abort:
+                self.get_logger().warn('持续被净空挡住 → 收工降落')
+                self._report('abort', reason='clearance_blocked')
+                self._begin_land()
+                return
+        else:
+            self._blocked_since = None
+        if decision.done:
+            self._stop_velocity()
+            self._advance_step()
+            return
+        self._publish_velocity(decision.east, decision.north, 0.0)
+
+    def _run_hover(self, step, position, now) -> None:
+        self._publish_target(position[0], position[1], position[2])
+        self._stop_velocity()
+        seconds = float(step.params.get('seconds', 5.0))
+        if now - self._step_started >= seconds:
+            self._advance_step()
+
+    def _run_search(self, position, now) -> None:
+        # 目标悬停优先：期间保持当前位置，不再推进航点
+        if self._target_hold_until > now:
+            self._publish_target(position[0], position[1], position[2])
+            self._stop_velocity()
+            return
+        if self._search_index >= len(self._search_wps):
+            self._advance_step()
+            return
+        target = self._search_wps[self._search_index]
+        decision = velocity_toward(position, target,
+                                   max_speed_mps=self._spec.max_speed_mps,
+                                   tolerance_m=self._arrive_tol)
+        decision = apply_clearance_gate(
+            decision, position, self._heading_enu or 0.0,
+            self._clearance_forward, stop_m=self._clearance_stop)
+        if decision.blocked:
+            if self._blocked_since is None:
+                self._blocked_since = time.monotonic()
+            elif time.monotonic() - self._blocked_since > self._blocked_abort:
+                self._report('abort', reason='clearance_blocked')
+                self._begin_land()
+                return
+        else:
+            self._blocked_since = None
+        if decision.done:
+            self._search_index += 1
+            self.get_logger().info(
+                f'搜索航点 {self._search_index}/{len(self._search_wps)} 到位')
+            return
+        self._publish_velocity(decision.east, decision.north, 0.0)
+
+    # ------------------------------------------------------------------
+    # 指令 / 遥测
+    # ------------------------------------------------------------------
+
+    def _send_command(self, command: str) -> None:
+        if self._dry_run:
+            return
+        self._command_pub.publish(String(data=command))
+
+    def _publish_target(self, east: float, north: float, up: float) -> None:
+        if self._dry_run:
+            return
+        pose = PoseStamped()
+        pose.header.stamp = self.get_clock().now().to_msg()
+        pose.header.frame_id = 'map'
+        pose.pose.position.x = float(east)
+        pose.pose.position.y = float(north)
+        pose.pose.position.z = float(up)
+        pose.pose.orientation.w = 1.0
+        self._target_pub.publish(pose)
+
+    def _publish_velocity(self, east: float, north: float, up: float) -> None:
+        if self._dry_run:
+            return
+        msg = Twist()
+        msg.linear.x = float(east)
+        msg.linear.y = float(north)
+        msg.linear.z = float(up)
+        msg.angular.z = 0.0
+        self._velocity_pub.publish(msg)
+
+    def _stop_velocity(self) -> None:
+        self._publish_velocity(0.0, 0.0, 0.0)
+
+    def _update_heading(self) -> None:
+        state = self._monitor.snapshot()
+        if math.isnan(state.heading):
+            return
+        self._heading_enu = ned_yaw_to_enu_yaw(state.heading)
+
+    def _update_heartbeat(self, now: float) -> None:
+        if now - self._last_heartbeat < self._heartbeat_s:
+            return
+        self._last_heartbeat = now
+        # 带 step 与 30 s 桶：监督层按"字段变化"重置卡阶段计时，
+        # 避免一个长 goto/搜索被误判为"阶段卡死"而触发 land_fast。
+        bucket = int(max(now - self._step_started, 0.0) // 30)
+        self._heartbeat_pub.publish(
+            String(data=f'{self._phase}:{self._step_index}:{bucket}'))
+
+    def _publish_status(self) -> None:
+        now = time.monotonic()
+        if now - self._last_status < self._heartbeat_s:
+            return
+        self._last_status = now
+        position = self._position_enu()
+        payload = {
+            'phase': self._phase,
+            'step': self._step_index,
+            'step_type': self._current_step_type(),
+            'dry_run': self._dry_run,
+            'search_waypoint': self._search_index,
+            'clearance_forward_m': (None if self._clearance_forward is None
+                                    else round(float(self._clearance_forward), 2)),
+            'position_enu': (None if position is None
+                             else [round(float(v), 2) for v in position]),
+        }
+        self._status_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
+
+    def _step_timeout(self, step) -> float:
+        if step.type == 'search' and self._search_wps:
+            flat = [(point[0], point[1]) for point in self._search_wps]
+            budget = estimate_duration_s(flat, self._spec.max_speed_mps)
+            return max(60.0, 2.0 * budget + 30.0)
+        return step_timeout_s(step, speed_mps=self._spec.max_speed_mps)
+
+    def _abort(self, reason: str) -> None:
+        self.get_logger().error(f'任务中止：{reason}')
+        self._report('abort', reason=reason)
+        self._begin_land()
+
+    def _begin_land(self) -> None:
+        if self._phase in (PHASE_LAND, PHASE_DONE):
+            return
+        self._stop_velocity()
+        self._land_command_sent = False
+        self._enter(PHASE_LAND)
+
+    def destroy_node(self):
+        try:
+            if self._report_handle is not None:
+                self._report_handle.close()
+        finally:
+            super().destroy_node()
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = TaskExecutor()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == '__main__':
+    main()

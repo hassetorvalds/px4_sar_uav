@@ -1,0 +1,80 @@
+"""TaskSpec schema / 顺序 / 范围校验的单测。"""
+
+import pytest
+
+from mission.task_spec import Step, TaskError, TaskSpec
+
+
+def _spec(steps, **kwargs):
+    return TaskSpec(steps=steps, **kwargs)
+
+
+def test_valid_minimal_task():
+    spec = _spec([
+        Step('takeoff', {'altitude_m': 2.0}),
+        Step('goto', {'east_m': 5.0, 'north_m': 0.0}),
+        Step('land', {}),
+    ]).validate()
+    assert spec.steps[1].type == 'goto'
+
+
+def test_first_step_must_be_takeoff():
+    with pytest.raises(TaskError, match='第一个 step'):
+        _spec([Step('land', {})]).validate()
+
+
+def test_must_end_with_land_or_return():
+    with pytest.raises(TaskError, match='缺少收尾'):
+        _spec([Step('takeoff', {}), Step('goto', {'east_m': 5.0})]).validate()
+
+
+def test_no_step_after_land():
+    with pytest.raises(TaskError, match='最后'):
+        _spec([Step('takeoff', {}), Step('land', {}),
+               Step('goto', {'east_m': 1.0})]).validate()
+
+
+def test_altitude_out_of_range():
+    with pytest.raises(TaskError, match='altitude_m'):
+        _spec([Step('takeoff', {}), Step('land', {})], altitude_m=20.0).validate()
+
+
+def test_goto_beyond_geofence():
+    with pytest.raises(TaskError, match='围栏'):
+        _spec([Step('takeoff', {}),
+               Step('goto', {'east_m': 100.0, 'north_m': 0.0}),
+               Step('land', {})], geofence_radius_m=20.0).validate()
+
+
+def test_unknown_step_type():
+    with pytest.raises(TaskError, match='类型未知'):
+        _spec([Step('takeoff', {}), Step('teleport', {}), Step('land', {})]).validate()
+
+
+def test_hover_seconds_range():
+    with pytest.raises(TaskError, match='hover.seconds'):
+        _spec([Step('takeoff', {}), Step('hover', {'seconds': 999.0}),
+               Step('land', {})]).validate()
+
+
+def test_search_target_kind_required():
+    with pytest.raises(TaskError, match='target'):
+        _spec([Step('takeoff', {}),
+               Step('search', {'radius_m': 5.0, 'spacing_m': 2.0,
+                               'target': {'label': 'x'}}),
+               Step('land', {})]).validate()
+
+
+def test_json_roundtrip():
+    spec = _spec([Step('takeoff', {'altitude_m': 2.0}),
+                  Step('goto', {'east_m': 3.0, 'north_m': 4.0,
+                                'altitude_m': 2.0}),
+                  Step('land', {})], source_text='测试').validate()
+    restored = TaskSpec.from_json(spec.to_json())
+    assert restored.to_dict() == spec.to_dict()
+    assert restored.summary().startswith('起飞')
+
+
+def test_from_json_rejects_bad_version():
+    with pytest.raises(TaskError, match='schema 版本'):
+        TaskSpec.from_json('{"version": 99, "steps": []}')
