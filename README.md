@@ -278,6 +278,7 @@ archive/
 | 覆盖规划（矩形/多边形） | ✅ | 矩形/旋转/任意多边形弓字 + 足印/重叠；L 形 8/8 航点、20 m²、重叠 50% |
 | 观测覆盖（真实点云） | ✅ 下视 + 敏感性 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%；0.5 m 网格 |
 | 多区域 + 转场 | ✅ 真机 | 两个 search step：L 形 20 m² + 矩形 16 m²，转场 10.86 m，合计 144/144（100%） |
+| 区域最近邻排序 | ✅ 单测 | `--order-regions`：3 区域按最近邻重排，保留 takeoff/land |
 | `ExecuteTask` Action | ✅ | goal=TaskSpec JSON；feedback 阶段/进度/LCL 高度；result 带报告；cancel 落地上锁；真机完整搜索+检测 `success=True` |
 | 安全加固 | ✅ | arm 前健康检查（状态/位置/preflight/failsafe/电池）；simcheck 独立域 77 + 真机互锁；`report_*.md` 证据页 |
 | AirSim ↔ PX4 SITL 仿真链路 | ✅ | `Simulator connected on TCP port 4560` |

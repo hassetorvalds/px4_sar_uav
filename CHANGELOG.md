@@ -15,6 +15,31 @@
 
 ---
 
+## [2026-10-20] 区域最近邻排序 + 服务器接口信
+
+### 新增
+
+- `mission/regions.py`：多 search step 按区域中心最近邻重排，其他 step 位置不变；
+- `fly_task.py --order-regions`；
+- 给服务器侧的信：`docs/agent_comm/agent_reply.md`（上一封归档为
+  `114_reply_height_gate_c1.md`），询问 VLM 输出格式、findings schema、高度源、Action 调用方式。
+
+### 验证
+
+```text
+· 单测：mission 115 passed；全包 247 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 248）
+· 合成 3 区域：起点 (0,0) → (5,5) → (10,0) → (0,10)；
+  takeoff/land 位置不变，notes 记录排序。
+```
+
+### 已知
+
+- 只做区域顺序；转场仍是直线，未做高度剖面/避障；
+- 排序不做 TSP 最优，只最近邻。
+
+---
+
 ## [2026-10-20] 多区域 + 转场腿：36 m²、144/144（100%）
 
 ### 新增

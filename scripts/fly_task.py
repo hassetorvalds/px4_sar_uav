@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(_ROOT, 'ros2_px4_ws', 'src', 'mission'))
 
 from mission.executor_core import search_waypoints  # noqa: E402
 from mission.intent import IntentFrame, merge_intent, parse_intent  # noqa: E402
+from mission.regions import order_search_steps  # noqa: E402
 from mission.report import summarize  # noqa: E402
 from mission.search_pattern import estimate_duration_s, path_length  # noqa: E402
 from mission.task_spec import TaskError, TaskSpec  # noqa: E402
@@ -100,6 +101,8 @@ def main(argv=None):
                         help='检测到目标时不悬停（只记录）')
     parser.add_argument('--no-summary', action='store_true',
                         help='不生成 Markdown 证据页')
+    parser.add_argument('--order-regions', action='store_true',
+                        help='多区域按最近邻重排 search 顺序')
     args = parser.parse_args(argv)
 
     text = ' '.join(args.text).strip()
@@ -128,7 +131,9 @@ def main(argv=None):
         except (TaskError, ValueError, OSError, json.JSONDecodeError) as exc:
             print(f'解析失败：{exc}', file=sys.stderr)
             return 2
-        spec = frame.task
+        spec = frame.task if frame is not None else spec
+    if args.order_regions:
+        order_search_steps(spec)
     if args.speed is not None:
         speed = max(0.1, min(1.0, float(args.speed)))
         spec.max_speed_mps = speed

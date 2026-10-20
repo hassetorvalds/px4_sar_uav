@@ -186,7 +186,7 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py --task-json /tmp/polygon_l.json --execute
 
 ```bash
 FLY_TASK_CONFIRM=1 scripts/fly_task.py \
-  --task-json examples/multi_region_task.json --execute
+  --task-json examples/multi_region_task.json --order-regions --execute
 ```
 
 预期：`search_plan` 两次、`transit` 一段、报告「搜索区域」表两行；下视合计 144/144。

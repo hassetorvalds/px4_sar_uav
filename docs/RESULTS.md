@@ -32,7 +32,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **244 passed / 2 skipped**（vlm 45 / mission 112 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 20 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 245 passed |
+| 单元测试 | ✅ | **247 passed / 2 skipped**（vlm 45 / mission 115 / perception 28+1skip / px4_interface 20 / planner 18 / mapping 20 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 248 passed |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -47,6 +47,7 @@
 | 覆盖规划（矩形/多边形） | ✅ 真机 | 矩形/旋转/任意多边形弓字 + 足印/重叠；L 形 8/8 航点、20 m²、重叠 50% |
 | 观测覆盖（真实点云） | ✅ 下视 + 敏感性 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%；见 [COVERAGE](COVERAGE.md) |
 | 多区域 + 转场 | ✅ 真机 | L 形 20 m² + 矩形 16 m²，转场 10.86 m，合计 144/144（100%） |
+| 区域最近邻排序 | ✅ 单测 | `--order-regions`，保留 takeoff/land；转场仍直线 |
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
@@ -113,7 +114,7 @@
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
 自研源码      ~8800 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~3400 行，244 passed / 2 skipped（检测器入口下 245 passed）
+单元测试      ~3500 行，247 passed / 2 skipped（检测器入口下 248 passed）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）
