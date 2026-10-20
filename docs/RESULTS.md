@@ -48,6 +48,7 @@
 | 观测覆盖（真实点云） | ✅ 下视 + 敏感性 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%；见 [COVERAGE](COVERAGE.md) |
 | 多区域 + 转场 | ✅ 真机 | L 形 20 m² + 矩形 16 m²，转场 10.86 m，合计 144/144（100%） |
 | 区域最近邻排序 | ✅ 单测 | `--order-regions`，保留 takeoff/land；转场仍直线 |
+| 任务坐标偏移 | ✅ 真机 | goto/search 相对本次起飞点；Task2 从落点搜索 6/6、覆盖 64/64 |
 | SemanticIntent 1.0 | ✅ 真机 | 手写 JSON → TaskSpec → ExecuteTask Action；area_cover 8/8、36 m²、144/144 |
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |
