@@ -79,7 +79,8 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
     plans = [e for e in events if e.get('event') == 'search_plan']
     coverages = {e.get('step'): e for e in events
                  if e.get('event') == 'search_coverage'}
-    transits = [e for e in events if e.get('event') == 'transit']
+    transits = [e for e in events
+                if e.get('event') in ('transit', 'transit_climb')]
     plan = plans[0] if plans else None
     mtime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(report_path)))
 
@@ -248,6 +249,15 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
             detail = str(event.get('reason', ''))
         elif name == 'transit':
             detail = f'{event.get("distance_m", "?")} m'
+        elif name == 'transit_climb':
+            detail = (f'{event.get("distance_m", "?")} m → '
+                      f'{event.get("climb_to_m", "?")} m')
+        elif name == 'transit_move':
+            detail = '到达转场高度，开始巡航'
+        elif name == 'transit_descend':
+            detail = f'下降到 {event.get("to_m", "?")} m'
+        elif name == 'transit_complete':
+            detail = '转场完成'
         lines.append(f'| {event.get("t")} | {name} | {detail} |')
 
     if not output_path:

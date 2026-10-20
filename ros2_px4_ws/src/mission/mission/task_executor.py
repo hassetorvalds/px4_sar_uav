@@ -102,6 +102,9 @@ class TaskExecutor(Node):
         self.declare_parameter('coverage_status_topic', '/coverage/status')
         self.declare_parameter('coverage_cell_size_m', 0.5)
         self.declare_parameter('best_meta_topic', '/perception/best_meta')
+        self.declare_parameter('transit_altitude_m', 0.0)
+        self.declare_parameter('transit_min_distance_m', 5.0)
+        self.declare_parameter('transit_rate_mps', 0.4)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -141,6 +144,15 @@ class TaskExecutor(Node):
             self._findings_radius_by_label = {}
         self._task_id = ''
         self._epoch_id = ''
+        self._transit_active = False
+        self._transit_phase = ''
+        self._transit_up_lcl = None
+        self._transit_altitude = float(
+            self.get_parameter('transit_altitude_m').value)
+        self._transit_min_distance = float(
+            self.get_parameter('transit_min_distance_m').value)
+        self._transit_rate = max(float(
+            self.get_parameter('transit_rate_mps').value), 0.1)
         self._frame_size = (0, 0)
         self._best_meta = {}
         self._findings_dir = str(self.get_parameter('findings_dir').value)
@@ -204,6 +216,9 @@ class TaskExecutor(Node):
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
+        self._transit_active = False
+        self._transit_phase = ''
+        self._transit_up_lcl = None
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
@@ -488,6 +503,9 @@ class TaskExecutor(Node):
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
+        self._transit_active = False
+        self._transit_phase = ''
+        self._transit_up_lcl = None
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
@@ -800,12 +818,30 @@ class TaskExecutor(Node):
                 start = self._position_enu()
                 target = self._search_wps[0]
                 if start is not None:
-                    self._report(
-                        'transit',
-                        from_enu=[round(float(v), 2) for v in start],
-                        to_enu=[round(float(v), 2) for v in target],
-                        distance_m=round(math.hypot(target[0] - start[0],
-                                                    target[1] - start[1]), 2))
+                    distance = math.hypot(target[0] - start[0],
+                                          target[1] - start[1])
+                    transit_alt = (self._transit_altitude
+                                   if self._transit_altitude > 0.0
+                                   else float(self._spec.altitude_m) + 1.0)
+                    if distance > self._transit_min_distance:
+                        self._transit_active = True
+                        self._transit_phase = 'climb'
+                        ground = (self._ground_up_lcl
+                                  if self._ground_up_lcl is not None else 0.0)
+                        self._transit_up_lcl = ground + transit_alt
+                        self._report(
+                            'transit_climb',
+                            from_enu=[round(float(v), 2) for v in start],
+                            to_enu=[round(float(v), 2) for v in target],
+                            distance_m=round(distance, 2),
+                            climb_to_m=round(transit_alt, 2),
+                            rate_mps=self._transit_rate)
+                    else:
+                        self._report(
+                            'transit',
+                            from_enu=[round(float(v), 2) for v in start],
+                            to_enu=[round(float(v), 2) for v in target],
+                            distance_m=round(distance, 2))
                 self._last_search_end = None
             metrics = search_metrics(step.params, self._search_wps,
                                      self._spec.max_speed_mps,
@@ -1058,7 +1094,53 @@ class TaskExecutor(Node):
         if now - self._step_started >= seconds:
             self._advance_step()
 
+    def _run_transit(self, position, now) -> None:
+        if not self._search_wps or self._transit_up_lcl is None:
+            self._transit_active = False
+            return
+        first = self._search_wps[0]
+        target_up = self._transit_up_lcl
+        if self._transit_phase == 'climb':
+            vz = altitude_hold_vz(target_up, position[2],
+                                  gain=0.6, max_rate_mps=self._transit_rate)
+            if abs(target_up - position[2]) <= 0.15:
+                self._transit_phase = 'move'
+                self._report('transit_move',
+                             target_enu=[round(float(v), 2) for v in first])
+            self._publish_velocity(0.0, 0.0, vz)
+            return
+        if self._transit_phase == 'move':
+            decision = velocity_toward(
+                position, (first[0], first[1], target_up),
+                max_speed_mps=self._spec.max_speed_mps,
+                tolerance_m=self._arrive_tol)
+            vz = altitude_hold_vz(target_up, position[2],
+                                  gain=0.6, max_rate_mps=self._transit_rate)
+            if decision.done:
+                self._transit_phase = 'descend'
+                self._stop_velocity()
+                self._report('transit_descend', to_m=self._spec.altitude_m)
+                return
+            self._publish_velocity(decision.east, decision.north, vz)
+            return
+        if self._transit_phase == 'descend':
+            task_up = self._target_up_lcl()
+            vz = altitude_hold_vz(task_up, position[2],
+                                  gain=0.6, max_rate_mps=self._transit_rate)
+            if abs(task_up - position[2]) <= 0.15:
+                self._transit_active = False
+                self._transit_phase = ''
+                self._search_index = 1
+                self._report('transit_complete')
+                return
+            self._publish_velocity(0.0, 0.0, vz)
+            return
+        self._transit_active = False
+
     def _run_search(self, position, now) -> None:
+        if self._transit_active:
+            self._run_transit(position, now)
+            return
         # 目标悬停优先：期间保持当前位置，不再推进航点
         if self._target_hold_until > now:
             self._publish_target(position[0], position[1], self._target_up_lcl())

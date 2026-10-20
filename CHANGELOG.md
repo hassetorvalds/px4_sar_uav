@@ -15,6 +15,36 @@
 
 ---
 
+## [2026-10-20] 转场高度剖面：爬升 → 巡航 → 下降（假 PX4 PASS）
+
+### 新增
+
+- 多区域搜索区间距离 > `transit_min_distance_m`（默认 5 m）时：
+  - 先在当前位置爬升到 `transit_altitude_m`（默认任务高度 + 1 m）；
+  - 巡航到下一区首航点；
+  - 下降到任务高度后再开始搜索；
+- 事件：`transit_climb → transit_move → transit_descend → transit_complete`；
+- 参数：`transit_altitude_m`、`transit_min_distance_m`、`transit_rate_mps`；
+- 报告时间线/转场合计支持新事件。
+
+### 验证
+
+```text
+· 假 PX4（域 77）双区域：
+  transit_climb → transit_move → transit_descend → transit_complete
+  → 第二区 search_waypoint → done；PASS，abort=0
+· 坐标偏移真机已验证（Task1 落点 + Task2 相对 search 64/64）；
+  真机转场因上一落点贴 TemplateCube / AirSim reset 异常暂未复飞。
+```
+
+### 已知
+
+- 转场巡航未接前向净空门；默认爬升到 3 m 只是高度剖面，不是完整避障；
+- 真机转场待干净起点复飞；
+- 起飞前仍无"机体周围净空"检查。
+
+---
+
 ## [2026-10-20] 坐标偏移真机验证：goto/search 相对起飞点
 
 ### 验证
