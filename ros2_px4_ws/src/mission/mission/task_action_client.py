@@ -19,7 +19,7 @@ class TaskActionClient(Node):
         self._last = None
 
     def send(self, task_json: str, timeout_s: float,
-             cancel_after: float = 0.0) -> int:
+             cancel_after: float = 0.0, cancel_twice: bool = False) -> int:
         if not self._client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error('找不到 /mission/execute_task')
             return 2
@@ -47,6 +47,8 @@ class TaskActionClient(Node):
         result_future = goal_handle.get_result_async()
         start = time.monotonic()
         cancel_sent = False
+        second_sent = False
+        second_at = None
         while rclpy.ok() and not result_future.done():
             rclpy.spin_once(self, timeout_sec=0.1)
             elapsed = time.monotonic() - start
@@ -55,6 +57,12 @@ class TaskActionClient(Node):
                 self.get_logger().warn(f'发送 cancel（{cancel_after:.1f}s）')
                 goal_handle.cancel_goal_async()
                 cancel_sent = True
+                second_at = elapsed + 0.3
+            if (cancel_twice and cancel_sent and not second_sent
+                    and second_at is not None and elapsed >= second_at):
+                self.get_logger().warn('重复发送 cancel（测试幂等）')
+                goal_handle.cancel_goal_async()
+                second_sent = True
             if elapsed > timeout_s:
                 self.get_logger().error(f'等待结果超时（{timeout_s:.0f}s）')
                 goal_handle.cancel_goal_async()
@@ -80,6 +88,8 @@ def main(argv=None):
     parser.add_argument('--timeout', type=float, default=180.0)
     parser.add_argument('--cancel-after', type=float, default=0.0,
                         help='N 秒后发 cancel（0=不取消）')
+    parser.add_argument('--cancel-twice', action='store_true',
+                        help='第一次 cancel 后 0.3 s 再发一次（测试幂等）')
     args = parser.parse_args(argv)
     if args.task_json:
         task_json = args.task_json
@@ -90,7 +100,8 @@ def main(argv=None):
     rclpy.init()
     node = TaskActionClient()
     try:
-        return node.send(task_json, args.timeout, args.cancel_after)
+        return node.send(task_json, args.timeout, args.cancel_after,
+                         args.cancel_twice)
     finally:
         node.destroy_node()
         if rclpy.ok():

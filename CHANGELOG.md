@@ -15,6 +15,35 @@
 
 ---
 
+## [2026-10-20] Action cancel 幂等 + external_land 收工
+
+### 新增
+
+- `task_action_client --cancel-twice`：第一次 cancel 后 0.3 s 再发一次，测幂等；
+- 执行器：已 armed 过但当前 disarmed，且不是自己发起的 LAND（ARM/OFFBOARD/RUN/PAUSED）
+  → 记 `external_land`，`done(forced=true, external_land=true)`，`aborted=external_land`，
+  **不再发任何落地命令**；
+- `fake_px4_sim --disarm-after`；`action_simcheck` 新增 external_land 场景。
+
+### 验证（假 PX4，域 77）
+
+```text
+· cancel 两次：result success=False cancel_requested 一次；
+  报告 abort(cancel_requested)+done 各一次；land_fast 事件 1 次。
+· 外部 disarm：result success=False external_land；
+  报告 external_land+done；没有 land_fast。
+· 全包单测 260 passed / 2 skipped（检测器入口 261）。
+```
+
+### 已知
+
+- ROS 2 Action 终态后再 cancel 不会产生新 result；我们保证 result 只发一次、
+  cancel 只生效一次，终态后 cancel 返回终态/拒绝；
+- external_land 的判定基于"已 armed 且当前 disarmed"；若 PX4 在起飞前从未 armed，
+  不会触发。
+
+---
+
 ## [2026-10-20] 安全契约：land_fast 去重 + 旧驱动 legacy 硬禁飞越
 
 ### 新增

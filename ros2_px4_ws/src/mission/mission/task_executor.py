@@ -213,6 +213,7 @@ class TaskExecutor(Node):
         self._origin_enu = (0.0, 0.0, 0.0)
         self._ever_armed = False
         self._land_command_sent = False
+        self._external_land = False
         self._abort_reason = None
         self._clearance_forward = None
         self._heading_enu = None
@@ -492,6 +493,7 @@ class TaskExecutor(Node):
             radius_by_label=self._findings_radius_by_label,
             task_id=self._task_id, epoch_id=self._epoch_id)
         self._land_command_sent = False
+        self._external_land = False
         self._abort_reason = None
         self._manual_override = False
         self._ground_up_lcl = None
@@ -609,6 +611,15 @@ class TaskExecutor(Node):
         if state.armed:
             self._ever_armed = True
 
+        # 外部落地（supervisor/failsafe）：已 armed 过但当前 disarmed，
+        # 且不是本执行器发起的 LAND。立即收工，不再发任何落地命令。
+        if (self._ever_armed and not state.armed
+                and self._phase in (PHASE_ARM, PHASE_OFFBOARD,
+                                    PHASE_RUN, PHASE_PAUSED)):
+            self._report('external_land', phase=self._phase)
+            self._finish_done(forced=True, external_land=True)
+            return
+
         if self._phase == PHASE_IDLE:
             return
         if self._phase == PHASE_DONE:
@@ -703,7 +714,8 @@ class TaskExecutor(Node):
                 self._finish_done(forced=True)
             return
 
-    def _finish_done(self, *, forced: bool = False) -> None:
+    def _finish_done(self, *, forced: bool = False,
+                     external_land: bool = False) -> None:
         # 先落 findings、再写 done（_enter(PHASE_DONE) 在 exit_on_done 时会退出）
         findings_path = ''
         findings_task_id = ''
@@ -724,8 +736,12 @@ class TaskExecutor(Node):
                              count=len(self._findings))
             except OSError as exc:
                 self.get_logger().warn(f'findings 持久化失败：{exc}')
+        if external_land:
+            self._external_land = True
+            self._abort_reason = 'external_land'
         self._report('commands', commands=self._tracker.to_dicts())
         self._report('done', report_path=self._report_path, forced=forced,
+                     external_land=bool(external_land),
                      commands=self._tracker.to_dicts(),
                      findings=self._findings.to_dicts(),
                      findings_path=findings_path,

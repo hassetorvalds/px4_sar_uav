@@ -37,7 +37,8 @@ DESCEND_SPEED_MPS = 0.5
 class FakePx4(Node):
     def __init__(self, report_path: str, duration_s: float, *,
                  block_after=None, block_for=60.0,
-                 takeover_after=None, takeover_for=3.0, expect=('done',)):
+                 takeover_after=None, takeover_for=3.0, disarm_after=None,
+                 expect=('done',)):
         super().__init__('fake_px4_sim')
         self._report_path = report_path
         self._deadline = time.monotonic() + duration_s
@@ -46,6 +47,7 @@ class FakePx4(Node):
         self._block_for = block_for
         self._takeover_after = takeover_after
         self._takeover_for = takeover_for
+        self._disarm_after = disarm_after
         self._expect = tuple(expect)
 
         self._armed = False
@@ -145,6 +147,12 @@ class FakePx4(Node):
         now = time.monotonic()
         dt = 0.02
         # 人工接管窗口：armed 但 nav_state 切到 POSCTL，执行器应暂停并停发速度
+        if (self._disarm_after is not None and self._armed
+                and now - self._started >= self._disarm_after):
+            self._armed = False
+            self._offboard = False
+            self._landing = False
+            self.get_logger().warn('模拟外部 disarm（supervisor/failsafe）')
         if self._takeover_after is not None and self._ever_armed:
             elapsed = now - self._started
             in_window = (self._takeover_after
@@ -261,6 +269,8 @@ def main(argv=None):
     parser.add_argument('--takeover-after', type=float, default=None,
                         help='多少秒后模拟人工接管（nav_state 切 POSCTL）')
     parser.add_argument('--takeover-for', type=float, default=3.0)
+    parser.add_argument('--disarm-after', type=float, default=None,
+                        help='多少秒后模拟外部 disarm')
     parser.add_argument('--expect', default='done',
                         help='期望出现在报告里的事件名，逗号分隔')
     args = parser.parse_args(argv)
@@ -269,7 +279,8 @@ def main(argv=None):
     node = FakePx4(args.report, args.duration,
                    block_after=args.block_after, block_for=args.block_for,
                    takeover_after=args.takeover_after,
-                   takeover_for=args.takeover_for, expect=expect)
+                   takeover_for=args.takeover_for,
+                   disarm_after=args.disarm_after, expect=expect)
     try:
         rclpy.spin(node)
     except SystemExit as exc:

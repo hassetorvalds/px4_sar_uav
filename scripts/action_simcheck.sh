@@ -23,16 +23,22 @@ report="logs/tasks/actionsimcheck_${stamp}.report.jsonl"
 log="logs/tasks/actionsimcheck_${stamp}.log"
 
 cancel_after="${ACTION_SIMCHECK_CANCEL_AFTER:-0}"
+disarm_after="${ACTION_SIMCHECK_DISARM_AFTER:-0}"
 client_args=()
-if [ "${cancel_after}" != "0" ]; then
+if [ "${disarm_after}" != "0" ]; then
+    python3 scripts/fly_task.py "起飞到 2 米，悬停 20 秒，降落" --json > "${task_file}"
+elif [ "${cancel_after}" != "0" ]; then
     python3 scripts/fly_task.py "起飞到 2 米，原地扫描 30 秒，降落" --json > "${task_file}"
     client_args=(--cancel-after "${cancel_after}")
+    [ "${ACTION_SIMCHECK_CANCEL_TWICE:-0}" = "1" ] && client_args+=(--cancel-twice)
 else
     python3 scripts/fly_task.py "起飞到 2 米，悬停 1 秒，降落" --json > "${task_file}"
 fi
 
+sim_args=()
+[ "${disarm_after}" != "0" ] && sim_args+=(--disarm-after "${disarm_after}")
 setsid python3 scripts/fake_px4_sim.py --duration 70 --report "${report}" \
-    > "logs/tasks/actionsimcheck_${stamp}.fake.log" 2>&1 &
+    "${sim_args[@]}" > "logs/tasks/actionsimcheck_${stamp}.fake.log" 2>&1 &
 sim_pid=$!
 setsid ros2 run mission task_executor --ros-args \
     -p dry_run:=false -p report_path:="${report}" \
@@ -65,6 +71,23 @@ echo "[action-simcheck] client exit=${client_rc}"
 echo "[action-simcheck] 报告事件："
 grep -o '"event": "[^"]*"' "${report}" 2>/dev/null | sort | uniq -c | tail -20 || true
 
+if [ "${disarm_after}" != "0" ]; then
+    # 外部 disarm：executor 应报 external_land + done，且不再发 land_fast
+    if ! grep -q '"event": "external_land"' "${report}" 2>/dev/null; then
+        echo "[action-simcheck] FAIL（没有 external_land）" >&2
+        exit 1
+    fi
+    if ! grep -q '"event": "done"' "${report}" 2>/dev/null; then
+        echo "[action-simcheck] FAIL（外部着陆后没有 done）" >&2
+        exit 1
+    fi
+    if [ "${client_rc}" -ne 5 ] && [ "${client_rc}" -ne 0 ]; then
+        echo "[action-simcheck] FAIL（external land 场景 client 退出码 ${client_rc}）" >&2
+        exit 1
+    fi
+    echo "[action-simcheck] PASS（external_land）"
+    exit 0
+fi
 if [ "${cancel_after}" != "0" ]; then
     # 取消场景：client 返回 5（success=False），报告应有 cancel_requested + done
     if ! grep -q '"reason": "cancel_requested"' "${report}" 2>/dev/null; then
