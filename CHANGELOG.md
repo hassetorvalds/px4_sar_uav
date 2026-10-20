@@ -15,6 +15,40 @@
 
 ---
 
+## [2026-10-20] SemanticIntent 1.0：手写 JSON → TaskSpec → Action（真机 144/144）
+
+### 新增
+
+- `mission/semantic_intent.py`：SemanticIntent 1.0 校验/稳定拒绝码/编译；
+- 支持 `area_cover / go_to / inspect / return`；`patrol` 需 area；
+- `constraints.area` 为 WSL 扩展（服务器 1.0 没有区域几何）；
+- `fly_task.py --semantic-intent`（直接执行）；CLI `semantic_intent`（编译/拒绝）；
+- 示例 `examples/semantic_intent_area_cover.json`；`docs/SEMANTIC_INTENT.md`。
+
+### 验证
+
+```text
+· 单测：mission 121 passed；全包 253 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 254）
+· 真机：
+  SemanticIntent（operator，area_cover，6×6 m、REL 2 m）
+  → TaskSpec（takeoff/search/land）
+  → ExecuteTask Action（goal=TaskSpec JSON）
+  → search_waypoint 8/8，area=36 m²，path=30 m，足印 4 m/重叠 50%
+  → coverage 144/144（100%），漏扫 0
+  → result success=True
+  报告：logs/tasks/report_semantic_action_20261020-192310.jsonl
+  证据页：logs/tasks/report_semantic_action_20261020-192310.md
+```
+
+### 已知
+
+- 模型仍不产 JSON；本轮是手写 `source=operator`；
+- `constraints.area` 是扩展，待服务器正式字段；
+- `patrol` 仅 area 形式；`keepout` 只检查目标点，不检查整条航迹。
+
+---
+
 ## [2026-10-20] 区域最近邻排序 + 服务器接口信
 
 ### 新增

@@ -1,0 +1,26 @@
+{
+  "contract_version": "1.0",
+  "intent_id": "demo-area-cover-1",
+  "task_type": "area_cover",
+  "target": {"label": "target", "world_enu": [5.0, -6.0], "frame_id": "map"},
+  "constraints": {
+    "altitude_band_m": [2.0, 2.0],
+    "altitude_frame": "REL",
+    "speed_cap_mps": 0.5,
+    "keepout": [],
+    "min_clearance_m": 0.6,
+    "area": {
+      "shape": "rectangle",
+      "center_east_m": 5.0,
+      "center_north_m": -6.0,
+      "width_m": 6.0,
+      "height_m": 6.0,
+      "spacing_m": 2.0
+    }
+  },
+  "priority": "normal",
+  "confidence": 1.0,
+  "source": "operator",
+  "facts_used": ["map"],
+  "notes": "hand-authored SemanticIntent 1.0 area_cover"
+}

@@ -31,6 +31,7 @@ setup(
             'task_action_server = mission.task_action_server:main',
             'task_action_client = mission.task_action_client:main',
             'task_findings = mission.findings_store:main',
+            'semantic_intent = mission.semantic_intent:main',
         ],
     },
 )

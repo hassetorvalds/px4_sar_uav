@@ -54,6 +54,18 @@ ros2 run mission task_action_client --task-file /tmp/task_search.json --timeout 
 ros2 run mission task_action_client --task-file /tmp/task.json --cancel-after 4
 ```
 
+## SemanticIntent → TaskSpec
+
+Action 的 goal 仍是 TaskSpec；上层可以先把手写/模型语义意图编译成 TaskSpec：
+
+```bash
+python3 scripts/fly_task.py --semantic-intent examples/semantic_intent_area_cover.json \
+  --json > /tmp/task.json
+ros2 run mission task_action_client --task-file /tmp/task.json --timeout 200
+```
+
+详见 [SEMANTIC_INTENT.md](SEMANTIC_INTENT.md)。
+
 ## findings 落盘与汇总
 
 任务结束执行器会写 `logs/findings/findings_<task_id>.json` 并追加 `index.jsonl`；

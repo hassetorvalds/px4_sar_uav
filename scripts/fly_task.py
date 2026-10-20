@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(_ROOT, 'ros2_px4_ws', 'src', 'mission'))
 from mission.executor_core import search_waypoints  # noqa: E402
 from mission.intent import IntentFrame, merge_intent, parse_intent  # noqa: E402
 from mission.regions import order_search_steps  # noqa: E402
+from mission.semantic_intent import SemanticIntent  # noqa: E402
 from mission.report import summarize  # noqa: E402
 from mission.search_pattern import estimate_duration_s, path_length  # noqa: E402
 from mission.task_spec import TaskError, TaskSpec  # noqa: E402
@@ -84,6 +85,8 @@ def main(argv=None):
     parser.add_argument('text', nargs='*', help='自然语言指令')
     parser.add_argument('--task-json', default='',
                         help='直接执行 TaskSpec JSON（用于多边形等解析器不覆盖的结构）')
+    parser.add_argument('--semantic-intent', default='',
+                        help='SemanticIntent 1.0 JSON（WSL 编译成 TaskSpec）')
     parser.add_argument('--execute', action='store_true', help='真正执行（默认只解析）')
     parser.add_argument('--json', action='store_true', help='只输出 TaskSpec JSON')
     parser.add_argument('--intent-json', action='store_true',
@@ -107,16 +110,29 @@ def main(argv=None):
 
     text = ' '.join(args.text).strip()
     frame = None
-    if args.task_json:
+    if args.task_json or args.semantic_intent:
         if text:
-            print('--task-json 与自然语言指令不能同时给', file=sys.stderr)
+            print('--task-json/--semantic-intent 与自然语言指令不能同时给', file=sys.stderr)
+            return 2
+        if args.task_json and args.semantic_intent:
+            print('--task-json 与 --semantic-intent 只能给一个', file=sys.stderr)
             return 2
         try:
-            with open(args.task_json, encoding='utf-8') as handle:
-                spec = TaskSpec.from_json(handle.read())
-            spec.validate()
-        except (TaskError, ValueError, OSError, json.JSONDecodeError) as exc:
-            print(f'TaskSpec 加载失败：{exc}', file=sys.stderr)
+            with open(args.task_json or args.semantic_intent, encoding='utf-8') as handle:
+                payload = handle.read()
+            if args.semantic_intent:
+                intent = SemanticIntent.from_json(payload)
+                spec, reasons = intent.compile()
+                if reasons:
+                    print(json.dumps({'accepted': False, 'rejected_reasons':
+                                      [reason.to_dict() for reason in reasons]},
+                                     ensure_ascii=False, indent=2), file=sys.stderr)
+                    return 2
+            else:
+                spec = TaskSpec.from_json(payload)
+                spec.validate()
+        except (TaskError, ValueError, OSError, json.JSONDecodeError, KeyError) as exc:
+            print(f'任务加载失败：{exc}', file=sys.stderr)
             return 2
     else:
         if not text:
