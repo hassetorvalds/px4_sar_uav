@@ -64,3 +64,53 @@ def test_to_dicts_rounding():
     assert payload['world_enu'] == [1.23, 2.35, 3.46]
     assert payload['confidence'] == 0.988
     assert payload['first_seen'] == 1.23
+
+
+def test_merge_window_and_revisit_of():
+    book = FindingsBook(merge_radius_m=3.0, merge_window_s=30.0,
+                        task_id='task-1', epoch_id='task-1')
+    first = book.add_or_update(label='target', world_enu=(10, 20, 0), t=1.0)
+    merged = book.add_or_update(label='target', world_enu=(10.5, 20, 0), t=10.0)
+    assert merged.finding_id == first.finding_id
+    assert merged.updates == 2
+    revisited = book.add_or_update(label='target', world_enu=(10.5, 20, 0), t=50.0)
+    assert revisited.finding_id != first.finding_id
+    assert revisited.revisit_of == first.finding_id
+    assert len(book) == 2
+
+
+def test_per_label_radius():
+    book = FindingsBook(merge_radius_m=3.0,
+                        radius_by_label={'target': 1.0})
+    book.add_or_update(label='target', world_enu=(0, 0, 0), t=1.0)
+    book.add_or_update(label='target', world_enu=(1.5, 0, 0), t=2.0)
+    assert len(book) == 2
+
+
+def test_finding_1_fields_and_history():
+    book = FindingsBook(task_id='task-1', epoch_id='task-1')
+    finding = book.add_or_update(
+        label='target', world_enu=(1, 2, 3), t=5.0, frame_seq=7,
+        frame_size=(640, 480), ros_stamp_ns=123456,
+        pose_at_first_seen={'world_enu': [0, 0, 2], 'heading_deg': 90.0})
+    payload = finding.to_dict()
+    assert payload['schema_version'] == '1.0'
+    assert payload['task_id'] == 'task-1'
+    assert payload['epoch_id'] == 'task-1'
+    assert payload['frame_seq'] == 7
+    assert payload['frame_size'] == [640, 480]
+    assert payload['first_seen_ros_ns'] == 123456
+    assert payload['pose_at_first_seen']['heading_deg'] == 90.0
+    assert payload['history']
+    assert payload['discarded'] is False
+
+
+def test_discarded_is_terminal_flag_not_status():
+    book = FindingsBook()
+    finding = book.add_or_update(label='target', world_enu=(0, 0, 0), t=1.0)
+    book.add_or_update(label='target', world_enu=(0.1, 0, 0), t=2.0,
+                       discarded=True, discard_reason='false_positive')
+    payload = book.to_dicts()[0]
+    assert payload['discarded'] is True
+    assert payload['discard_reason'] == 'false_positive'
+    assert payload['status'] == finding.status

@@ -15,6 +15,42 @@
 
 ---
 
+## [2026-10-20] Finding 1.0：字段/时间/合并窗口/按 label 半径/history（真机验证）
+
+### 新增
+
+- `Finding`：`schema_version/task_id/epoch_id/frame_id/frame_seq/frame_size/
+  first_seen_ros_ns/last_seen_ros_ns/clock_source/pose_at_first_seen/
+  revisit_of/discarded/discard_reason/history`；
+- 合并：label + 半径（`findings_radius_by_label`，默认 3 m）+ 30 s 窗口；
+  窗口外同位置新建并记 `revisit_of`；状态只升级；`discarded` 独立终态；
+- detector 新增 `/perception/best_meta`（seq/width/height）；
+  执行器订 `CameraInfo` 与 best_meta，填 frame_seq/frame_size；
+- `task_id/epoch_id` 取报告名去 `report_` 前缀；
+- `findings_merge_window_s`、`findings_radius_by_label` 参数。
+
+### 验证
+
+```text
+· 单测：mission 125 passed；全包 257 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 258）
+· 真机扫描 45 s：
+  finding target [17.45, 34.36, 4.65]
+  frame_seq=10，frame_size=[1280,720]，first_seen_ros_ns 已填，
+  pose_at_first_seen={world_enu:[-0.04,-0.1,0.86], heading_deg:60.2}，
+  history 1 条；status=confirmed（本轮目标在起飞阶段确认，未进 inspected）
+  报告：logs/tasks/report_20261020-193009-416.jsonl
+  持久化：logs/findings/findings_20261020-193009-416.json
+```
+
+### 已知
+
+- 目标在 takeoff 阶段确认，未触发扫描/对准，status 停在 confirmed；
+- `frame_seq` 来自 best_meta（detector 序号），不是 PX4 时间戳；
+- `merge_window_s` 用 monotonic；跨任务不做空间去重。
+
+---
+
 ## [2026-10-20] SemanticIntent 1.0：手写 JSON → TaskSpec → Action（真机 144/144）
 
 ### 新增

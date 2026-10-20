@@ -81,3 +81,21 @@ ros2 run mission task_findings --md logs/findings/summary.md
 - 跨任务不做空间去重：同一目标在不同任务会各记一条（当前按 task_id 去重）；
 - 没有数据库/索引服务，只有 JSONL + 文件；
 - `task_id` 冲突时 index 保留最后一条，文件覆盖（正常情况下每任务只写一次）。
+
+---
+
+## Finding 1.0（2026-10-20）
+
+新增字段：`schema_version/task_id/epoch_id/frame_id/frame_seq/frame_size/
+first_seen_ros_ns/last_seen_ros_ns/clock_source/pose_at_first_seen/
+revisit_of/discarded/discard_reason/history`。
+
+- 时间：`first_seen/last_seen` 为任务相对 monotonic 秒；ROS 时间另存；
+- 合并：`label + 半径（按 label 可配）+ 30 s 窗口`；窗口外同位置新建并记 `revisit_of`；
+- 状态只升级；`discarded` 是独立终态标记，不改变 status；
+- `frame_seq/frame_size` 来自 detector 的 `/perception/best_meta` 与
+  `/airsim_camera/camera_info`；
+- `task_id/epoch_id` 取报告文件名（去 `report_`）。
+
+真机扫描 45 s 验证：finding `target [17.45,34.36,4.65]`，`frame_seq=10`、
+`frame_size=[1280,720]`、`first_seen_ros_ns`、`pose_at_first_seen`、`history` 均落盘。

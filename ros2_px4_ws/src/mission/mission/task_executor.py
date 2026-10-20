@@ -31,6 +31,7 @@ from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
 from px4_interface.qos import px4_qos
 from px4_interface.state import Px4StateMonitor
 from px4_msgs.msg import BatteryStatus, VehicleCommand, VehicleCommandAck
+from sensor_msgs.msg import CameraInfo
 from rclpy.node import Node
 from std_msgs.msg import Bool, Empty, String
 
@@ -93,11 +94,14 @@ class TaskExecutor(Node):
         self.declare_parameter('center_tolerance_deg', 5.0)
         self.declare_parameter('center_yaw_rate_deg_s', 15.0)
         self.declare_parameter('findings_merge_radius_m', 3.0)
+        self.declare_parameter('findings_merge_window_s', 30.0)
+        self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
         self.declare_parameter('coverage_polygon_topic', '/coverage/polygon')
         self.declare_parameter('coverage_status_topic', '/coverage/status')
         self.declare_parameter('coverage_cell_size_m', 0.5)
+        self.declare_parameter('best_meta_topic', '/perception/best_meta')
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -128,13 +132,27 @@ class TaskExecutor(Node):
             self.get_parameter('center_yaw_rate_deg_s').value))
         self._findings_radius = float(
             self.get_parameter('findings_merge_radius_m').value)
+        self._findings_window = float(
+            self.get_parameter('findings_merge_window_s').value)
+        try:
+            self._findings_radius_by_label = json.loads(
+                str(self.get_parameter('findings_radius_by_label').value or '{}'))
+        except json.JSONDecodeError:
+            self._findings_radius_by_label = {}
+        self._task_id = ''
+        self._epoch_id = ''
+        self._frame_size = (0, 0)
+        self._best_meta = {}
         self._findings_dir = str(self.get_parameter('findings_dir').value)
         self._persist_findings = bool(
             self.get_parameter('persist_findings').value)
         self._coverage = None
         self._coverage_cell_size = float(
             self.get_parameter('coverage_cell_size_m').value)
-        self._findings = FindingsBook(self._findings_radius)
+        self._findings = FindingsBook(
+            self._findings_radius, merge_window_s=self._findings_window,
+            radius_by_label=self._findings_radius_by_label,
+            task_id=self._task_id, epoch_id=self._epoch_id)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
         self._clearance_stop = float(self.get_parameter('clearance_stop_m').value)
@@ -186,7 +204,10 @@ class TaskExecutor(Node):
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
-        self._findings = FindingsBook(self._findings_radius)
+        self._findings = FindingsBook(
+            self._findings_radius, merge_window_s=self._findings_window,
+            radius_by_label=self._findings_radius_by_label,
+            task_id=self._task_id, epoch_id=self._epoch_id)
         self._manual_override = False
         self._last_target_pose = None
         self._origin_enu = (0.0, 0.0, 0.0)
@@ -232,6 +253,11 @@ class TaskExecutor(Node):
             self._on_command_ack, px4_qos())
         self.create_subscription(
             BatteryStatus, '/fmu/out/battery_status_v1', self._on_battery, px4_qos())
+        self.create_subscription(
+            CameraInfo, '/airsim_camera/camera_info', self._on_camera_info, 5)
+        self.create_subscription(
+            String, str(self.get_parameter('best_meta_topic').value),
+            self._on_best_meta, 10)
 
         self._open_report()
         self._load_task()
@@ -315,6 +341,15 @@ class TaskExecutor(Node):
                     target = step.params.get('target') or {}
                     return str(target.get('kind') or 'target')
         return 'target'
+
+    def _on_camera_info(self, msg: CameraInfo) -> None:
+        self._frame_size = (int(msg.width), int(msg.height))
+
+    def _on_best_meta(self, msg: String) -> None:
+        try:
+            self._best_meta = json.loads(msg.data)
+        except json.JSONDecodeError:
+            pass
 
     def _on_battery(self, msg: BatteryStatus) -> None:
         remaining = float(msg.remaining)
@@ -416,6 +451,11 @@ class TaskExecutor(Node):
             self._report('task_rejected', reason=str(exc))
             return
         self._spec = spec
+        stem = os.path.splitext(os.path.basename(self._report_path))[0]
+        if stem.startswith('report_'):
+            stem = stem[len('report_'):]
+        self._task_id = stem or f'task-{int(time.time())}'
+        self._epoch_id = self._task_id
         self._reset_task_state()
         self._report('task_accepted', summary=spec.summary(),
                      spec=spec.to_dict(),
@@ -447,7 +487,10 @@ class TaskExecutor(Node):
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
-        self._findings = FindingsBook(self._findings_radius)
+        self._findings = FindingsBook(
+            self._findings_radius, merge_window_s=self._findings_window,
+            radius_by_label=self._findings_radius_by_label,
+            task_id=self._task_id, epoch_id=self._epoch_id)
         self._land_command_sent = False
         self._abort_reason = None
         self._manual_override = False
@@ -501,13 +544,26 @@ class TaskExecutor(Node):
         self.get_logger().info(f'确认目标：world={world} → 悬停 {self._target_hold_s:.0f} s')
         self._target_world = [float(v) for v in world]
         self._target_centered_reported = False
+        stamp = msg.header.stamp
+        ros_ns = int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+        position = self._position_enu()
+        pose = {}
+        if position is not None:
+            pose = {'world_enu': [round(float(v), 2) for v in position],
+                    'heading_deg': (None if self._heading_enu is None
+                                    else round(math.degrees(self._heading_enu), 1))}
         kind = self._target_kind()
         label = 'target' if kind in ('', 'any', 'target') else kind
         finding = self._findings.add_or_update(
             label=label, world_enu=world, confidence=1.0,
             priority=priority_for_kind(kind), source='perception',
             t=self._now_t(), step_type=self._current_step_type(),
-            status='confirmed')
+            status='confirmed',
+            frame_seq=int(self._best_meta.get('seq', 0)),
+            frame_size=(int(self._best_meta.get('width', self._frame_size[0])),
+                        int(self._best_meta.get('height', self._frame_size[1]))),
+            pose_at_first_seen=pose,
+            ros_stamp_ns=ros_ns, clock_source='ros')
         self._report('target_confirmed', world_enu=world,
                      step_type=self._current_step_type(),
                      centering=bool(self._center_on_target),
@@ -964,7 +1020,8 @@ class TaskExecutor(Node):
                 finding = self._findings.mark_inspected(
                     self._target_world, t=self._now_t(),
                     step_type=self._current_step_type(),
-                    notes='target centered')
+                    notes='target centered',
+                    ros_stamp_ns=self.get_clock().now().nanoseconds)
                 if finding is not None:
                     self._report('finding', action='inspected', **finding.to_dict())
                 self.get_logger().info(

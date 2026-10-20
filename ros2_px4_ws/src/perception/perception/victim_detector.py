@@ -85,6 +85,7 @@ class VictimDetector(Node):
         self.declare_parameter('max_depth_m', 60.0)
         self.declare_parameter('detections_topic', '~/detections')
         self.declare_parameter('best_topic', '~/best')
+        self.declare_parameter('best_meta_topic', '/perception/best_meta')
         self.declare_parameter('tracks_topic', '~/tracks')
         self.declare_parameter('track_gate_m', 2.0)
         self.declare_parameter('track_confirm_hits', 3)
@@ -117,6 +118,9 @@ class VictimDetector(Node):
             String, str(self.get_parameter('tracks_topic').value), 10)
         self._best_pub = self.create_publisher(
             PoseStamped, str(self.get_parameter('best_topic').value), 10)
+        self._best_meta_pub = self.create_publisher(
+            String, str(self.get_parameter('best_meta_topic').value), 10)
+        self._frame_size = (0, 0)
 
         self.create_subscription(
             Image, str(self.get_parameter('image_topic').value),
@@ -213,6 +217,7 @@ class VictimDetector(Node):
             det_objects.append(det)
             worlds.append(world_point)
 
+        self._frame_size = (int(msg.width), int(msg.height))
         stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
         self._sequence += 1
         payload = {
@@ -255,6 +260,11 @@ class VictimDetector(Node):
         pose = PoseStamped()
         pose.header.stamp = self.get_clock().now().to_msg()
         pose.header.frame_id = 'map'
+        self._best_meta_pub.publish(String(data=json.dumps({
+            'seq': self._sequence,
+            'width': self._frame_size[0],
+            'height': self._frame_size[1],
+        }, ensure_ascii=False)))
         pose.pose.position.x = float(track.world[0])
         pose.pose.position.y = float(track.world[1])
         pose.pose.position.z = float(track.world[2])
