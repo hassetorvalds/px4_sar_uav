@@ -173,6 +173,7 @@ class ClosedLoopBase(FlightCheckBase):
         #   airsim  = 用 AirSim 真值（相对起飞点）参与高度门；PX4 z 只作记录
         # 无论选哪路，CSV 都同时记 px4_up / truth_up / up_offset，供离线对比后再定。
         self.declare_parameter('height_source', 'px4')
+        self.declare_parameter('legacy_no_overfly', True)
         self.declare_parameter('truth_sample_s', 2.0)    # AirSim 真值采样周期（0=关闭）
         # 回波判别要有界（服务器侧 2026-10-15）：单次转场最多判别 N 次 / 累计后退 ≤ 上限，
         # 避免"贴着面反复后退"
@@ -273,9 +274,14 @@ class ClosedLoopBase(FlightCheckBase):
         self._truth_up_local = None      # 相对起飞点的 up，与 PX4 local z 同口径
         self._truth_at = 0.0
         if self._height_source not in ('px4', 'airsim'):
+            raise ValueError(
+                f'height_source={self._height_source!r} 不识别（只允许 px4/airsim）')
+        self._legacy_no_overfly = bool(
+            self.get_parameter('legacy_no_overfly').value)
+        if self._legacy_no_overfly:
+            self._overfly_clearance = float('inf')
             self.get_logger().warn(
-                f'height_source={self._height_source!r} 不识别 → 回退 px4（可选 px4/airsim）')
-            self._height_source = 'px4'
+                'legacy 高度门：一律判障碍、硬禁飞越（不保留 A 判定活路径）')
         if self._height_source == 'airsim':
             self.get_logger().warn(
                 'height_source=airsim：用 AirSim 真值（TRUTH）参与高度门，'

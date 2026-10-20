@@ -225,7 +225,7 @@ intent frame、provenance、显式确认计划、命令生命周期、证据摘�
 | 任务编排 | flat steps | YAML → py_trees（Sequence/Selector/Repeat） | 先保留 step 列表；需要条件/回退时再引入 BT 或 Selector | P2 |
 | 搜索锁定 | 确认 3 帧 + 悬停 5 s | 6 次一致、10 s 过期、3 m/2.5 m stand-off | 借 AAS 的 fix 确认/过期/stand-off 参数 | P2 |
 | 高度帧 | `px4_z`/ENU 裸值混用 | REL/LCL/BARO/MSL 标注，unknown 不猜 | TaskSpec/报告/高度门全部带 frame 标签 | **P0** |
-| 解锁前健康检查 | `mission/health.py` + 执行器 | `checkArmingAndRunConditions` | ✅ 已做：状态/位置/preflight/failsafe/battery，失败不发 arm | 已落地 |
+| 解锁前健康检查 | `mission/health.py` + 执行器 | `checkArmingAndRunConditions` | ✅ 已做；另加 bridge 落地去重、旧驱动 legacy 硬禁飞越 | 已落地 |
 | 任务 schema | flat steps | `version + defaults + items` | 兼容式对齐（保留 steps 加载器，新增 defaults/items） | P1 |
 | 证据/审计 | JSONL + `report_*.md` | durable journal + ULog summary + hash | ✅ Markdown 摘要已做；ULog 路径/哈希仍缺 | 部分落地 |
 | 覆盖规划 | 矩形/旋转/多边形弓字 + 多区域/最近邻排序 | 多边形/扫掠角/重叠/转场腿 | ✅ 矩形/多边形/敏感性/多区域/排序已做；转场仍为直线 | 部分落地 |

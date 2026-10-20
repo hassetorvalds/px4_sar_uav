@@ -24,6 +24,7 @@ from px4_msgs.msg import (
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from .command_dedupe import CommandDeduper
 from .frames import distance, enu_to_ned, flip_yaw_rate_sign, ned_to_enu
 from .qos import px4_qos
 from .state import Px4StateMonitor
@@ -71,6 +72,7 @@ class OffboardBridge(Node):
         # 落地检测无法置位（见 CHANGELOG 2026-10-08）。因此提供“静置后自动上锁”：
         # 大于 0 时，下发 land 后等待该秒数即强制上锁，使任务能正常收尾。
         self.declare_parameter('land_autodisarm_s', 10.0)
+        self.declare_parameter('land_dedupe_s', 2.0)
         self.declare_parameter('status_publish_period_s', 1.0)
 
         rate_hz = float(self.get_parameter('setpoint_rate_hz').value)
@@ -84,6 +86,8 @@ class OffboardBridge(Node):
             self.get_parameter('land_duration_margin_s').value)
         self._land_autodisarm_s = float(
             self.get_parameter('land_autodisarm_s').value)
+        self._land_deduper = CommandDeduper(
+            float(self.get_parameter('land_dedupe_s').value))
         self._status_period_s = float(self.get_parameter('status_publish_period_s').value)
 
         qos = px4_qos()
@@ -150,6 +154,11 @@ class OffboardBridge(Node):
 
     def _on_command(self, msg: String) -> None:
         command = msg.data.strip().lower()
+        if not self._land_deduper.accept(command, time.monotonic()):
+            self.get_logger().warn(
+                f'忽略重复落地命令 {command}（去重窗口）',
+                throttle_duration_sec=1.0)
+            return
         if command == CMD_ARM:
             self._send_vehicle_command(
                 VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)

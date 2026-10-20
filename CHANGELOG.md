@@ -15,6 +15,33 @@
 
 ---
 
+## [2026-10-20] 安全契约：land_fast 去重 + 旧驱动 legacy 硬禁飞越
+
+### 新增
+
+- `px4_interface/command_dedupe.py`：`CommandDeduper`，`land`/`land_fast` 各自
+  2 s 窗口去重；bridge 新增 `land_dedupe_s=2.0`，重复落地命令只记日志不转发。
+- 旧 `vlm_closed_loop.py`：`legacy_no_overfly=True`（默认）时
+  `overfly_clearance=inf`，一律判障碍、**硬禁飞越**；`height_source` 未知时
+  直接 `ValueError`，不再静默回退 px4。
+
+### 验证
+
+```text
+· 单测：px4_interface 23 passed；全包 260 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 261）
+· 去重：land_fast 10.0/11.0 只接受一次，12.5 再接受；arm 不去重。
+· 旧驱动：py_compile 通过；legacy 分支强制 inf。
+```
+
+### 已知
+
+- 去重是 bridge 级、按命令名分别计时；`land` 与 `land_fast` 不共享窗口；
+- 旧驱动改 legacy 后未复飞；新执行器不受影响；
+- supervisor 接管后的 `LANDED_ELSEWHERE` 状态机仍未实现。
+
+---
+
 ## [2026-10-20] Finding 1.0：字段/时间/合并窗口/按 label 半径/history（真机验证）
 
 ### 新增
