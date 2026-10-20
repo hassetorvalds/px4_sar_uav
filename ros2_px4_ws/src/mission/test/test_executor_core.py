@@ -138,3 +138,9 @@ def test_search_waypoints_polygon():
     assert len(waypoints) == 8
     assert waypoints[0] == pytest.approx((2.0, -9.0, 2.0))
     assert waypoints[-1] == pytest.approx((2.0, -3.0, 2.0))
+
+
+def test_offset_waypoints_to_world_origin():
+    from mission.executor_core import offset_waypoints
+
+    assert offset_waypoints([(1, 2, 3)], (10, 20)) == [(11, 22, 3)]

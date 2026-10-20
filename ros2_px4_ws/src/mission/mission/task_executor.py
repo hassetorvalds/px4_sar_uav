@@ -39,7 +39,7 @@ from .altitude import format_altitude
 from .altitude import to_dict as altitude_dict
 from .command_tracker import CommandState, CommandTracker
 from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_target,
-                            inside_geofence,
+                            inside_geofence, offset_waypoints,
                             search_waypoints, step_timeout_s, velocity_toward,
                             yaw_rate_to_target)
 from .findings import FindingsBook, priority_for_kind
@@ -313,8 +313,8 @@ class TaskExecutor(Node):
 
     def _search_polygon(self, step) -> list:
         params = step.params
-        center_east = float(params.get('center_east_m', 0.0))
-        center_north = float(params.get('center_north_m', 0.0))
+        center_east = self._origin_enu[0] + float(params.get('center_east_m', 0.0))
+        center_north = self._origin_enu[1] + float(params.get('center_north_m', 0.0))
         shape = str(params.get('shape', 'square')).lower()
         if shape == 'polygon':
             points = params.get('polygon') or params.get('vertices') or []
@@ -793,8 +793,9 @@ class TaskExecutor(Node):
         self.get_logger().info(f'执行 step {index + 1}/{len(self._spec.steps)}：{step.type}')
         self._report('step', type=step.type, params=step.params)
         if step.type == 'search':
-            self._search_wps = search_waypoints(
+            raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
+            self._search_wps = offset_waypoints(raw_waypoints, self._origin_enu)
             if self._last_search_end is not None and self._search_wps:
                 start = self._position_enu()
                 target = self._search_wps[0]
@@ -847,8 +848,10 @@ class TaskExecutor(Node):
         if step.type == 'takeoff':
             self._run_takeoff(step, position)
         elif step.type == 'goto':
-            self._run_goto(position, (float(step.params.get('east_m', 0.0)),
-                                      float(step.params.get('north_m', 0.0)),
+            east = float(step.params.get('east_m', 0.0))
+            north = float(step.params.get('north_m', 0.0))
+            self._run_goto(position, (self._origin_enu[0] + east,
+                                      self._origin_enu[1] + north,
                                       float(step.params.get('altitude_m',
                                                             self._spec.altitude_m))))
         elif step.type == 'forward':

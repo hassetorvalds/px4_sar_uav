@@ -94,6 +94,12 @@ def forward_target(current_enu, heading_enu: float, meters: float):
             float(current_enu[2]))
 
 
+def offset_waypoints(waypoints, origin):
+    """把相对起飞点的 (e,n,up) 平移到世界 ENU。"""
+    return [(float(e) + float(origin[0]), float(n) + float(origin[1]), float(up))
+            for e, n, up in waypoints]
+
+
 def search_waypoints(step_params, *, altitude_m: float):
     """把 ``search`` step 展开成世界系航点 ``[(east, north, up), ...]``。"""
     center_east = float(step_params.get('center_east_m', 0.0))
