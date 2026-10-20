@@ -76,7 +76,11 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         coverage = next((e for e in reversed(events)
                          if e.get('event') == 'search_coverage'), None)
     waypoints = [e for e in events if e.get('event') == 'search_waypoint']
-    plan = next((e for e in events if e.get('event') == 'search_plan'), None)
+    plans = [e for e in events if e.get('event') == 'search_plan']
+    coverages = {e.get('step'): e for e in events
+                 if e.get('event') == 'search_coverage'}
+    transits = [e for e in events if e.get('event') == 'transit']
+    plan = plans[0] if plans else None
     mtime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getmtime(report_path)))
 
     lines = [f'# 任务报告：{summary}', '']
@@ -110,7 +114,8 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         target = takeoff.get('target') or {}
         lines.append(f'- 起飞：LCL {_fmt(altitude.get("value_m"))} m / '
                      f'任务 {_fmt(target.get("value_m"))} m {target.get("frame", "")}')
-    if plan:
+    if plans and len(plans) == 1:
+        plan = plans[0]
         detail = f'- 搜索：{plan.get("waypoints", "?")} 航点，到位 {len(waypoints)} 个'
         if plan.get('area_m2') is not None:
             detail += (f'；面积 {_fmt(plan.get("area_m2"), 1)} m²'
@@ -120,9 +125,26 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
                 detail += (f'，下视足印 {_fmt(plan.get("footprint_width_m"), 1)} m'
                            f'、重叠 {100.0 * float(plan.get("lane_overlap_ratio")):.0f}%')
         lines.append(detail)
+    elif len(plans) > 1:
+        total_area = sum(float(item.get('area_m2') or 0.0) for item in plans)
+        lines.append(f'- 搜索：{len(plans)} 个区域，合计 {_fmt(total_area, 1)} m²')
     if scan_complete:
         lines.append('- 扫描：完成')
-    if coverage:
+    if len(plans) > 1:
+        region_coverages = [coverages.get(item.get('step')) for item in plans]
+        region_coverages = [item for item in region_coverages if item]
+        if region_coverages:
+            observed = sum(int(item.get('observed_cells') or 0)
+                          for item in region_coverages)
+            total = sum(int(item.get('total_cells') or 0)
+                        for item in region_coverages)
+            missed = sum(int(item.get('missed_cells') or 0)
+                         for item in region_coverages)
+            ratio = (observed / total) if total else 0.0
+            lines.append(
+                f'- 观测覆盖（合计）：{observed}/{total} 格'
+                f'（{100.0 * ratio:.1f}%），漏扫 {missed} 格')
+    elif coverage:
         lines.append(
             f'- 观测覆盖：{coverage.get("observed_cells")}/'
             f'{coverage.get("total_cells")} 格'
@@ -131,6 +153,10 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
             f'已观测 {_fmt(coverage.get("observed_area_m2"), 1)} m²'
             f'（地面点 {coverage.get("ground_points", "?")}，'
             f'区域内 {coverage.get("points_in_polygon", "?")}）')
+    if transits:
+        total_transit = sum(float(item.get('distance_m') or 0.0)
+                            for item in transits)
+        lines.append(f'- 转场：{len(transits)} 段，合计 {_fmt(total_transit, 1)} m')
     if targets:
         lines.append(f'- 目标：{len(targets)} 次确认')
         for target in targets:
@@ -142,6 +168,23 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
                          f'（t={item.get("t")} s）')
     if done and done.get('findings_path'):
         lines.append(f'- 发现物记录：`{done.get("findings_path")}`')
+    if len(plans) > 1:
+        lines.append('')
+        lines.append('## 搜索区域')
+        lines.append('')
+        lines.append('| # | 面积 m² | 航点 | 覆盖 | 漏扫 |')
+        lines.append('|---|---|---|---|---|')
+        for index, item in enumerate(plans, start=1):
+            cov = coverages.get(item.get('step'))
+            if cov:
+                ratio = 100.0 * float(cov.get('coverage_ratio', 0.0))
+                cover = (f'{cov.get("observed_cells")}/{cov.get("total_cells")}'
+                         f'（{ratio:.1f}%）')
+                missed = cov.get('missed_cells', '?')
+            else:
+                cover, missed = '—', '—'
+            lines.append(f'| {index} | {_fmt(item.get("area_m2"), 1)} | '
+                         f'{item.get("waypoints", "?")} | {cover} | {missed} |')
     lines.append('')
     lines.append('## 发现物')
     lines.append('')
@@ -195,6 +238,8 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
             detail = f'heading={event.get("heading_enu_deg")}°'
         elif name == 'abort':
             detail = str(event.get('reason', ''))
+        elif name == 'transit':
+            detail = f'{event.get("distance_m", "?")} m'
         lines.append(f'| {event.get("t")} | {name} | {detail} |')
 
     if not output_path:

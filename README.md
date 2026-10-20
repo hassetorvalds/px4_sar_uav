@@ -6,7 +6,7 @@
 > 最近验证（2026-10-18）：Action goal 提交完整任务（搜索 8/8 → 扫描 → 目标 → 对准 3.5° → 安全落地）；
 > findings `#1 target [36.19, 35.88, 5.73]` 已从 confirmed 升级为 inspected，并写入 Action result / Markdown；
 > 矩形覆盖搜索真机 6/6 航点（24 m²、22 m、预计 54 s）；
-> **观测覆盖：前视 0/24 → 下视 24/24（100%）**；L 形 20/20（100%）；敏感性：2 m/间距 4 m（0% 重叠）97.2%、漏 4 格，3 m/间距 6 m 100%。见 [COVERAGE](docs/COVERAGE.md)。
+> **观测覆盖：前视 0/24 → 下视 24/24（100%）**；L 形 20/20；敏感性 2 m/间距 4 m 97.2%；双区域 36 m²、144/144、转场 10.86 m。见 [COVERAGE](docs/COVERAGE.md)。
 > 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · **Action 接口：[docs/ACTION.md](docs/ACTION.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · 开发排期：[docs/roadmap.md](docs/roadmap.md)
 
 ---
@@ -276,7 +276,8 @@ archive/
 | 自然语言任务闭环 | ✅ | 规则解析 + IntentFrame；起飞/搜索/扫描/检测/对准/降落，真机多次飞通 |
 | 结构化发现物（findings） | ✅ | 合并/平均/状态升级；真机 `#1 target [31.22,29.69,4.76]` → inspected；落盘 `logs/findings/`，`task_findings` 可跨任务汇总 |
 | 覆盖规划（矩形/多边形） | ✅ | 矩形/旋转/任意多边形弓字 + 足印/重叠；L 形 8/8 航点、20 m²、重叠 50% |
-| 观测覆盖（真实点云） | ✅ 下视 + 敏感性 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%、漏 4 格；0.5 m 网格 |
+| 观测覆盖（真实点云） | ✅ 下视 + 敏感性 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%；0.5 m 网格 |
+| 多区域 + 转场 | ✅ 真机 | 两个 search step：L 形 20 m² + 矩形 16 m²，转场 10.86 m，合计 144/144（100%） |
 | `ExecuteTask` Action | ✅ | goal=TaskSpec JSON；feedback 阶段/进度/LCL 高度；result 带报告；cancel 落地上锁；真机完整搜索+检测 `success=True` |
 | 安全加固 | ✅ | arm 前健康检查（状态/位置/preflight/failsafe/电池）；simcheck 独立域 77 + 真机互锁；`report_*.md` 证据页 |
 | AirSim ↔ PX4 SITL 仿真链路 | ✅ | `Simulator connected on TCP port 4560` |

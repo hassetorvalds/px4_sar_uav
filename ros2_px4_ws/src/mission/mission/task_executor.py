@@ -185,6 +185,7 @@ class TaskExecutor(Node):
         self._target_world = None
         self._target_centered_reported = False
         self._coverage = None
+        self._last_search_end = None
         self._findings = FindingsBook(self._findings_radius)
         self._manual_override = False
         self._last_target_pose = None
@@ -445,6 +446,7 @@ class TaskExecutor(Node):
         self._target_world = None
         self._target_centered_reported = False
         self._coverage = None
+        self._last_search_end = None
         self._findings = FindingsBook(self._findings_radius)
         self._land_command_sent = False
         self._abort_reason = None
@@ -721,6 +723,17 @@ class TaskExecutor(Node):
         if step.type == 'search':
             self._search_wps = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
+            if self._last_search_end is not None and self._search_wps:
+                start = self._position_enu()
+                target = self._search_wps[0]
+                if start is not None:
+                    self._report(
+                        'transit',
+                        from_enu=[round(float(v), 2) for v in start],
+                        to_enu=[round(float(v), 2) for v in target],
+                        distance_m=round(math.hypot(target[0] - start[0],
+                                                    target[1] - start[1]), 2))
+                self._last_search_end = None
             metrics = search_metrics(step.params, self._search_wps,
                                      self._spec.max_speed_mps,
                                      altitude_m=self._spec.altitude_m)
@@ -976,6 +989,7 @@ class TaskExecutor(Node):
             self._stop_velocity()
             return
         if self._search_index >= len(self._search_wps):
+            self._last_search_end = self._position_enu()
             if self._coverage is not None:
                 self._report('search_coverage', **self._coverage)
             self._advance_step()

@@ -60,3 +60,33 @@ def test_summarize_abort(tmp_path):
     output = summarize(str(report))
     text = open(output, encoding='utf-8').read()
     assert 'clearance_blocked' in text
+
+
+def test_summarize_multi_region_and_transit(tmp_path):
+    report = tmp_path / 'multi.jsonl'
+    events = [
+        {'t': 0.0, 'event': 'task_accepted', 'summary': 'two regions',
+         'spec': {'altitude_m': 2.0, 'altitude_frame': 'REL'}},
+        {'t': 5.0, 'event': 'search_plan', 'step': 1, 'waypoints': 8,
+         'area_m2': 20.0, 'path_length_m': 20.0, 'estimated_s': 60.0},
+        {'t': 6.0, 'event': 'search_coverage', 'step': 1,
+         'observed_cells': 80, 'total_cells': 80, 'coverage_ratio': 1.0,
+         'missed_cells': 0},
+        {'t': 7.0, 'event': 'transit', 'step': 2, 'distance_m': 11.0},
+        {'t': 8.0, 'event': 'search_plan', 'step': 2, 'waypoints': 6,
+         'area_m2': 16.0, 'path_length_m': 24.0, 'estimated_s': 50.0},
+        {'t': 9.0, 'event': 'search_coverage', 'step': 2,
+         'observed_cells': 60, 'total_cells': 64, 'coverage_ratio': 0.9375,
+         'missed_cells': 4},
+        {'t': 10.0, 'event': 'done', 'commands': [], 'findings': []},
+    ]
+    with open(report, 'w', encoding='utf-8') as handle:
+        for event in events:
+            handle.write(json.dumps(event) + '\n')
+    text = open(summarize(str(report)), encoding='utf-8').read()
+    assert '## 搜索区域' in text
+    assert '2 个区域，合计 36.0 m²' in text
+    assert '观测覆盖（合计）：140/144 格（97.2%）' in text
+    assert '转场：1 段，合计 11.0 m' in text
+    assert '| 1 | 20.0 | 8 | 80/80（100.0%） | 0 |' in text
+    assert '| 2 | 16.0 | 6 | 60/64（93.8%） | 4 |' in text

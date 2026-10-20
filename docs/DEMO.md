@@ -182,6 +182,15 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py --task-json /tmp/polygon_l.json --execute
 预期：`search_plan` 面积 20 m²、足印 4 m、重叠 50%，`search_waypoint 8/8`，
 下视 `coverage 20/20`。
 
+多区域 + 转场（两个 search step，仓库内示例）：
+
+```bash
+FLY_TASK_CONFIRM=1 scripts/fly_task.py \
+  --task-json examples/multi_region_task.json --execute
+```
+
+预期：`search_plan` 两次、`transit` 一段、报告「搜索区域」表两行；下视合计 144/144。
+
 再飞**小半径搜索**（东南侧，避开正前方墙体）：
 
 ```bash
