@@ -53,3 +53,15 @@ def test_coverage_reset():
 def test_invalid_polygon_rejected():
     with pytest.raises(ValueError):
         CoverageGrid([(0, 0), (1, 1)])
+
+
+def test_render_ascii_and_png(tmp_path):
+    grid = CoverageGrid([(0, 0), (3, 0), (3, 3), (0, 3)], cell_size_m=1.0)
+    grid.observe(np.array([[0.5, 0.5, 0.0]]))
+    text = grid.render_ascii()
+    assert '#' in text and '.' in text
+    path = tmp_path / 'coverage.png'
+    grid.render_png(str(path), scale=4)
+    data = path.read_bytes()
+    assert data.startswith(b'\x89PNG\r\n\x1a\n')
+    assert len(data) > 40

@@ -276,7 +276,7 @@ archive/
 | 自然语言任务闭环 | ✅ | 规则解析 + IntentFrame；起飞/搜索/扫描/检测/对准/降落，真机多次飞通 |
 | 结构化发现物（findings） | ✅ | Finding 1.0：字段/ROS 时间/30s 合并窗口/按 label 半径/`discarded`/history；真机 `frame_seq=10`、`frame_size=1280×720` |
 | 覆盖规划（矩形/多边形） | ✅ | 矩形/旋转/任意多边形弓字 + 足印/重叠；L 形 8/8 航点、20 m²、重叠 50% |
-| 观测覆盖（真实点云） | ✅ 下视 + 敏感性 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%；0.5 m 网格 |
+| 观测覆盖（真实点云） | ✅ 下视 + 敏感性 + 热力图 | 前视 0/24 → 下视 24/24；L 形 20/20；2 m/间距 4 m 97.2%；PNG 热力图/pose_age/eph/epv |
 | 多区域 + 转场 | ✅ 真机 | 两个 search step：L 形 20 m² + 矩形 16 m²，转场 10.86 m，合计 144/144（100%） |
 | SemanticIntent 1.0 | ✅ 真机 | 手写 JSON → TaskSpec → ExecuteTask Action；area_cover 8/8、36 m²、144/144 |
 | 区域最近邻排序 | ✅ 单测 | `--order-regions`：3 区域按最近邻重排，保留 takeoff/land |

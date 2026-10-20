@@ -153,6 +153,14 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
             f'已观测 {_fmt(coverage.get("observed_area_m2"), 1)} m²'
             f'（地面点 {coverage.get("ground_points", "?")}，'
             f'区域内 {coverage.get("points_in_polygon", "?")}）')
+        if coverage.get('pose_age_s') is not None:
+            lines.append(
+                f'- 位姿新鲜度：{_fmt(coverage.get("pose_age_s"), 2)} s，'
+                f'eph={_fmt(coverage.get("eph_m"), 2)} m、'
+                f'epv={_fmt(coverage.get("epv_m"), 2)} m，'
+                f'heading={_fmt(coverage.get("heading_deg"), 1)}°')
+        if coverage.get('heatmap_path'):
+            lines.append(f'- 覆盖热力图：`{coverage.get("heatmap_path")}`')
     if transits:
         total_transit = sum(float(item.get('distance_m') or 0.0)
                             for item in transits)

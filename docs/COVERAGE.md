@@ -155,3 +155,28 @@ Windows 侧 `C:\Users\steve\Documents\AirSim\settings.json` 的 `Vehicles.Drone1
 - Markdown 有「搜索区域」表、合计覆盖、转场段数/距离。
 
 限制：转场是直线，未做避障/高度剖面；不连通区域按顺序扫。
+
+---
+
+## 覆盖热力图 + 位姿误差（2026-10-20）
+
+- `CoverageGrid.render_png()`：纯标准库 PNG（绿=已观测、灰=漏扫、白=多边形外）；
+- `coverage_monitor` 每 5 s 刷新 `logs/coverage/coverage_<stamp>.png`，
+  status/报告带 `heatmap_path`；
+- 同时报告 `pose_age_s`、PX4 `eph/epv`、`heading_deg`、`pose_valid`。
+
+真机 6×6 区域：
+
+```text
+coverage 144/144（100%），miss 0
+heatmap logs/coverage/coverage_20261020-193955.png（144×144 PNG）
+pose_age=0.017 s，eph=0.078 m，epv=0.077 m，heading=36.1°
+报告 logs/tasks/report_20261020-193947-837.jsonl
+```
+
+## 前视 0/24 的正对照
+
+- 前视 0/24 不是相机坏：同一轮点云有 **63,984 个地面点（z≈0）**，且检测器在
+  前视图像上确认过目标 `[17.45,34.36,4.65]`（Finding 1.0）；
+- 0/24 只说明**地面点落在 6×4 m 多边形外**（前视足印在区域外）；
+- 下视 24/24 / L 形 20/20 / 双区域 144/144 是同一套网格的正向对照。

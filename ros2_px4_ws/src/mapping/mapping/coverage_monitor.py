@@ -1,6 +1,8 @@
 """观测覆盖节点：相机点云 → ENU 地面网格 → 覆盖率/漏扫。"""
 
 import json
+import math
+import os
 import time
 
 import numpy as np
@@ -25,11 +27,18 @@ class CoverageMonitor(Node):
         self.declare_parameter('ground_tol_m', 0.6)
         self.declare_parameter('min_range_m', 0.45)
         self.declare_parameter('publish_rate_hz', 2.0)
+        self.declare_parameter('heatmap_dir', 'logs/coverage')
+        self.declare_parameter('heatmap_interval_s', 5.0)
 
         self._cell_size = float(self.get_parameter('cell_size_m').value)
         self._ground_tol = float(self.get_parameter('ground_tol_m').value)
         self._min_range = float(self.get_parameter('min_range_m').value)
         self._grid = None
+        self._heatmap_path = ''
+        self._last_heatmap = 0.0
+        self._heatmap_dir = str(self.get_parameter('heatmap_dir').value)
+        self._heatmap_interval = max(
+            float(self.get_parameter('heatmap_interval_s').value), 0.5)
         self._frames = 0
         self._last_publish = 0.0
         self._monitor = Px4StateMonitor(self)
@@ -60,6 +69,9 @@ class CoverageMonitor(Node):
         except (json.JSONDecodeError, ValueError, TypeError) as exc:
             self.get_logger().warn(f'忽略 polyon：{exc}')
             return
+        self._heatmap_path = os.path.join(
+            self._heatmap_dir, f'coverage_{time.strftime("%Y%m%d-%H%M%S")}.png')
+        self._last_heatmap = 0.0
         status = self._grid.status()
         self.get_logger().info(
             f'覆盖区域：{status["total_cells"]} 格 / '
@@ -92,6 +104,25 @@ class CoverageMonitor(Node):
         payload = self._grid.status()
         payload['frames'] = self._frames
         payload['stamp'] = self.get_clock().now().nanoseconds / 1e9
+        state = self._monitor.snapshot()
+        age = self._monitor.position_age_s()
+        payload['pose_age_s'] = (None if not math.isfinite(age)
+                                 else round(float(age), 3))
+        payload['pose_valid'] = state.position_ned is not None
+        payload['eph_m'] = (None if not math.isfinite(state.eph)
+                            else round(float(state.eph), 3))
+        payload['epv_m'] = (None if not math.isfinite(state.epv)
+                            else round(float(state.epv), 3))
+        payload['heading_deg'] = (None if not math.isfinite(state.heading)
+                                  else round(math.degrees(state.heading), 1))
+        if self._heatmap_path and (force or now - self._last_heatmap
+                                   >= self._heatmap_interval):
+            try:
+                self._grid.render_png(self._heatmap_path)
+                self._last_heatmap = now
+            except OSError as exc:
+                self.get_logger().warn(f'热力图写入失败：{exc}')
+        payload['heatmap_path'] = self._heatmap_path
         self._status_pub.publish(String(data=json.dumps(payload, ensure_ascii=False)))
 
 

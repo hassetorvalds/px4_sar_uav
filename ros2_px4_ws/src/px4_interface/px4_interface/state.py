@@ -35,6 +35,8 @@ class Px4State:
     vy: float = float('nan')
     vz: float = float('nan')
     pitch: float = float('nan')       # 俯仰角（rad），同上
+    eph: float = float('nan')         # PX4 水平位置误差标准差（m）
+    epv: float = float('nan')         # PX4 垂直位置误差标准差（m）
     xy_valid: bool = False
     z_valid: bool = False
     landed: bool = False
@@ -102,6 +104,8 @@ class Px4StateMonitor:
         s.vy = msg.vy
         s.vz = msg.vz
         s.heading = msg.heading
+        s.eph = msg.eph
+        s.epv = msg.epv
         s.xy_valid = msg.xy_valid
         s.z_valid = msg.z_valid
         self._last_position_monotonic = time.monotonic()

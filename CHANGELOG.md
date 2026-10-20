@@ -15,6 +15,37 @@
 
 ---
 
+## [2026-10-20] 覆盖热力图 + 位姿误差（真机 144/144）
+
+### 新增
+
+- `CoverageGrid.render_ascii()` / `render_png()`：纯标准库 PNG，
+  绿=已观测、灰=漏扫、白=多边形外；
+- `coverage_monitor` 每 5 s 刷新 `logs/coverage/coverage_<stamp>.png`，
+  status 带 `heatmap_path/pose_age_s/eph_m/epv_m/heading_deg/pose_valid`；
+- PX4 state 增加 `eph/epv`；报告新增位姿新鲜度/热力图行；
+- 前视 0/24 正对照说明：63,984 地面点 + 目标检测，证明是足印不是相机坏。
+
+### 验证
+
+```text
+· 单测：mapping 21 passed；全包 261 passed / 2 skipped
+  （PYTHONNOUSERSITE=1 时 262）
+· 真机 6×6：coverage 144/144（100%）；
+  heatmap 144×144 PNG（PIL verify OK）；
+  pose_age=0.017 s，eph=0.078 m，epv=0.077 m，heading=36.1°
+  报告：logs/tasks/report_20261020-193947-837.jsonl
+  热力图：logs/coverage/coverage_20261020-193955.png
+```
+
+### 已知
+
+- 热力图 1 m/0.5 m 网格、PNG 为纯色块，不是插值热图；
+- `eph/epv` 来自 PX4 估计，不是真值误差；
+- 正对照是历史数据（目标检测 + 地面点），未单独做"已知目标放进多边形"实验。
+
+---
+
 ## [2026-10-20] Action cancel 幂等 + external_land 收工
 
 ### 新增

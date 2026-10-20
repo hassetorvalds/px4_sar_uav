@@ -5,6 +5,9 @@
 """
 
 import math
+import os
+import struct
+import zlib
 
 import numpy as np
 
@@ -100,6 +103,62 @@ class CoverageGrid:
             if cell in self.cells:
                 self.points_in_polygon += 1
                 self.observed.add(cell)
+
+    def _cell_bounds(self):
+        if not self.cells:
+            return 0, 0, 0, 0
+        xs = [cell[0] for cell in self.cells]
+        ys = [cell[1] for cell in self.cells]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    def render_ascii(self) -> str:
+        """北向上的 ASCII 热力图：# 已观测，. 漏扫。"""
+        ix0, iy0, ix1, iy1 = self._cell_bounds()
+        lines = []
+        for iy in range(iy1, iy0 - 1, -1):
+            row = []
+            for ix in range(ix0, ix1 + 1):
+                if (ix, iy) not in self.cells:
+                    row.append(' ')
+                else:
+                    row.append('#' if (ix, iy) in self.observed else '.')
+            lines.append(''.join(row))
+        return '\n'.join(lines) + ('\n' if lines else '')
+
+    def render_png(self, path: str, scale: int = 12) -> str:
+        """纯标准库 PNG（不依赖 PIL/cv2）：绿=已观测，灰=漏扫，白=多边形外。"""
+        scale = max(int(scale), 2)
+        ix0, iy0, ix1, iy1 = self._cell_bounds()
+        width = (ix1 - ix0 + 1) * scale
+        height = (iy1 - iy0 + 1) * scale
+        rows = []
+        for iy in range(iy1, iy0 - 1, -1):
+            row = bytearray()
+            for ix in range(ix0, ix1 + 1):
+                if (ix, iy) not in self.cells:
+                    color = b'\xff\xff\xff'
+                elif (ix, iy) in self.observed:
+                    color = b'\x00\x6e\x2e'
+                else:
+                    color = b'\xe6\xe6\xe6'
+                row.extend(color * scale)
+            rows.append(bytes(row))
+        raw = b''.join(b'\x00' + row for row in rows)
+
+        def chunk(tag, data):
+            return (struct.pack('>I', len(data)) + tag + data
+                    + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff))
+
+        png = (b'\x89PNG\r\n\x1a\n'
+               + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+               + chunk(b'IDAT', zlib.compress(raw))
+               + chunk(b'IEND', b''))
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, 'wb') as handle:
+            handle.write(png)
+        return path
 
     def status(self) -> dict:
         total = len(self.cells)
