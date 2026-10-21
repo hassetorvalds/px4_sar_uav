@@ -46,7 +46,7 @@ else
 fi
 
 # 地图是否在建图（frames>0）
-status="$(timeout 6 ros2 topic echo --once /local_map/status 2>/dev/null | head -1 || true)"
+status="$(timeout 12 ros2 topic echo --once /local_map/status 2>/dev/null | grep -m1 'frames=' || true)"
 frames="$(printf '%s' "$status" | sed -n 's/.*frames=\([0-9]*\).*/\1/p')"
 if [ -n "$frames" ] && [ "$frames" -gt 0 ]; then
     note OK "local_map frames" "$frames"

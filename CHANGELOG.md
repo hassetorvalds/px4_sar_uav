@@ -15,6 +15,33 @@
 
 ---
 
+## [2026-10-21] 旧驱动 legacy 1 轮（不是高度 C）
+
+### 修复（旧脚本）
+
+- `preflight.sh`：`local_map/status` 等待从 6 s 放宽到 12 s；
+  且先 `grep frames=` 再解析，避免 FastDDS SHM 错误行被 `head -1` 当成状态；
+- 旧驱动要求单相机：本轮用 `with_down_camera=false` 启动栈。
+
+### 飞行
+
+```text
+session=s1021-194003，KNOWN_POINTS="4.6,13.0"
+legacy 高度门：一律判障碍、硬禁飞越
+242 帧，识别到 0 个障碍区间；0 episode；扫描 25 s 未找到障碍
+land_fast，armed=false，landed=true
+取证：logs/2026-10-21/legacy_c1_s1021-194003_{driver,vlm,arbiter}.log
+CSV：logs/2026-10-21/legacy_c1_s1021-194003_detour.csv
+```
+
+### 如实结论
+
+- 这一轮验证了旧驱动的 legacy 路径**未出现飞越**，但**没有遇到障碍**，
+  不能当作“高度 C 验证”；
+- 旧驱动仍是 legacy；Batch2 仍需等真正 C 判定或服务器接受 legacy 口径。
+
+---
+
 ## [2026-10-21] cancel 三态全部验证
 
 ```text
