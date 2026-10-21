@@ -24,8 +24,12 @@ log="logs/tasks/actionsimcheck_${stamp}.log"
 
 cancel_after="${ACTION_SIMCHECK_CANCEL_AFTER:-0}"
 disarm_after="${ACTION_SIMCHECK_DISARM_AFTER:-0}"
+cancel_after_result="${ACTION_SIMCHECK_CANCEL_AFTER_RESULT:-0}"
 client_args=()
-if [ "${disarm_after}" != "0" ]; then
+if [ "${cancel_after_result}" = "1" ]; then
+    python3 scripts/fly_task.py "起飞到 2 米，悬停 1 秒，降落" --json > "${task_file}"
+    client_args+=(--cancel-after-result)
+elif [ "${disarm_after}" != "0" ]; then
     python3 scripts/fly_task.py "起飞到 2 米，悬停 20 秒，降落" --json > "${task_file}"
 elif [ "${cancel_after}" != "0" ]; then
     python3 scripts/fly_task.py "起飞到 2 米，原地扫描 30 秒，降落" --json > "${task_file}"
@@ -71,6 +75,18 @@ echo "[action-simcheck] client exit=${client_rc}"
 echo "[action-simcheck] 报告事件："
 grep -o '"event": "[^"]*"' "${report}" 2>/dev/null | sort | uniq -c | tail -20 || true
 
+if [ "${cancel_after_result}" = "1" ]; then
+    if ! grep -q 'return_code=3' "${log}" 2>/dev/null; then
+        echo "[action-simcheck] FAIL（终态 cancel 未 ERROR_GOAL_TERMINATED）" >&2
+        exit 1
+    fi
+    if [ "${client_rc}" -ne 0 ]; then
+        echo "[action-simcheck] FAIL（终态 cancel client 退出码 ${client_rc}）" >&2
+        exit 1
+    fi
+    echo "[action-simcheck] PASS（terminal cancel）"
+    exit 0
+fi
 if [ "${disarm_after}" != "0" ]; then
     # 外部 disarm：executor 应报 external_land + done，且不再发 land_fast
     if ! grep -q '"event": "external_land"' "${report}" 2>/dev/null; then
@@ -100,6 +116,10 @@ if [ "${cancel_after}" != "0" ]; then
     fi
     if [ "${client_rc}" -ne 5 ] && [ "${client_rc}" -ne 0 ]; then
         echo "[action-simcheck] FAIL（cancel 场景 client 退出码 ${client_rc}）" >&2
+        exit 1
+    fi
+    if ! grep -q 'active cancel response: return_code=0 goals_canceling=1' "${log}" 2>/dev/null; then
+        echo "[action-simcheck] FAIL（active cancel 不是 ERROR_NONE/1 goal）" >&2
         exit 1
     fi
     echo "[action-simcheck] PASS（cancel）"

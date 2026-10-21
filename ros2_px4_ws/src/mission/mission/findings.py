@@ -38,6 +38,8 @@ class Finding:
     confidence: float = 1.0
     priority: str = 'unknown'
     status: str = 'confirmed'
+    entry_status: str = 'confirmed'
+    detector_hits: int = 0
     source: str = 'perception'
     first_seen: float = 0.0
     last_seen: float = 0.0
@@ -67,6 +69,8 @@ class Finding:
             'confidence': round(float(self.confidence), 3),
             'priority': self.priority,
             'status': self.status,
+            'entry_status': self.entry_status,
+            'detector_hits': int(self.detector_hits),
             'source': self.source,
             'first_seen': round(float(self.first_seen), 2),
             'last_seen': round(float(self.last_seen), 2),
@@ -123,6 +127,7 @@ class FindingsBook:
                       status: str = 'confirmed', frame_seq: int = 0,
                       frame_size=(0, 0), pose_at_first_seen=None,
                       ros_stamp_ns: int = 0, clock_source: str = 'ros',
+                      entry_status: str = 'confirmed', detector_hits: int = 0,
                       discarded: bool = False,
                       discard_reason: str = '') -> Finding:
         world = tuple(float(v) for v in world_enu)
@@ -145,6 +150,7 @@ class FindingsBook:
             if tuple(frame_size) != (0, 0):
                 item.frame_size = tuple(frame_size)
             item.step_type = step_type or item.step_type
+            item.detector_hits = max(item.detector_hits, int(detector_hits))
             item.discarded = bool(item.discarded or discarded)
             if discard_reason:
                 item.discard_reason = discard_reason
@@ -159,6 +165,7 @@ class FindingsBook:
             epoch_id=self._epoch_id, label=label, world_enu=world,
             frame_seq=int(frame_seq), frame_size=tuple(frame_size),
             confidence=float(confidence), priority=priority, status=status,
+            entry_status=entry_status, detector_hits=int(detector_hits),
             source=source, first_seen=float(t), last_seen=float(t),
             first_seen_ros_ns=int(ros_stamp_ns),
             last_seen_ros_ns=int(ros_stamp_ns), clock_source=clock_source,

@@ -71,3 +71,43 @@ def test_area_cover_requires_area():
     intent.constraints.pop('area')
     reasons = intent.validate()
     assert any(reason.code == 'SCHEMA_INVALID' for reason in reasons)
+
+
+def _polygon_intent(**overrides):
+    data = _area_intent(**overrides).to_dict()
+    data['constraints'] = dict(data['constraints'])
+    data['constraints'].pop('area', None)
+    data['constraints']['area'] = {
+        'frame_id': 'map',
+        'polygon': [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]],
+        'overlap': 0.25,
+    }
+    return SemanticIntent.from_dict(data)
+
+
+def test_polygon_area_compiles_map_frame():
+    spec, reasons = _polygon_intent().compile()
+    assert reasons == []
+    assert spec.coordinate_frame == 'map'
+    assert spec.steps[1].params['shape'] == 'polygon'
+    assert abs(spec.steps[1].params['spacing_m'] - 3.0) < 1e-6  # footprint 4 * (1-0.25)
+    assert spec.intent_id == 't1'
+
+
+def test_self_intersecting_polygon_rejected():
+    intent = _polygon_intent()
+    intent.constraints['area']['polygon'] = [[0, 0], [4, 4], [4, 0], [0, 4]]
+    assert any(reason.code == 'SCHEMA_INVALID' for reason in intent.validate())
+
+
+def test_vlm_area_cover_requires_operator():
+    reasons = _area_intent(source='vlm', confidence=0.9).validate()
+    assert any(reason.code == 'OPERATOR_REQUIRED' for reason in reasons)
+
+
+def test_line_spacing_wins_over_overlap():
+    intent = _polygon_intent()
+    intent.constraints['area']['line_spacing_m'] = 1.5
+    spec, reasons = intent.compile()
+    assert reasons == []
+    assert spec.steps[1].params['spacing_m'] == 1.5

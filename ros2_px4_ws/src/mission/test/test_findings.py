@@ -114,3 +114,16 @@ def test_discarded_is_terminal_flag_not_status():
     assert payload['discarded'] is True
     assert payload['discard_reason'] == 'false_positive'
     assert payload['status'] == finding.status
+
+
+def test_entry_status_and_detector_hits():
+    book = FindingsBook()
+    finding = book.add_or_update(
+        label='target', world_enu=(0, 0, 0), t=1.0,
+        entry_status='confirmed', detector_hits=3)
+    payload = finding.to_dict()
+    assert payload['entry_status'] == 'confirmed'
+    assert payload['detector_hits'] == 3
+    book.add_or_update(label='target', world_enu=(0, 0, 0), t=2.0,
+                       detector_hits=5)
+    assert book.to_dicts()[0]['detector_hits'] == 5

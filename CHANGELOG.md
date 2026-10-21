@@ -15,6 +15,37 @@
 
 ---
 
+## [2026-10-21] 回信落地：area 1.1 / entry_status / cancel 三态
+
+### 新增
+
+- `constraints.area` 支持 1.1 正式字段：`frame_id`、`polygon`、`line_spacing_m`、`overlap`；
+  - polygon 校验 ≥3 点、面积>0、自交检测；`area_cover` 必填；
+  - `line_spacing_m` 与 `overlap` 二者取一，同时给以 spacing 为准并写进 notes；
+  - 都不给默认 overlap=0.25（90° FOV，spacing=1.5×alt）；
+  - `source=vlm` 的 `area_cover` 一律 `OPERATOR_REQUIRED`；
+  - polygon 使用 map 坐标：`TaskSpec.coordinate_frame='map'`，执行器不再加起飞原点偏移。
+- Finding 增加 `entry_status`、`detector_hits`；detector best_meta 带 `hits/confirm_hits`。
+- cancel 三态验证：active -> `ERROR_NONE` + 1 goal；terminal -> `ERROR_GOAL_TERMINATED` + 0 goals；
+  重复 cancel 不再产生新 result。
+
+### 验证
+
+```text
+· mission 131 passed；全包 267 passed / 2 skipped（检测器入口 268）
+· 假 PX4：active cancel return_code=0 goals=1；
+           terminal cancel return_code=3 goals=0；
+           repeat cancel 3/0；result 仍只一次。
+· area polygon 单测：map 坐标、spacing=3.0（overlap .25）、自交拒绝、vlm 拒绝。
+```
+
+### 待补
+
+- 同点位/同参数 n≥3 真机样本（服务器要求）；
+- `area` polygon 的真实飞行一轮（当前只有相对矩形真机数据）。
+
+---
+
 ## [2026-10-21] 真机转场高度剖面：36/36 → 爬升 3 m → 36/36
 
 ### 验证

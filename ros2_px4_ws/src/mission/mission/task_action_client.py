@@ -8,6 +8,7 @@ import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from action_msgs.srv import CancelGoal
 
 from mission_interfaces.action import ExecuteTask
 
@@ -19,10 +20,27 @@ class TaskActionClient(Node):
         self._last = None
 
     def send(self, task_json: str, timeout_s: float,
-             cancel_after: float = 0.0, cancel_twice: bool = False) -> int:
+             cancel_after: float = 0.0, cancel_twice: bool = False,
+             cancel_after_result: bool = False) -> int:
         if not self._client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error('找不到 /mission/execute_task')
             return 2
+
+        def request_cancel(handle, label):
+            future = handle.cancel_goal_async()
+
+            def on_done(done):
+                response = done.result()
+                if response is None:
+                    self.get_logger().error(f'{label} cancel 无 response')
+                    return
+                self.get_logger().warn(
+                    f'{label} cancel response: return_code={response.return_code} '
+                    f'goals_canceling={len(response.goals_canceling)}')
+
+            future.add_done_callback(on_done)
+            return future
+
         goal = ExecuteTask.Goal()
         goal.task_json = task_json
 
@@ -55,22 +73,35 @@ class TaskActionClient(Node):
             if (cancel_after > 0 and not cancel_sent
                     and elapsed >= cancel_after):
                 self.get_logger().warn(f'发送 cancel（{cancel_after:.1f}s）')
-                goal_handle.cancel_goal_async()
+                request_cancel(goal_handle, 'active')
                 cancel_sent = True
                 second_at = elapsed + 0.3
             if (cancel_twice and cancel_sent and not second_sent
                     and second_at is not None and elapsed >= second_at):
                 self.get_logger().warn('重复发送 cancel（测试幂等）')
-                goal_handle.cancel_goal_async()
+                request_cancel(goal_handle, 'repeat')
                 second_sent = True
             if elapsed > timeout_s:
                 self.get_logger().error(f'等待结果超时（{timeout_s:.0f}s）')
-                goal_handle.cancel_goal_async()
+                request_cancel(goal_handle, 'timeout')
                 return 4
         result = result_future.result().result
         self.get_logger().info(
             f'结果：success={result.success} message={result.message!r} '
             f'report={result.report_path}')
+        if cancel_after_result:
+            future = goal_handle.cancel_goal_async()
+            rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+            response = future.result()
+            if response is None:
+                self.get_logger().error('终态 cancel 无 response')
+                return 6
+            self.get_logger().info(
+                f'终态 cancel：return_code={response.return_code} '
+                f'goals_canceling={len(response.goals_canceling)}')
+            if response.return_code != CancelGoal.Response.ERROR_GOAL_TERMINATED:
+                self.get_logger().error('终态 cancel 未返回 ERROR_GOAL_TERMINATED')
+                return 6
         try:
             findings = json.loads(result.findings_json or '[]')
         except json.JSONDecodeError:
@@ -90,6 +121,8 @@ def main(argv=None):
                         help='N 秒后发 cancel（0=不取消）')
     parser.add_argument('--cancel-twice', action='store_true',
                         help='第一次 cancel 后 0.3 s 再发一次（测试幂等）')
+    parser.add_argument('--cancel-after-result', action='store_true',
+                        help='终态后再 cancel，验证 ERROR_GOAL_TERMINATED')
     args = parser.parse_args(argv)
     if args.task_json:
         task_json = args.task_json
@@ -101,7 +134,7 @@ def main(argv=None):
     node = TaskActionClient()
     try:
         return node.send(task_json, args.timeout, args.cancel_after,
-                         args.cancel_twice)
+                         args.cancel_twice, args.cancel_after_result)
     finally:
         node.destroy_node()
         if rclpy.ok():

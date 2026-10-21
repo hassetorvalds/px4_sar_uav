@@ -29,6 +29,57 @@ class RejectedReason:
         return {'code': self.code, 'field': self.field, 'detail': self.detail}
 
 
+def _polygon_area(points):
+    area = 0.0
+    for i, (x1, y1) in enumerate(points):
+        x2, y2 = points[(i + 1) % len(points)]
+        area += x1 * y2 - x2 * y1
+    return area / 2.0
+
+
+def _segments_intersect(a, b, c, d):
+    def cross(o, p, q):
+        return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+
+    def on_segment(p, q, r):
+        return (min(p[0], r[0]) <= q[0] <= max(p[0], r[0])
+                and min(p[1], r[1]) <= q[1] <= max(p[1], r[1])
+                and abs(cross(p, q, r)) < 1e-9)
+
+    o1, o2, o3, o4 = cross(a, b, c), cross(a, b, d), cross(c, d, a), cross(c, d, b)
+    if (o1 * o2 < 0) and (o3 * o4 < 0):
+        return True
+    return (on_segment(a, c, b) or on_segment(a, d, b)
+            or on_segment(c, a, d) or on_segment(c, b, d))
+
+
+def _polygon_is_simple(points):
+    n = len(points)
+    for i in range(n):
+        a, b = points[i], points[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue
+            c, d = points[j], points[(j + 1) % n]
+            if _segments_intersect(a, b, c, d):
+                return False
+    return True
+
+
+def _area_spacing(area, altitude):
+    line = area.get('line_spacing_m')
+    overlap = area.get('overlap')
+    if line is not None:
+        return max(1.0, min(10.0, float(line)))
+    if overlap is not None:
+        footprint = 2.0 * float(altitude) * math.tan(math.radians(45.0))
+        return max(1.0, min(10.0, footprint * (1.0 - float(overlap))))
+    if area.get('spacing_m') is not None:
+        return max(1.0, min(10.0, float(area['spacing_m'])))
+    # 1.1 默认 overlap=0.25；footprint=2*alt（90° FOV）
+    return max(1.0, min(10.0, 1.5 * float(altitude)))
+
+
 def _point_in_polygon(east, north, polygon):
     inside = False
     j = len(polygon) - 1
@@ -124,7 +175,43 @@ class SemanticIntent:
         if self.task_type in ('area_cover', 'patrol') and not self.constraints.get('area'):
             reasons.append(RejectedReason(
                 'SCHEMA_INVALID', 'constraints.area',
-                'area_cover/patrol 需要区域（area 扩展）'))
+                'area_cover/patrol 需要区域（area）'))
+        if self.source == 'vlm' and self.task_type == 'area_cover':
+            reasons.append(RejectedReason(
+                'OPERATOR_REQUIRED', 'source',
+                'source=vlm 的 area_cover 需要操作者确认（模型不产可靠多边形）'))
+        area = self.constraints.get('area') or {}
+        if area:
+            if area.get('frame_id', 'map') != 'map':
+                reasons.append(RejectedReason(
+                    'SCHEMA_INVALID', 'constraints.area.frame_id', '只支持 map 系'))
+            polygon = area.get('polygon')
+            if polygon is not None:
+                if not isinstance(polygon, list) or len(polygon) < 3:
+                    reasons.append(RejectedReason(
+                        'SCHEMA_INVALID', 'constraints.area.polygon',
+                        'polygon 至少 3 个点'))
+                else:
+                    try:
+                        points = [(float(p[0]), float(p[1])) for p in polygon]
+                        if abs(_polygon_area(points)) <= 1e-6:
+                            raise ValueError('面积为 0')
+                        if not _polygon_is_simple(points):
+                            raise ValueError('多边形自交')
+                    except (TypeError, ValueError, IndexError) as exc:
+                        reasons.append(RejectedReason(
+                            'SCHEMA_INVALID', 'constraints.area.polygon', str(exc)))
+            if area.get('line_spacing_m') is not None and float(area['line_spacing_m']) <= 0:
+                reasons.append(RejectedReason(
+                    'SCHEMA_INVALID', 'constraints.area.line_spacing_m', '必须 > 0'))
+            if area.get('overlap') is not None:
+                try:
+                    overlap = float(area['overlap'])
+                    if not (0.0 <= overlap < 1.0):
+                        raise ValueError
+                except (TypeError, ValueError):
+                    reasons.append(RejectedReason(
+                        'SCHEMA_INVALID', 'constraints.area.overlap', '需要 [0,1)'))
         keepout = self.constraints.get('keepout') or []
         world = target.get('world_enu')
         if world and isinstance(world, (list, tuple)) and len(world) >= 2:
@@ -135,6 +222,17 @@ class SemanticIntent:
                         '目标落在 keepout 内'))
                     break
         return reasons
+
+    def _area_notes(self, constraints, altitude):
+        notes = [f'SemanticIntent {self.intent_id}（{self.source}）']
+        area = constraints.get('area') or {}
+        if area:
+            if area.get('line_spacing_m') is not None:
+                notes.append(f'area.line_spacing_m={area["line_spacing_m"]}')
+            if area.get('overlap') is not None:
+                notes.append(f'area.overlap={area["overlap"]}')
+            notes.append(f'area.effective_spacing_m={_area_spacing(area, altitude):.3f}')
+        return notes
 
     def compile(self):
         reasons = self.validate()
@@ -151,27 +249,41 @@ class SemanticIntent:
                        else 'any')
         steps = [Step('takeoff', {'altitude_m': altitude})]
         try:
+            coordinate_frame = 'relative'
             if self.task_type in ('area_cover', 'patrol'):
                 area = dict(constraints.get('area') or {})
-                shape = str(area.get('shape', 'rectangle'))
-                params = {
-                    'shape': shape,
-                    'center_east_m': float(area.get('center_east_m', 0.0)),
-                    'center_north_m': float(area.get('center_north_m', 0.0)),
-                    'spacing_m': float(area.get('spacing_m', 2.0)),
-                    'target': {'kind': target_kind, 'label': target_label},
-                    'altitude_m': altitude,
-                }
-                if shape == 'polygon':
-                    params['polygon'] = area.get('polygon') or area.get('vertices')
-                elif shape == 'rectangle':
-                    params['width_m'] = float(area.get('width_m', 10.0))
-                    params['height_m'] = float(area.get('height_m', 10.0))
-                    params['angle_deg'] = float(area.get('angle_deg', 0.0))
-                elif shape == 'square':
-                    params['radius_m'] = float(area.get('radius_m', 5.0))
+                if area.get('polygon') is not None:
+                    shape = 'polygon'
+                    coordinate_frame = 'map'
+                    params = {
+                        'shape': 'polygon',
+                        'center_east_m': 0.0,
+                        'center_north_m': 0.0,
+                        'polygon': area['polygon'],
+                        'spacing_m': _area_spacing(area, altitude),
+                        'target': {'kind': target_kind, 'label': target_label},
+                        'altitude_m': altitude,
+                    }
                 else:
-                    raise ValueError(f'未知 area.shape {shape!r}')
+                    shape = str(area.get('shape', 'rectangle'))
+                    params = {
+                        'shape': shape,
+                        'center_east_m': float(area.get('center_east_m', 0.0)),
+                        'center_north_m': float(area.get('center_north_m', 0.0)),
+                        'spacing_m': _area_spacing(area, altitude),
+                        'target': {'kind': target_kind, 'label': target_label},
+                        'altitude_m': altitude,
+                    }
+                    if shape == 'polygon':
+                        params['polygon'] = area.get('polygon') or area.get('vertices')
+                    elif shape == 'rectangle':
+                        params['width_m'] = float(area.get('width_m', 10.0))
+                        params['height_m'] = float(area.get('height_m', 10.0))
+                        params['angle_deg'] = float(area.get('angle_deg', 0.0))
+                    elif shape == 'square':
+                        params['radius_m'] = float(area.get('radius_m', 5.0))
+                    else:
+                        raise ValueError(f'未知 area.shape {shape!r}')
                 steps.append(Step('search', params))
             elif self.task_type in ('go_to', 'inspect'):
                 world = target.get('world_enu') or [0.0, 0.0]
@@ -190,7 +302,12 @@ class SemanticIntent:
                 steps=steps, altitude_m=altitude, max_speed_mps=speed,
                 max_duration_s=180.0, geofence_radius_m=40.0,
                 source_text=self.notes or f'SemanticIntent {self.task_type}',
-                notes=[f'SemanticIntent {self.intent_id}（{self.source}）'])
+                notes=self._area_notes(constraints, altitude),
+                coordinate_frame=coordinate_frame,
+                intent_id=self.intent_id,
+                contract_version=self.contract_version,
+                intent_source=self.source,
+                intent_confidence=float(self.confidence))
             spec.validate()
             return spec, []
         except (TaskError, ValueError, TypeError) as exc:

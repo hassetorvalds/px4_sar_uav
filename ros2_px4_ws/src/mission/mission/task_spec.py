@@ -84,6 +84,13 @@ class TaskSpec:
     geofence_radius_m: float = 40.0
     source_text: str = ''
     notes: list = field(default_factory=list)
+    # relative=step 坐标相对本次起飞点；map=step 坐标是 map 系绝对坐标
+    coordinate_frame: str = 'relative'
+    # SemanticIntent 元数据（固定落报告，便于与 VLM 路径逐条对照）
+    intent_id: str = ''
+    contract_version: str = ''
+    intent_source: str = ''
+    intent_confidence: float = 0.0
     version: int = SCHEMA_VERSION
 
     # ------------------------------------------------------------------
@@ -102,6 +109,8 @@ class TaskSpec:
         _check_range('max_duration_s', self.max_duration_s, DURATION_MIN_S, DURATION_MAX_S)
         _check_range('geofence_radius_m', self.geofence_radius_m,
                      GEOFENCE_MIN_M, GEOFENCE_MAX_M)
+        if self.coordinate_frame not in ('relative', 'map'):
+            raise TaskError(f'coordinate_frame 必须是 relative/map，得到 {self.coordinate_frame!r}')
         if not self.steps:
             raise TaskError('任务没有任何 step')
         if self.steps[0].type != 'takeoff':
@@ -132,11 +141,12 @@ class TaskSpec:
             east = float(p.get('east_m', 0.0))
             north = float(p.get('north_m', 0.0))
             distance = math.hypot(east, north)
-            if distance > self.geofence_radius_m:
-                raise TaskError(
-                    f'goto 目标距起飞点 {distance:.1f} m，超出围栏 {self.geofence_radius_m:.1f} m')
-            if distance < 0.1:
-                raise TaskError('goto 目标与起飞点重合（无位移）')
+            if self.coordinate_frame == 'relative':
+                if distance > self.geofence_radius_m:
+                    raise TaskError(
+                        f'goto 目标距起飞点 {distance:.1f} m，超出围栏 {self.geofence_radius_m:.1f} m')
+                if distance < 0.1:
+                    raise TaskError('goto 目标与起飞点重合（无位移）')
         elif step.type == 'forward':
             _check_range('forward.meters', float(p.get('meters', 0.0)), 0.1,
                          self.geofence_radius_m)
@@ -158,7 +168,8 @@ class TaskSpec:
                         raise TaskError('search.polygon 顶点必须是 [east, north]')
                     east = center_east + float(vertex[0])
                     north = center_north + float(vertex[1])
-                    if math.hypot(east, north) > self.geofence_radius_m:
+                    if (self.coordinate_frame == 'relative'
+                            and math.hypot(east, north) > self.geofence_radius_m):
                         raise TaskError('search 多边形顶点超出围栏')
                 _check_range('search.angle_deg', float(p.get('angle_deg', 0.0)),
                              SEARCH_ANGLE_MIN_DEG, SEARCH_ANGLE_MAX_DEG)
@@ -171,14 +182,16 @@ class TaskSpec:
                              SEARCH_HEIGHT_MIN_M, SEARCH_HEIGHT_MAX_M)
                 _check_range('search.angle_deg', float(p.get('angle_deg', 0.0)),
                              SEARCH_ANGLE_MIN_DEG, SEARCH_ANGLE_MAX_DEG)
-                if center_distance + math.hypot(width / 2.0, height / 2.0) \
-                        > self.geofence_radius_m:
+                if (self.coordinate_frame == 'relative'
+                        and center_distance + math.hypot(width / 2.0, height / 2.0)
+                        > self.geofence_radius_m):
                     raise TaskError('search 矩形区域超出围栏（中心距 + 半对角线 > geofence）')
             else:
                 _check_range('search.radius_m', float(p.get('radius_m', 10.0)),
                              SEARCH_RADIUS_MIN_M, SEARCH_RADIUS_MAX_M)
-                if center_distance + float(p.get('radius_m', 10.0)) \
-                        > self.geofence_radius_m:
+                if (self.coordinate_frame == 'relative'
+                        and center_distance + float(p.get('radius_m', 10.0))
+                        > self.geofence_radius_m):
                     raise TaskError('search 区域超出围栏（中心距 + 半径 > geofence）')
             target = p.get('target') or {}
             if not isinstance(target, dict) or 'kind' not in target:
@@ -219,6 +232,11 @@ class TaskSpec:
             'geofence_radius_m': round(float(self.geofence_radius_m), 1),
             'steps': [s.to_dict() for s in self.steps],
             'notes': list(self.notes),
+            'coordinate_frame': self.coordinate_frame,
+            'intent_id': self.intent_id,
+            'contract_version': self.contract_version,
+            'intent_source': self.intent_source,
+            'intent_confidence': round(float(self.intent_confidence), 3),
         }
 
     def to_json(self):
@@ -241,6 +259,11 @@ class TaskSpec:
             geofence_radius_m=float(data.get('geofence_radius_m', 40.0)),
             source_text=str(data.get('source_text', '')),
             notes=list(data.get('notes') or []),
+            coordinate_frame=str(data.get('coordinate_frame', 'relative')),
+            intent_id=str(data.get('intent_id', '')),
+            contract_version=str(data.get('contract_version', '')),
+            intent_source=str(data.get('intent_source', '')),
+            intent_confidence=float(data.get('intent_confidence', 0.0)),
             version=version,
         )
         return spec.validate()

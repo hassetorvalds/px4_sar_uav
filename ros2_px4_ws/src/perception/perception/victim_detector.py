@@ -264,6 +264,9 @@ class VictimDetector(Node):
             'seq': self._sequence,
             'width': self._frame_size[0],
             'height': self._frame_size[1],
+            'hits': int(track.hits),
+            'confirm_hits': int(self._confirm_hits),
+            'entry_status': 'confirmed',
         }, ensure_ascii=False)))
         pose.pose.position.x = float(track.world[0])
         pose.pose.position.y = float(track.world[1])

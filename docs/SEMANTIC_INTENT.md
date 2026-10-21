@@ -28,7 +28,7 @@ SemanticIntent 1.0（服务器/未来 JSON 解析器，手写也可）
 | `constraints.altitude_frame` | 固定 `REL`；LCL → `UNSUPPORTED_ALTITUDE_FRAME` |
 | `constraints.speed_cap_mps` | 0.1–1.0 |
 | `constraints.keepout` | map 2D 多边形列表；目标在内 → `TARGET_IN_KEEPOUT` |
-| `constraints.area` | **WSL 扩展**：`area_cover/patrol` 的区域（矩形/多边形/正方形） |
+| `constraints.area` | 1.1 正式：`frame_id=map`、`polygon`、`line_spacing_m`/`overlap`；兼容旧 `shape/center/width/height/spacing_m` |
 | `confidence` | `source=vlm` 且 <0.5 → `LOW_CONFIDENCE` |
 
 稳定错误码：`SCHEMA_INVALID / UNSUPPORTED_VERSION / UNKNOWN_TASK_TYPE /
@@ -50,6 +50,10 @@ LOCAL_FACTS_STALE / OPERATOR_REQUIRED`，每条 `{code, field, detail}`。
 | `inspect` | takeoff → goto → hover 3 s → land |
 | `return` | takeoff → return_home |
 
+- `area.polygon`：map 系绝对坐标，编译为 `coordinate_frame='map'`，执行器不再加起飞原点；
+  旧 `shape/center` 仍是相对起飞点；
+- `line_spacing_m`/`overlap`：二者取一；同时给以 spacing 为准并写 notes；都不给默认 overlap 0.25；
+- `source=vlm` 的 `area_cover` → `OPERATOR_REQUIRED`（模型不产可靠多边形）；
 - `target.label` 映射：person/victim→`person`；marker/color→`marker`；其他→`any`；
 - 目标距起飞点 >40 m 或 TaskSpec 校验失败 → `TARGET_UNREACHABLE`；
 - 区域超出 40 m 围栏 / keepout 由 TaskSpec/本模块拒绝，不"尽力执行"。

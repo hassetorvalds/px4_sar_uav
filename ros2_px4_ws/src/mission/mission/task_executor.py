@@ -329,8 +329,12 @@ class TaskExecutor(Node):
 
     def _search_polygon(self, step) -> list:
         params = step.params
-        center_east = self._origin_enu[0] + float(params.get('center_east_m', 0.0))
-        center_north = self._origin_enu[1] + float(params.get('center_north_m', 0.0))
+        offset_east = (self._origin_enu[0]
+                       if self._spec.coordinate_frame == 'relative' else 0.0)
+        offset_north = (self._origin_enu[1]
+                        if self._spec.coordinate_frame == 'relative' else 0.0)
+        center_east = offset_east + float(params.get('center_east_m', 0.0))
+        center_north = offset_north + float(params.get('center_north_m', 0.0))
         shape = str(params.get('shape', 'square')).lower()
         if shape == 'polygon':
             points = params.get('polygon') or params.get('vertices') or []
@@ -584,7 +588,9 @@ class TaskExecutor(Node):
             frame_size=(int(self._best_meta.get('width', self._frame_size[0])),
                         int(self._best_meta.get('height', self._frame_size[1]))),
             pose_at_first_seen=pose,
-            ros_stamp_ns=ros_ns, clock_source='ros')
+            ros_stamp_ns=ros_ns, clock_source='ros',
+            entry_status=str(self._best_meta.get('entry_status', 'confirmed')),
+            detector_hits=int(self._best_meta.get('hits', 0)))
         self._report('target_confirmed', world_enu=world,
                      step_type=self._current_step_type(),
                      centering=bool(self._center_on_target),
@@ -815,7 +821,10 @@ class TaskExecutor(Node):
         if step.type == 'search':
             raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
-            self._search_wps = offset_waypoints(raw_waypoints, self._origin_enu)
+            if self._spec.coordinate_frame == 'relative':
+                self._search_wps = offset_waypoints(raw_waypoints, self._origin_enu)
+            else:
+                self._search_wps = raw_waypoints
             if self._last_search_end is not None and self._search_wps:
                 start = self._position_enu()
                 target = self._search_wps[0]
@@ -888,8 +897,10 @@ class TaskExecutor(Node):
         elif step.type == 'goto':
             east = float(step.params.get('east_m', 0.0))
             north = float(step.params.get('north_m', 0.0))
-            self._run_goto(position, (self._origin_enu[0] + east,
-                                      self._origin_enu[1] + north,
+            if self._spec.coordinate_frame == 'relative':
+                east += self._origin_enu[0]
+                north += self._origin_enu[1]
+            self._run_goto(position, (east, north,
                                       float(step.params.get('altitude_m',
                                                             self._spec.altitude_m))))
         elif step.type == 'forward':

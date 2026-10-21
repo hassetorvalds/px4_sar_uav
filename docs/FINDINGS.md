@@ -86,13 +86,14 @@ ros2 run mission task_findings --md logs/findings/summary.md
 
 ## Finding 1.0（2026-10-20）
 
-新增字段：`schema_version/task_id/epoch_id/frame_id/frame_seq/frame_size/
+新增字段：`schema_version/task_id/epoch_id/frame_id/frame_seq/frame_size/entry_status/detector_hits/
 first_seen_ros_ns/last_seen_ros_ns/clock_source/pose_at_first_seen/
 revisit_of/discarded/discard_reason/history`。
 
 - 时间：`first_seen/last_seen` 为任务相对 monotonic 秒；ROS 时间另存；
 - 合并：`label + 半径（按 label 可配）+ 30 s 窗口`；窗口外同位置新建并记 `revisit_of`；
 - 状态只升级；`discarded` 是独立终态标记，不改变 status；
+- `entry_status=confirmed`、`detector_hits` 来自 detector best_meta（hits≥3 才发 best）；
 - `frame_seq/frame_size` 来自 detector 的 `/perception/best_meta` 与
   `/airsim_camera/camera_info`；
 - `task_id/epoch_id` 取报告文件名（去 `report_`）。
