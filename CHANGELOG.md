@@ -15,6 +15,32 @@
 
 ---
 
+## [2026-10-21] 契约对齐：--remote-intent 接 SemanticIntent / LANDED_ELSEWHERE / simcheck fail-closed
+
+### 新增
+
+- `--remote-intent` 自动识别 SemanticIntent 1.0（`contract_version/task_type`）并编译；
+  旧 IntentFrame 仍走“自然语言 + 本地事实合并”，两者不混用；
+- 外部 disarm 先进 `LANDED_ELSEWHERE`，再 `DONE`；status 增加 `landed_elsewhere`，
+  仍保证不再发落地命令；
+- `task_executor_simcheck.sh` 先 `ros2 topic list` 探域，域不可达/ros2 不可用直接 exit 2。
+
+### 验证
+
+```text
+· --remote-intent examples/semantic_intent_area_cover_rel.json --json 输出编译后的 TaskSpec；
+· 假 PX4 external disarm：phase 序列 ARM→OFFBOARD→RUN→LANDED_ELSEWHERE→DONE，
+  result success=False external_land；
+· 全包单测 262 passed / 2 skipped（mission 126）。
+```
+
+### 待补
+
+- 真实 `--remote-intent` 飞行数据：当前 AirSim 4560 未监听，UE/仿真未启动；
+- 终端 cancel 的 result 语义（ROS 2 Action 终态后无法再产生新 result）需服务器确认。
+
+---
+
 ## [2026-10-20] 转场高度剖面：爬升 → 巡航 → 下降（假 PX4 PASS）
 
 ### 新增

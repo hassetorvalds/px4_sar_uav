@@ -36,6 +36,8 @@ UNSUPPORTED_ALTITUDE_FRAME / TARGET_UNREACHABLE / TARGET_IN_KEEPOUT /
 ALTITUDE_OUT_OF_BAND / CLEARANCE_TOO_LOW / LOW_CONFIDENCE / FACTS_CONFLICT /
 LOCAL_FACTS_STALE / OPERATOR_REQUIRED`，每条 `{code, field, detail}`。
 
+> `--remote-intent` 优先；旧 IntentFrame 仍支持，但必须配自然语言，二者不混用。
+>
 > `constraints.area` 是 WSL 扩展：服务器 1.0 的 `area_cover` 只给了目标点，
 > 没有区域几何；没有它无法生成搜索航迹。等服务器补正式字段后再对齐。
 
@@ -66,7 +68,10 @@ SemanticIntent（手写 operator，area_cover，6×6 m、REL 2 m）
 ## 用法
 
 ```bash
-# 只校验/编译，打印 TaskSpec
+# 服务器/模型入口：--remote-intent 自动识别 SemanticIntent 1.0
+python3 scripts/fly_task.py --remote-intent examples/semantic_intent_area_cover.json --json
+
+# 兼容别名；只校验/编译，打印 TaskSpec
 python3 scripts/fly_task.py --semantic-intent examples/semantic_intent_area_cover.json --json
 
 # 直接执行（fly_task 起 executor）

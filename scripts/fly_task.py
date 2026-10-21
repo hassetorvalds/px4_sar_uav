@@ -92,7 +92,7 @@ def main(argv=None):
     parser.add_argument('--intent-json', action='store_true',
                         help='只输出 IntentFrame JSON（含 provenance/confidence）')
     parser.add_argument('--remote-intent', default='',
-                        help='可选：VLM 解析的 IntentFrame JSON；本地事实优先合并')
+                        help='VLM 语义入口：SemanticIntent 1.0，或旧 IntentFrame（配自然语言合并）')
     parser.add_argument('--via-arbiter', action='store_true',
                         help='速度经 /velocity_arbiter/vlm_cmd（栈开着仲裁时用）')
     parser.add_argument('--speed', type=float, default=None,
@@ -110,44 +110,64 @@ def main(argv=None):
 
     text = ' '.join(args.text).strip()
     frame = None
-    if args.task_json or args.semantic_intent:
-        if text:
-            print('--task-json/--semantic-intent 与自然语言指令不能同时给', file=sys.stderr)
-            return 2
-        if args.task_json and args.semantic_intent:
-            print('--task-json 与 --semantic-intent 只能给一个', file=sys.stderr)
-            return 2
+    given = [name for name, value in (
+        ('--task-json', args.task_json), ('--semantic-intent', args.semantic_intent),
+        ('--remote-intent', args.remote_intent)) if value]
+    if len(given) > 1:
+        print(f'{" / ".join(given)} 只能给一个', file=sys.stderr)
+        return 2
+    if args.task_json or args.semantic_intent or args.remote_intent:
         try:
-            with open(args.task_json or args.semantic_intent, encoding='utf-8') as handle:
-                payload = handle.read()
-            if args.semantic_intent:
-                intent = SemanticIntent.from_json(payload)
-                spec, reasons = intent.compile()
-                if reasons:
-                    print(json.dumps({'accepted': False, 'rejected_reasons':
-                                      [reason.to_dict() for reason in reasons]},
-                                     ensure_ascii=False, indent=2), file=sys.stderr)
+            if args.task_json:
+                if text:
+                    print('--task-json 与自然语言指令不能同时给', file=sys.stderr)
                     return 2
-            else:
-                spec = TaskSpec.from_json(payload)
+                with open(args.task_json, encoding='utf-8') as handle:
+                    spec = TaskSpec.from_json(handle.read())
                 spec.validate()
+            else:
+                path = args.semantic_intent or args.remote_intent
+                with open(path, encoding='utf-8') as handle:
+                    data = json.load(handle)
+                is_semantic = isinstance(data, dict) and (
+                    'task_type' in data or 'contract_version' in data)
+                if is_semantic:
+                    if text and not args.semantic_intent:
+                        print('SemanticIntent 与自然语言指令不能同时给；'
+                              '自然语言请留给旧 IntentFrame', file=sys.stderr)
+                        return 2
+                    intent = SemanticIntent.from_dict(data)
+                    spec, reasons = intent.compile()
+                    if reasons:
+                        print(json.dumps({'accepted': False, 'rejected_reasons':
+                                          [reason.to_dict() for reason in reasons]},
+                                         ensure_ascii=False, indent=2), file=sys.stderr)
+                        return 2
+                else:
+                    if not text:
+                        print('旧 IntentFrame 需要配自然语言指令（本地事实优先合并）',
+                              file=sys.stderr)
+                        return 2
+                    frame = parse_intent(text)
+                    frame = merge_intent(frame, IntentFrame.from_dict(data))
+                    spec = frame.task if frame is not None else None
+                    if spec is None:
+                        print('IntentFrame 合并后没有 TaskSpec', file=sys.stderr)
+                        return 2
         except (TaskError, ValueError, OSError, json.JSONDecodeError, KeyError) as exc:
             print(f'任务加载失败：{exc}', file=sys.stderr)
             return 2
     else:
         if not text:
-            print('缺少指令（或 --task-json）', file=sys.stderr)
+            print('缺少指令（或 --task-json/--semantic-intent/--remote-intent）',
+                  file=sys.stderr)
             return 2
         try:
             frame = parse_intent(text)
-            if args.remote_intent:
-                with open(args.remote_intent, encoding='utf-8') as handle:
-                    remote = IntentFrame.from_dict(json.load(handle))
-                frame = merge_intent(frame, remote)
         except (TaskError, ValueError, OSError, json.JSONDecodeError) as exc:
             print(f'解析失败：{exc}', file=sys.stderr)
             return 2
-        spec = frame.task if frame is not None else spec
+        spec = frame.task if frame is not None else None
     if args.order_regions:
         order_search_steps(spec)
     if args.speed is not None:

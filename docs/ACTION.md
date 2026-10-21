@@ -25,7 +25,7 @@ task_action_server ── /mission/task ──▶ task_executor ──▶ offboa
 | feedback `phase/step_index/step_total/step_type/progress/altitude_lcl_m/target_altitude_m/status` | 阶段、步数进度、LCL 高度 |
 | result `success/message/report_path/findings_json` | 是否成功、失败原因、JSONL 报告、结构化发现物 |
 | cancel | 接受；执行器收到 `/mission/cancel` 后 **落地上锁**（不恢复任务）；`--cancel-twice` 验证幂等 |
-| external_land | 执行器已 armed 后检测到 disarmed（supervisor/failsafe）→ `external_land`，不再发落地 |
+| external_land | 已 armed 后检测到 disarmed（supervisor/failsafe）→ 进 `LANDED_ELSEWHERE`，再 `external_land/DONE`；不再发落地 |
 
 - 一次只接受一个 goal；执行器不在 `IDLE/DONE` 或状态过期时拒绝。
 - goal 在接受前会做 `TaskSpec.validate()`，非法任务直接拒绝。

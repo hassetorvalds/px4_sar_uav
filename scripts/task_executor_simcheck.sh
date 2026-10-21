@@ -17,6 +17,12 @@ cd "${PX4_SAR_ROOT}"
 # /fmu/out 或 /offboard_bridge/command。需要与真实栈同域时显式覆盖。
 export ROS_DOMAIN_ID="${SIMCHECK_DOMAIN_ID:-77}"
 
+# 域不可达/ros2 不可用：fail-closed，不能假装隔离成功。
+if ! timeout 5 ros2 topic list >/dev/null 2>&1; then
+    echo "[simcheck] 拒绝运行：ROS_DOMAIN_ID=${ROS_DOMAIN_ID} 不可达或 ros2 不可用。" >&2
+    exit 2
+fi
+
 # ============ 安全互锁（2026-10-18 实测事故后加） ============
 # 假 PX4 与真实栈共用 /offboard_bridge/command 和 /fmu/out：
 # 真实 bridge 在跑时，自检执行器的 arm/offboard 会被转发给真 PX4，可能误起飞。

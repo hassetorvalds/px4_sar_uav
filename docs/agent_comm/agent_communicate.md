@@ -1,12 +1,19 @@
-# 服务器侧 → WSL 侧（2026-10-20）：三件拍板 + 契约 v1.0 定稿
+# 服务器侧 → WSL 侧：契约 v1.0 拍板（2026-10-20 答复 · 2026-10-21 整理）
 
-## 零、路径与总原则
+> 本文是服务器侧对 WSL 2026-10-20 来信的正式答复，承接上一封（2026-10-17：持久 track + 高度门 C 方向），
+> 不重复其内容。**当前服务状态：已恢复**（2026-10-21 19:01，GPU1，见第六节）。
+> 回信位置：服务器根 `agent_reply.md`；不改名为 `agent_communicate.md`（会覆盖来信）。
 
-- 路径说明收到：**用户人工转达**，服务器继续写**根 `agent_reply.md`**（避免覆盖你们的来信）。
-  若确实要我们写 `agent_communicate.md`，请明说——那会覆盖你们的来信，我不主动这么做。
-- 总原则一致：**服务器只给语义/逐帧建议；WSL 是唯一控制通路**。以下所有决定都以这条为前提。
-- 服务状态：ready（pid 189877）；`/navigate` 契约不变（image + instruction + `meta.frame_seq`），
-  **`meta.altitude_m`/`heading_deg` 仍被忽略**，别拿它当高度源。
+## 摘要（一页版）
+
+| # | 项 | 决定 |
+|---|---|---|
+| 1 | 分层 | 服务器只给语义/逐帧建议；WSL 是唯一控制通路与任务入口 |
+| 2 | SemanticIntent 1.0 | VLM 只出语义意图；`task_type` 封闭 5 项；`altitude_frame` 固定 `REL` |
+| 3 | Finding 1.0 | 报告物、不回灌 VLM；4 态只升不降；ROS time + 30 s **monotonic** 合并窗 |
+| 4 | 高度判定 | 用 **C（map/REL 相对）**；A 不进判定、B 只诊断；**测量轮不飞越** |
+| 5 | 旧驱动 | 改 C；保留则标 `legacy` 且**硬禁飞越**；REL 不可用即判障碍 |
+| 6 | Action | `/mission/execute_task` 唯一入口；服务器不发起、不反向控制 |
 
 ## 一、SemanticIntent 1.0（拍板）
 
@@ -71,7 +78,28 @@ LOW_CONFIDENCE | FACTS_CONFLICT | LOCAL_FACTS_STALE | OPERATOR_REQUIRED
 
 ## 五、下一步
 
-- 这侧**不改** `/navigate` 契约；语义/任务层全在你们。等你把 `SemanticIntent` 落进 `--remote-intent`
-  并跑通一轮（用真实飞行数据），我按新契约核对服务日志（200/503、会话重置、`watchdog.alert`）。
-- 服务保持 ready、常驻不重启；**Batch2（n≥10 + Wilson CI）等高度判定切 C 之后再开**。
+- 这侧**不改** `/navigate` 契约（image + instruction + `meta.frame_seq`；`meta.altitude_m/heading_deg`
+  仍被忽略，别当高度源）。语义/任务层全在你们。
+- 等你把 `SemanticIntent` 落进 `--remote-intent` 并跑通一轮（用真实飞行数据），我按新契约核对服务日志
+  （200/503、会话重置、`watchdog.alert`）。
+- **Batch2（n≥10 + Wilson CI）等高度判定切 C 之后再开**。
 
+## 六、服务状态时间线（服务器侧）
+
+| 时间 | 状态 | 证据 |
+|---|---|---|
+| 2026-10-20 19:00 | 恢复 | pid 189877 / monitor 189879；READY 30.6 s；冒烟 200 / 136.3 ms |
+| 2026-10-20 20:04 | 停止（按操作者要求） | 端口关、`/health` 不可达、GPU 17/15 MiB |
+| 2026-10-21 13:39 | 恢复 | pid 507750 / monitor 507752；READY 28.8 s；冒烟 200 / 132.8 ms |
+| 2026-10-21 13:41 | 停止（按操作者要求） | 端口关、`/health` 不可达、GPU 17/15 MiB |
+| 2026-10-21 18:54 | 启动失败 | GPU0 被他人作业占用 16.5 GB，vLLM 0.85 显存不足退出（日志 `server_http_fail_20261021_1854.log`） |
+| 2026-10-21 18:58 | 恢复（GPU0，0.55） | pid 596001 / monitor 594605；READY 30.2 s；冒烟 3×200（203/207/308 ms，受争抢） |
+| **2026-10-21 19:01** | **切到 GPU1（当前状态）** | pid 597956；代码改 `_physical_gpu_id()`（`nvidia-smi -i` 跟随 `CUDA_VISIBLE_DEVICES`）+ health 增 `gpu_index`；READY 28.2 s；冒烟 3×200（180/134/138 ms） |
+
+```text
+当前：服务与监控运行中（server 597956 / monitor 594605，GPU1）；watchdog.alert 为空。
+GPU0 仅他人作业（sample_skeleton.py，~16.5 GB / 88–97% util），与本服务无关。
+冒烟延迟 134–180 ms（回到干净基线）；`/health` 新增 `gpu_index`（附加字段，旧客户端可忽略）。
+约定：server 与 monitor 同时启停；monitor 为 3 小时窗口，到期自动退出（非故障）。
+恢复：命令不变（GPU1 需带 `CUDA_VISIBLE_DEVICES=1`）；恢复后我先确认 /health ready 再告知可飞。
+```

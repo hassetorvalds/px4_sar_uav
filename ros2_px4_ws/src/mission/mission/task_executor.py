@@ -68,6 +68,7 @@ PHASE_OFFBOARD = 'OFFBOARD'
 PHASE_RUN = 'RUN'
 PHASE_PAUSED = 'PAUSED'
 PHASE_LAND = 'LAND'
+PHASE_LANDED_ELSEWHERE = 'LANDED_ELSEWHERE'
 PHASE_DONE = 'DONE'
 
 
@@ -635,6 +636,7 @@ class TaskExecutor(Node):
                 and self._phase in (PHASE_ARM, PHASE_OFFBOARD,
                                     PHASE_RUN, PHASE_PAUSED)):
             self._report('external_land', phase=self._phase)
+            self._enter(PHASE_LANDED_ELSEWHERE)
             self._finish_done(forced=True, external_land=True)
             return
 
@@ -1257,6 +1259,7 @@ class TaskExecutor(Node):
             'report_path': self._report_path,
             'aborted': self._abort_reason is not None,
             'abort_reason': self._abort_reason,
+            'landed_elsewhere': bool(self._external_land),
             'dry_run': self._dry_run,
             'search_waypoint': self._search_index,
             'clearance_forward_m': (None if self._clearance_forward is None
