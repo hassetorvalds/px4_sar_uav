@@ -15,6 +15,19 @@
 
 ---
 
+## [2026-10-21] cancel 三态全部验证
+
+```text
+active cancel：return_code=0, goals_canceling=1
+terminal cancel：return_code=3, goals_canceling=0
+unknown goal：return_code=2, goals_canceling=0
+result 只发一次；终态后无新 feedback/result
+```
+
+对应服务器 A 的三条要求；`task_action_client` 增加 `--cancel-unknown`。
+
+---
+
 ## [2026-10-21] n=3 同点位 area_cover + search 高度保持修复
 
 ### 修复

@@ -8,7 +8,9 @@ import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from action_msgs.msg import GoalInfo
 from action_msgs.srv import CancelGoal
+from unique_identifier_msgs.msg import UUID
 
 from mission_interfaces.action import ExecuteTask
 
@@ -18,6 +20,30 @@ class TaskActionClient(Node):
         super().__init__('task_action_client')
         self._client = ActionClient(self, ExecuteTask, '/mission/execute_task')
         self._last = None
+
+    def cancel_unknown(self) -> int:
+        client = self.create_client(
+            CancelGoal, '/mission/execute_task/_action/cancel_goal')
+        if not client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().error('找不到 cancel_goal 服务')
+            return 2
+        info = GoalInfo()
+        info.goal_id = UUID(uuid=[1] * 16)
+        request = CancelGoal.Request()
+        request.goal_info = info
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+        response = future.result()
+        if response is None:
+            self.get_logger().error('unknown cancel 无 response')
+            return 6
+        self.get_logger().info(
+            f'unknown cancel：return_code={response.return_code} '
+            f'goals_canceling={len(response.goals_canceling)}')
+        if response.return_code != CancelGoal.Response.ERROR_UNKNOWN_GOAL_ID:
+            self.get_logger().error('unknown cancel 未返回 ERROR_UNKNOWN_GOAL_ID')
+            return 6
+        return 0
 
     def send(self, task_json: str, timeout_s: float,
              cancel_after: float = 0.0, cancel_twice: bool = False,
@@ -123,6 +149,8 @@ def main(argv=None):
                         help='第一次 cancel 后 0.3 s 再发一次（测试幂等）')
     parser.add_argument('--cancel-after-result', action='store_true',
                         help='终态后再 cancel，验证 ERROR_GOAL_TERMINATED')
+    parser.add_argument('--cancel-unknown', action='store_true',
+                        help='对随机 goal 发 cancel，验证 ERROR_UNKNOWN_GOAL_ID')
     args = parser.parse_args(argv)
     if args.task_json:
         task_json = args.task_json
@@ -133,6 +161,8 @@ def main(argv=None):
     rclpy.init()
     node = TaskActionClient()
     try:
+        if args.cancel_unknown:
+            return node.cancel_unknown()
         return node.send(task_json, args.timeout, args.cancel_after,
                          args.cancel_twice, args.cancel_after_result)
     finally:

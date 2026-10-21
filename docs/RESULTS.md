@@ -55,7 +55,7 @@
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |
 | 落地命令去重 | ✅ 单测 | `land`/`land_fast` 2 s 窗口；bridge 忽略重复；旧驱动 legacy 硬禁飞越 |
-| Cancel 幂等 / external_land | ✅ 假 PX4 | 两次 cancel result/land_fast 各一次；外部 disarm → `external_land`，不再发落地 |
+| Cancel 三态 / external_land | ✅ 假 PX4 | active 0/1、terminal 3/0、unknown 2/0；外部 disarm → `LANDED_ELSEWHERE`，不再发落地 |
 | 覆盖热力图 / 位姿 | ✅ 真机 | 144/144；PNG 144×144；pose_age 0.017 s、eph/epv 0.08 m |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
