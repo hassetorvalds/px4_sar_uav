@@ -32,7 +32,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **267 passed / 2 skipped**（vlm 45 / mission 131 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 268 passed |
+| 单元测试 | ✅ | **271 passed / 2 skipped**（vlm 45 / mission 135 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip）；`PYTHONNOUSERSITE=1` 时 272 passed |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -121,7 +121,7 @@
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
 自研源码      ~8800 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~4000 行，267 passed / 2 skipped（检测器入口下 268 passed）
+单元测试      ~4100 行，271 passed / 2 skipped（检测器入口下 272 passed）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）

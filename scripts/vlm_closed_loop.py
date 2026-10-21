@@ -32,6 +32,7 @@ from flight_check import FlightCheckBase
 from geometry_msgs.msg import Twist
 import numpy as np
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
+from mission.height_gate import evaluate_height_gate
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from vlm.safety import parse_clearance_status
@@ -174,6 +175,7 @@ class ClosedLoopBase(FlightCheckBase):
         # 无论选哪路，CSV 都同时记 px4_up / truth_up / up_offset，供离线对比后再定。
         self.declare_parameter('height_source', 'px4')
         self.declare_parameter('legacy_no_overfly', True)
+        self.declare_parameter('height_gate_mode', 'legacy')
         self.declare_parameter('truth_sample_s', 2.0)    # AirSim 真值采样周期（0=关闭）
         # 回波判别要有界（服务器侧 2026-10-15）：单次转场最多判别 N 次 / 累计后退 ≤ 上限，
         # 避免"贴着面反复后退"
@@ -278,6 +280,11 @@ class ClosedLoopBase(FlightCheckBase):
                 f'height_source={self._height_source!r} 不识别（只允许 px4/airsim）')
         self._legacy_no_overfly = bool(
             self.get_parameter('legacy_no_overfly').value)
+        self._height_gate_mode = str(
+            self.get_parameter('height_gate_mode').value).strip().lower()
+        if self._height_gate_mode not in ('legacy', 'c_map_rel'):
+            raise ValueError(
+                f'height_gate_mode={self._height_gate_mode!r} 只允许 legacy/c_map_rel')
         if self._legacy_no_overfly:
             self._overfly_clearance = float('inf')
             self.get_logger().warn(
@@ -1208,19 +1215,36 @@ class ClosedLoopBase(FlightCheckBase):
                 # 簇 z 由 local_map 建在 PX4 local ENU 上；若高度门改用 AirSim 真值，
                 # 先用 `_to_flight_frame` 把簇顶搬到真值参考系，避免两路混用。
                 if self._cluster_zmax is not None:
-                    flight_up = self._flight_up(current[2])
-                    cluster_top = self._to_flight_frame(self._cluster_zmax)
-                    cluster_bot = self._to_flight_frame(self._cluster_zmin)
-                    gap = flight_up - cluster_top
+                    if self._height_gate_mode == 'c_map_rel':
+                        flight_up = current[2]
+                        cluster_top = self._cluster_zmax
+                        cluster_bot = self._cluster_zmin
+                    else:
+                        flight_up = self._flight_up(current[2])
+                        cluster_top = self._to_flight_frame(self._cluster_zmax)
+                        cluster_bot = self._to_flight_frame(self._cluster_zmin)
+                    decision = evaluate_height_gate(
+                        mode=self._height_gate_mode, phase=self.phase,
+                        px4_z=current[2],
+                        airsim_z=(self._truth_up_local
+                                  if self._truth_up_local is not None
+                                  else current[2]),
+                        map_z=current[2], cluster_top_z=cluster_top,
+                        clearance_m=self._overfly_clearance,
+                        frame_id='map', anchor_id='local_map',
+                        transform_id='static_arm')
                     self.get_logger().info(
-                        f'候选点高度门：簇 z=[{cluster_bot:.1f}, {cluster_top:.1f}] m、'
-                        f'水平跨度 {self._cluster_span_h:.1f} m，飞行高度 {flight_up:.1f} m'
-                        f'（源 {self._height_source}，帧 {self._gate_frame()}），'
-                        f'顶部净空 {gap:.2f} m（可飞越阈值 {self._overfly_clearance:.2f} m）')
-                    if gap >= self._overfly_clearance:
+                        f'候选点高度门：gate={decision.mode} frame={decision.frame_id} '
+                        f'anchor={decision.anchor_id} transform={decision.transform_id} '
+                        f'phase={decision.phase} px4_z={decision.px4_z:.2f} '
+                        f'airsim_z={decision.airsim_z:.2f} map_z={decision.map_z:.2f} '
+                        f'簇 z=[{cluster_bot:.1f}, {cluster_top:.1f}] span_h={self._cluster_span_h:.1f} '
+                        f'gap={decision.gap_m:.2f} clearance={decision.clearance_m:.2f} '
+                        f'overflyable={decision.overflyable}')
+                    if decision.overflyable:
                         self._overflyable += 1
                         self.get_logger().warn(
-                            f'该候选结构**低矮可飞越**（顶部净空 {gap:.2f} ≥ '
+                            f'该候选结构**低矮可飞越**（顶部净空 {decision.gap_m:.2f} ≥ '
                             f'{self._overfly_clearance:.2f} m）→ 不作障碍，换下一个候选 '
                             f'（本轮 overflyable={self._overflyable}）')
                         if self._next_point():

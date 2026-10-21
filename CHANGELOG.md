@@ -15,6 +15,39 @@
 
 ---
 
+## [2026-10-21] 高度 C 阶段 1：注入簇 A/B 两档 + 旧驱动 C 门
+
+### 新增
+
+- `mission/height_gate.py`：`legacy` / `c_map_rel` 两模式；C 用 map/REL
+  的飞行高度减簇顶，与 PX4/AirSim 高度解耦；记录 `frame_id/anchor_id/transform_id/phase`；
+- 旧驱动新增 `height_gate_mode`（默认 legacy，可设 `c_map_rel`），并把门决策
+  写进日志；
+- `scripts/inject_height_status.py`：向 `/inject/height_status` 注入可控 `cluster_z`；
+- `scripts/height_gate_validate.py`：两档 top + 共同/仅 px4 ±0.5 m 的模型级取证。
+
+### 真机注入验证（旧驱动，不依赖真实结构）
+
+```text
+A 档 top=1.0 m：px4_z=2.38 airsim_z=3.38 map_z=2.38 gap=1.38
+                → overflyable=True，overflyable=1，landed
+B 档 top=5.0 m：px4_z=2.37 airsim_z=3.45 map_z=2.37 gap=-2.63
+                → overflyable=False → SCAN → land
+日志：logs/2026-10-21/c_A4_top1_driver.log / c_B2_top5_driver.log
+CSV ：logs/2026-10-21/c_A4_top1.csv / c_B2_top5.csv
+```
+
+模型级偏移：`common_drift_invariant=true`、`px4_only_drift_invariant=true`；
+取证 `logs/height_gate/c_validation_20261021-195034.json`。
+
+### 结论
+
+- C 的 A/B 两档 **真实注入**通过；A 真飞越、B 不飞越；
+- ±0.5 m 偏移目前是模型级（未做真实 PX4 偏移注入）；
+- 阶段 2（真实低/高结构各 1 轮）仍未做。
+
+---
+
 ## [2026-10-21] 旧驱动 legacy 1 轮（不是高度 C）
 
 ### 修复（旧脚本）

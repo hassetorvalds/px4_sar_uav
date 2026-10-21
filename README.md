@@ -282,7 +282,7 @@ archive/
 | SemanticIntent 1.1 | ✅ 真机/--remote-intent | area polygon/map、overlap/spacing、vlm 拒绝；真机 64/64 |
 | 区域最近邻排序 | ✅ 单测 | `--order-regions`：3 区域按最近邻重排，保留 takeoff/land |
 | `ExecuteTask` Action | ✅ | goal=TaskSpec JSON；feedback 阶段/进度/LCL 高度；result 带报告；cancel 落地上锁；真机完整搜索+检测 `success=True` |
-| 安全加固 | ✅ | arm 前健康检查；simcheck 域 77 + 互锁；`land_fast` 去重；cancel 幂等/`external_land`；旧驱动 legacy 硬禁飞越 |
+| 高度 C | ✅ 阶段1 | 旧驱动 C 门注入：top1→overfly、top5→不飞越；三路高度+anchor/transform 落盘；真实结构待阶段2 |
 | AirSim ↔ PX4 SITL 仿真链路 | ✅ | `Simulator connected on TCP port 4560` |
 | PX4 ↔ uXRCE-DDS ↔ ROS 2 桥接 | ✅ | `uxrce_dds_client synchronized`，全部 `/fmu/out` 数据写入器创建成功 |
 | ROS 2 读取 PX4 状态 | ✅ | `/fmu/out/vehicle_odometry`、`vehicle_attitude`、`vehicle_status_v4`、`vehicle_local_position_v1` |
