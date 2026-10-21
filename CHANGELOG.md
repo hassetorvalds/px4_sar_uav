@@ -15,6 +15,25 @@
 
 ---
 
+## [2026-10-21] 真机 --remote-intent：SemanticIntent → TaskSpec → 飞行（64/64）
+
+### 验证
+
+```text
+命令：scripts/fly_task.py --remote-intent examples/semantic_intent_area_cover_rel.json --execute
+意图：area_cover，4×4 m，REL 2 m，operator，手写 SemanticIntent 1.0
+结果：search_plan 8 航点，area 16 m²；
+      search_waypoint 8/8；
+      coverage 64/64（100%），heatmap logs/coverage/coverage_20261021-191109.png；
+      pose_age=0.001 s，eph/epv=0.078/0.077 m；
+      landed=true，armed=false。
+报告：logs/tasks/report_20261021-191101-802.jsonl
+```
+
+这说明 `--remote-intent` 已经真正接上 SemanticIntent 1.0 编译链（不是只跑 `--semantic-intent` 别名）。
+
+---
+
 ## [2026-10-21] 契约对齐：--remote-intent 接 SemanticIntent / LANDED_ELSEWHERE / simcheck fail-closed
 
 ### 新增

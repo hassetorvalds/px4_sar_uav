@@ -54,7 +54,18 @@ LOCAL_FACTS_STALE / OPERATOR_REQUIRED`，每条 `{code, field, detail}`。
 - 目标距起飞点 >40 m 或 TaskSpec 校验失败 → `TARGET_UNREACHABLE`；
 - 区域超出 40 m 围栏 / keepout 由 TaskSpec/本模块拒绝，不"尽力执行"。
 
-## 真实验证（2026-10-20）
+## 真实验证（2026-10-21，--remote-intent）
+
+```text
+scripts/fly_task.py --remote-intent examples/semantic_intent_area_cover_rel.json --execute
+→ area_cover 4×4 m、REL 2 m、operator
+→ search_waypoint 8/8，area 16 m²，coverage 64/64（100%）
+→ heatmap logs/coverage/coverage_20261021-191109.png
+→ pose_age 0.001 s，eph/epv 0.078/0.077 m
+→ report logs/tasks/report_20261021-191101-802.jsonl
+```
+
+### 更早（2026-10-20，--semantic-intent 别名）
 
 ```text
 SemanticIntent（手写 operator，area_cover，6×6 m、REL 2 m）
