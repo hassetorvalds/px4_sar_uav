@@ -15,6 +15,24 @@
 
 ---
 
+## [2026-10-21] 真机转场高度剖面：36/36 → 爬升 3 m → 36/36
+
+### 验证
+
+```text
+命令：起飞到 2 m，搜索东侧 0 m/r1.5，搜索东侧 7 m/r1.5，降落
+· 第一区：search 6 航点，coverage 36/36（100%）
+· 转场：transit_climb distance=5.19 m, climb_to=3.0 m
+        transit_move → transit_descend(to=2.0) → transit_complete
+· 第二区：search 6 航点，coverage 36/36（100%）
+· done
+报告：logs/tasks/report_20261021-191221-106.jsonl
+```
+
+真机确认：转场先爬升/下降，不再是贴任务高度直穿。
+
+---
+
 ## [2026-10-21] 真机 --remote-intent：SemanticIntent → TaskSpec → 飞行（64/64）
 
 ### 验证
