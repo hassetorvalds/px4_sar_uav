@@ -15,6 +15,26 @@
 
 ---
 
+## [2026-10-21] n=3 同点位 area_cover + search 高度保持修复
+
+### 修复
+
+- `_run_search` 之前只发水平速度、`up=0`，第 3 轮高度漂到 0.04 m 后
+  `clearance_blocked`；改为 `_altitude_hold_vz(position)`，搜索全程保持任务高度。
+
+### 验证（同一 map polygon 4×4，overlap .25，3 轮）
+
+```text
+轮1 report_20261021-192645-123：6/6，64/64，pose_age 0.016 s，alt 2.01–2.06
+轮2 report_20261021-192735-681：6/6，64/64，pose_age 0.018 s，alt 1.77–1.78
+轮3 report_20261021-192831-246：6/6，64/64，pose_age 0.013 s，alt 1.92–1.93
+eph/epv 三轮均 0.078/0.077 m；无 abort；落点 E1.78–1.80 / N2.02–2.03
+```
+
+结论：同点位 3/3 覆盖 100%，高度保持修复后不再漂到地面。
+
+---
+
 ## [2026-10-21] 回信落地：area 1.1 / entry_status / cancel 三态
 
 ### 新增

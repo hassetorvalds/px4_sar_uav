@@ -50,6 +50,7 @@
 | 转场高度剖面 | ✅ 真机 | 距离 >5 m 时爬升 3 m→巡航→下降；36/36 + 36/36 |
 | 区域最近邻排序 | ✅ 单测 | `--order-regions`，保留 takeoff/land；转场仍直线 |
 | 任务坐标偏移 | ✅ 真机 | goto/search 相对本次起飞点；Task2 从落点搜索 6/6、覆盖 64/64 |
+| area_cover n=3 | ✅ 真机 | 同点位 4×4 map polygon：3 轮均 64/64、无 abort；pose_age 0.013–0.018 s |
 | SemanticIntent 1.0/1.1 | ✅ 真机 | `--remote-intent` 64/64；area polygon/map 坐标 + overlap/spacing；vlm area 拒绝 |
 | arm 前健康检查 | ✅ 真机验证 | 状态/位置未就绪时拒绝 arm；就绪后 arm ACK 0.008 s；5 项检查写入 `health_check` |
 | 自检隔离（域/互锁） | ✅ 真机在线时验证 | 独立 `ROS_DOMAIN_ID=77` + 互锁；真实栈在线时默认 exit 2，允许并跑时 simcheck PASS 且真机保持 disarmed |

@@ -1,0 +1,52 @@
+{
+  "contract_version": "1.0",
+  "intent_id": "map-area-n3",
+  "task_type": "area_cover",
+  "target": {
+    "label": "target",
+    "world_enu": [
+      0.0,
+      0.0
+    ],
+    "frame_id": "map"
+  },
+  "constraints": {
+    "altitude_band_m": [
+      2.0,
+      2.0
+    ],
+    "altitude_frame": "REL",
+    "speed_cap_mps": 0.5,
+    "keepout": [],
+    "min_clearance_m": 0.6,
+    "area": {
+      "frame_id": "map",
+      "polygon": [
+        [
+          -2.0,
+          -2.0
+        ],
+        [
+          2.0,
+          -2.0
+        ],
+        [
+          2.0,
+          2.0
+        ],
+        [
+          -2.0,
+          2.0
+        ]
+      ],
+      "overlap": 0.25
+    }
+  },
+  "priority": "normal",
+  "confidence": 1.0,
+  "source": "operator",
+  "facts_used": [
+    "map"
+  ],
+  "notes": "n>=3 map polygon area_cover 4x4"
+}

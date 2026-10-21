@@ -1189,7 +1189,8 @@ class TaskExecutor(Node):
                          total=len(self._search_wps),
                          target=list(target))
             return
-        self._publish_velocity(decision.east, decision.north, 0.0)
+        self._publish_velocity(decision.east, decision.north,
+                               self._altitude_hold_vz(position))
 
     # ------------------------------------------------------------------
     # 指令 / 遥测
