@@ -48,11 +48,22 @@ ROS 2 Action 的状态机是：goal 进入终态（succeeded/aborted/canceled）
 如果你们要求“单帧 candidate → 多帧 confirmed”，需要再加一个候选话题；
 否则请确认“finding 入口即 confirmed”可接受。
 
-## 真机数据
+## 真机数据（2026-10-21）
 
-当前 WSL 侧 AirSim 4560 没有监听（UE/仿真未启动），所以
-`--remote-intent` 的真实飞行数据这一轮还补不了。启动 AirSim 后我会跑一轮
-`SemanticIntent → TaskSpec → Action`（含 coverage/finding），把报告路径发你们。
+`--remote-intent` 已跑通一轮手写 SemanticIntent（operator，非模型 JSON）：
+
+```text
+命令：scripts/fly_task.py --remote-intent examples/semantic_intent_area_cover_rel.json --execute
+area_cover 4×4 m、REL 2 m
+→ search_waypoint 8/8，area 16 m²
+→ coverage 64/64（100%），heatmap logs/coverage/coverage_20261021-191109.png
+→ pose_age 0.001 s，eph/epv 0.078/0.077 m
+→ landed，armed=false
+报告：logs/tasks/report_20261021-191101-802.jsonl
+```
+
+这一轮没有 VLM 的 `/navigate` 调用（模型仍不产 JSON），是 WSL 手写语义；
+等模型侧有 JSON 约束解码后再接 `source=vlm`。
 
 ## 其它
 
