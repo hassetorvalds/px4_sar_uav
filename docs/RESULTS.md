@@ -57,7 +57,7 @@
 | 落地命令去重 | ✅ 单测 | `land`/`land_fast` 2 s 窗口；bridge 忽略重复；旧驱动 legacy 硬禁飞越 |
 | Cancel 三态 / external_land | ✅ 假 PX4 | active 0/1、terminal 3/0、unknown 2/0；外部 disarm → `LANDED_ELSEWHERE`，不再发落地 |
 | 覆盖热力图 / 位姿 | ✅ 真机 | 144/144；PNG 144×144；pose_age 0.017 s、eph/epv 0.08 m |
-| area 编译期边界 | ✅ 单测 | `map_boundary` inclusion / `keepout_polygons` exclusion；`ERROR_TARGET_OUTSIDE_MAP` / `ERROR_TARGET_IN_KEEPOUT`；缺失边界跳过 |
+| area 编译期边界 | ⚠️ 部分完成（编译器侧已落地；权威地图来源待定、顶点级检查、边相交不拒绝） | `map_boundary` inclusion / `keepout_polygons` exclusion；`ERROR_TARGET_OUTSIDE_MAP` / `ERROR_TARGET_IN_KEEPOUT`；缺失边界跳过 |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
 | 通用任务执行（起飞/航点/悬停/返航/搜索） | ✅ 最小/前进/返航/小半径搜索均已飞验 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |
