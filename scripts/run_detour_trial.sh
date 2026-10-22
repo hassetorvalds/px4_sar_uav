@@ -24,6 +24,8 @@ log_dir="logs/$(date +%Y-%m-%d)"
 rot_deg="$(awk -v v="${ROT_DEG:-15}" 'BEGIN{printf "%.1f", v}')"
 rot_tol="$(awk -v v="${ROT_TOL:-1.5}" 'BEGIN{printf "%.2f", v}')"
 geofence_m="$(awk -v v="${GEOFENCE_M:-15.0}" 'BEGIN{printf "%.1f", v}')"
+transit_alt="$(awk -v v="${TRANSIT_ALT_M:-3.5}" 'BEGIN{printf "%.1f", v}')"
+transit_timeout="$(awk -v v="${TRANSIT_TIMEOUT:-45.0}" 'BEGIN{printf "%.1f", v}')"
 # ② 仲裁接进主线（2026-10-16）：VLM 的速度不再直连 bridge，而是走 velocity_arbiter
 # （几何避障 avoid > 语义 vlm）。用 NO_ARBITER=1 可退回直连做对照。
 if [ "${NO_ARBITER:-0}" = "1" ]; then
@@ -128,7 +130,7 @@ timeout -s INT "$TIMEOUT_DRIVER" python3 scripts/vlm_closed_loop.py --ros-args -
     -p seek_margin_m:=1.5 -p seek_min_m:=6.0 -p seek_max_m:=35.0 -p seek_ground_margin_m:=0.5 \
     -p seek_min_points:=40 -p seek_min_span_deg:=6.0 -p seek_max_mad_m:=1.0 \
     -p seek_min_median_m:=6.0 -p seek_max_candidates:=3 \
-    -p transit_altitude_m:=3.5 -p transit_timeout_s:=45.0 \
+    -p transit_altitude_m:=${transit_alt} -p transit_timeout_s:=${transit_timeout} \
     -p transit_speed_mps:=0.5 -p transit_stop_clearance_m:=1.0 \
     -p transit_echo_back_m:=0.25 \
     -p transit_echo_settle_s:=1.5 -p transit_echo_delta_tol_m:=0.08 -p transit_echo_ignore_s:=5.0 -p transit_echo_max_probes:=2 -p transit_echo_max_back_total_m:=0.5 \
