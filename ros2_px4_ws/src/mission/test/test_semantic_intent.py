@@ -160,3 +160,15 @@ def test_any_outside_polygon_point_rejects_with_index():
     detail = next(r.detail for r in reasons
                   if r.code == 'ERROR_TARGET_OUTSIDE_MAP')
     assert 'area.polygon[1]' in detail
+
+
+def test_explicit_empty_keepout_polygons_disables_fallback():
+    # 方案 1：显式 [] = 无 exclusion，不回退 keepout；
+    # 即使 keepout 包含 area 顶点，也不应报 ERROR_TARGET_IN_KEEPOUT。
+    intent = _fenced_intent()
+    intent.constraints['keepout_polygons'] = []
+    intent.constraints['keepout'] = [
+        [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]]
+    spec, reasons = intent.compile()
+    assert reasons == []
+    assert spec is not None
