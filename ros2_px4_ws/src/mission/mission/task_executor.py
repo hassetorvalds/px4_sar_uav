@@ -49,6 +49,8 @@ from .search_pattern import estimate_duration_s, search_metrics
 from .task_spec import TaskError, TaskSpec
 
 _CLEARANCE_RE = re.compile(r'nearest_forward_m=([0-9.]+|inf)')
+_SIDE_RE = re.compile(
+    r'left_m=([0-9.]+|inf)\s+right_m=([0-9.]+|inf)')
 
 #: 命令名 → (PX4 vehicle_command, 是否期望 ACK)
 #: ``land_fast`` 由 bridge 用速度指令实现，没有单条 MAVLink ACK，靠"是否上锁"判完成。
@@ -106,6 +108,11 @@ class TaskExecutor(Node):
         self.declare_parameter('transit_altitude_m', 0.0)
         self.declare_parameter('transit_min_distance_m', 5.0)
         self.declare_parameter('transit_rate_mps', 0.4)
+        self.declare_parameter('detour_enabled', True)
+        self.declare_parameter('detour_duration_s', 2.0)
+        self.declare_parameter('detour_speed_mps', 0.25)
+        self.declare_parameter('detour_max_attempts', 2)
+        self.declare_parameter('detour_cooldown_s', 1.0)
         self.declare_parameter('target_hold_s', 5.0)
         self.declare_parameter('land_on_target', False)
         self.declare_parameter('clearance_stop_m', 0.6)
@@ -154,6 +161,22 @@ class TaskExecutor(Node):
             self.get_parameter('transit_min_distance_m').value)
         self._transit_rate = max(float(
             self.get_parameter('transit_rate_mps').value), 0.1)
+        self._detour_enabled = bool(self.get_parameter('detour_enabled').value)
+        self._detour_duration = max(float(
+            self.get_parameter('detour_duration_s').value), 0.5)
+        self._detour_speed = max(float(
+            self.get_parameter('detour_speed_mps').value), 0.05)
+        self._detour_max_attempts = max(int(
+            self.get_parameter('detour_max_attempts').value), 0)
+        self._detour_cooldown = max(float(
+            self.get_parameter('detour_cooldown_s').value), 0.0)
+        self._detour_active = False
+        self._detour_until = 0.0
+        self._detour_direction = 1
+        self._detour_attempts = 0
+        self._detour_cooldown_until = 0.0
+        self._clearance_left = None
+        self._clearance_right = None
         self._frame_size = (0, 0)
         self._best_meta = {}
         self._findings_dir = str(self.get_parameter('findings_dir').value)
@@ -220,6 +243,11 @@ class TaskExecutor(Node):
         self._transit_active = False
         self._transit_phase = ''
         self._transit_up_lcl = None
+        self._detour_active = False
+        self._detour_until = 0.0
+        self._detour_direction = 1
+        self._detour_attempts = 0
+        self._detour_cooldown_until = 0.0
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
@@ -511,6 +539,11 @@ class TaskExecutor(Node):
         self._transit_active = False
         self._transit_phase = ''
         self._transit_up_lcl = None
+        self._detour_active = False
+        self._detour_until = 0.0
+        self._detour_direction = 1
+        self._detour_attempts = 0
+        self._detour_cooldown_until = 0.0
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
@@ -551,6 +584,12 @@ class TaskExecutor(Node):
             return
         value = match.group(1)
         self._clearance_forward = float('inf') if value == 'inf' else float(value)
+        side = _SIDE_RE.search(msg.data)
+        if side:
+            self._clearance_left = (float('inf') if side.group(1) == 'inf'
+                                    else float(side.group(1)))
+            self._clearance_right = (float('inf') if side.group(2) == 'inf'
+                                     else float(side.group(2)))
 
     def _on_best(self, msg: PoseStamped) -> None:
         if not self._hold_on_target or self._phase != PHASE_RUN:
@@ -969,7 +1008,48 @@ class TaskExecutor(Node):
         return altitude_hold_vz(self._target_up_lcl(),
                                 None if position is None else position[2])
 
+    def _run_detour(self, position, now) -> bool:
+        if not self._detour_active:
+            return False
+        if now >= self._detour_until:
+            self._detour_active = False
+            self._detour_cooldown_until = now + self._detour_cooldown
+            self._report('detour_done', attempts=self._detour_attempts)
+            return False
+        heading = self._heading_enu or 0.0
+        lateral = self._detour_speed * self._detour_direction
+        east = -math.sin(heading) * lateral
+        north = math.cos(heading) * lateral
+        self._publish_velocity(east, north, self._altitude_hold_vz(position))
+        return True
+
+    def _start_detour(self, now) -> bool:
+        if (not self._detour_enabled
+                or self._detour_attempts >= self._detour_max_attempts
+                or now < self._detour_cooldown_until):
+            return False
+        left = self._clearance_left
+        right = self._clearance_right
+        if left is None and right is None:
+            base = 1
+        else:
+            base = 1 if (left if left is not None else -1) >= (
+                right if right is not None else -1) else -1
+        if self._detour_attempts % 2 == 1:
+            base = -base
+        self._detour_direction = base
+        self._detour_active = True
+        self._detour_until = now + self._detour_duration
+        self._detour_attempts += 1
+        self._blocked_since = None
+        self._report('detour_start', direction=('left' if base > 0 else 'right'),
+                     attempts=self._detour_attempts,
+                     left_m=self._clearance_left, right_m=self._clearance_right)
+        return True
+
     def _run_goto(self, position, target) -> None:
+        if self._run_detour(position, time.monotonic()):
+            return
         decision = velocity_toward(position, target,
                                    max_speed_mps=self._spec.max_speed_mps,
                                    tolerance_m=self._arrive_tol)
@@ -977,6 +1057,8 @@ class TaskExecutor(Node):
             decision, position, self._heading_enu or 0.0,
             self._clearance_forward, stop_m=self._clearance_stop)
         if decision.blocked:
+            if self._start_detour(time.monotonic()):
+                return
             if self._blocked_since is None:
                 self._blocked_since = time.monotonic()
                 self._report('clearance_blocked', distance=self._clearance_forward)
@@ -1154,6 +1236,8 @@ class TaskExecutor(Node):
         if self._transit_active:
             self._run_transit(position, now)
             return
+        if self._run_detour(position, now):
+            return
         # 目标悬停优先：期间保持当前位置，不再推进航点
         if self._target_hold_until > now:
             self._publish_target(position[0], position[1], self._target_up_lcl())
@@ -1173,6 +1257,8 @@ class TaskExecutor(Node):
             decision, position, self._heading_enu or 0.0,
             self._clearance_forward, stop_m=self._clearance_stop)
         if decision.blocked:
+            if self._start_detour(time.monotonic()):
+                return
             if self._blocked_since is None:
                 self._blocked_since = time.monotonic()
             elif time.monotonic() - self._blocked_since > self._blocked_abort:

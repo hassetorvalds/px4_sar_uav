@@ -15,6 +15,35 @@
 
 ---
 
+## [2026-10-22] 新执行器有界侧向绕行（detour）
+
+### 解决的问题
+
+真实高结构进场在 6.3 m 处被障碍挡住，旧执行器直接 `clearance_blocked`/abort；
+任务没有“绕过去继续”的能力。新执行器增加有界侧向绕行：
+
+- 解析 `left_m/right_m`，选更宽一侧；
+- 每次侧移 2 s、0.25 m/s（约 0.5 m），最多 2 次，间隔 1 s；
+- 事件 `detour_start/detour_done`；两次都用尽仍 blocked 才 abort；
+- 不改变高度门 C / 语义接口。
+
+### 验证（假 PX4，block 8–13 s）
+
+```text
+事件：takeoff_complete → detour_start → detour_done
+      → clearance_blocked → detour_start → detour_done
+      → hover → return_home → done
+PASS（done=True, abort=0）
+```
+
+### 边界
+
+- 这是有界侧移，不是全局路径规划；侧向也可能被挡；
+- 仅新执行器；旧驱动 Batch2a 仍走原逻辑；
+- 未做真实结构绕行验证。
+
+---
+
 ## [2026-10-22] Batch2a 高结构第二次：8 m/90 s，仍被真实障碍挡住
 
 ```text

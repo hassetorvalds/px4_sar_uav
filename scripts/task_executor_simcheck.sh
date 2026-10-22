@@ -58,6 +58,7 @@ echo "[simcheck] report=${report}"
 
 sim_args=()
 [ -n "${SIMCHECK_BLOCK_AFTER:-}" ] && sim_args+=(--block-after "${SIMCHECK_BLOCK_AFTER}")
+[ -n "${SIMCHECK_BLOCK_FOR:-}" ] && sim_args+=(--block-for "${SIMCHECK_BLOCK_FOR}")
 [ -n "${SIMCHECK_TAKEOVER_AFTER:-}" ] && sim_args+=(--takeover-after "${SIMCHECK_TAKEOVER_AFTER}")
 [ -n "${SIMCHECK_EXPECT:-}" ] && sim_args+=(--expect "${SIMCHECK_EXPECT}")
 
