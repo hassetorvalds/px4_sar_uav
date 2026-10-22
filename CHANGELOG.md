@@ -1,3 +1,29 @@
+## [2026-10-22] 接口卫生：会话 epoch / C 占位标签 / detour 仅 goto
+
+### 变更
+
+- `epoch_id` 改为**会话级**（进程启动生成，可由参数覆盖），与 `task_id` 解耦；
+  findings/status/task_accepted 使用会话 id；
+- C 的 `anchor_id/transform_id` 改为显式占位：
+  `local_map@stage1_placeholder` / `static_arm@stage1_placeholder`；
+- detour 只在 `goto` 段启用；takeoff/land/search 不触发（对齐 PX4 按状态分派）；
+- `OPEN_QUESTIONS.md` 增加证据等级 `model/injection/real` 与对应决策。
+
+### 验证
+
+```text
+· mission 135 passed；全包 271 passed / 2 skipped
+· 假 PX4 detour（goto 段 block 8–13s）：PASS
+```
+
+### 边界
+
+- epoch 是 WSL 会话 id，不是 PX4 boot time；
+- 占位标签不得用于跨会话 C 追溯；
+- detour 真机注入仍未触发，真实结构绕行未验证。
+
+---
+
 ## [2026-10-22] 新增未决事项/重要决策单一入口
 
 - `docs/OPEN_QUESTIONS.md`：按 `OPEN/BLOCKED/DEFERRED/DECIDED/CLOSED` 记录；

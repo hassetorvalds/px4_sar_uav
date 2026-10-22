@@ -80,6 +80,7 @@ class TaskExecutor(Node):
         self.declare_parameter('task_file', '')
         self.declare_parameter('task_json', '')
         self.declare_parameter('intent_path', '')
+        self.declare_parameter('epoch_id', '')
         self.declare_parameter('task_topic', '/mission/task')
         self.declare_parameter('status_topic', '/mission/status')
         self.declare_parameter('abort_topic', '~/abort')
@@ -151,7 +152,8 @@ class TaskExecutor(Node):
         except json.JSONDecodeError:
             self._findings_radius_by_label = {}
         self._task_id = ''
-        self._epoch_id = ''
+        epoch = str(self.get_parameter('epoch_id').value).strip()
+        self._epoch_id = epoch or f'epoch-{os.getpid()}-{int(time.time())}'
         self._transit_active = False
         self._transit_phase = ''
         self._transit_up_lcl = None
@@ -504,9 +506,9 @@ class TaskExecutor(Node):
         if stem.startswith('report_'):
             stem = stem[len('report_'):]
         self._task_id = stem or f'task-{int(time.time())}'
-        self._epoch_id = self._task_id
         self._reset_task_state()
         self._report('task_accepted', summary=spec.summary(),
+                     task_id=self._task_id, epoch_id=self._epoch_id,
                      spec=spec.to_dict(),
                      intent_path=str(self.get_parameter('intent_path').value))
         self.get_logger().info(f'接受任务：{spec.summary()}')
@@ -1024,6 +1026,8 @@ class TaskExecutor(Node):
         return True
 
     def _start_detour(self, now) -> bool:
+        if self._current_step_type() != 'goto':
+            return False
         if (not self._detour_enabled
                 or self._detour_attempts >= self._detour_max_attempts
                 or now < self._detour_cooldown_until):
@@ -1355,6 +1359,8 @@ class TaskExecutor(Node):
             'step_type': self._current_step_type(),
             'step_total': (len(self._spec.steps) if self._spec is not None else 0),
             'report_path': self._report_path,
+            'task_id': self._task_id,
+            'epoch_id': self._epoch_id,
             'aborted': self._abort_reason is not None,
             'abort_reason': self._abort_reason,
             'landed_elsewhere': bool(self._external_land),

@@ -34,8 +34,8 @@ class GateDecision:
 def evaluate_height_gate(*, mode: str, phase: str, px4_z: float,
                          airsim_z: float, map_z: float, cluster_top_z: float,
                          clearance_m: float, frame_id: str = 'map',
-                         anchor_id: str = 'local_map',
-                         transform_id: str = 'static_arm') -> GateDecision:
+                         anchor_id: str = 'local_map@stage1_placeholder',
+                         transform_id: str = 'static_arm@stage1_placeholder') -> GateDecision:
     if mode not in MODES:
         raise ValueError(f'未知高度门模式 {mode!r}，可选 {MODES}')
     if mode == 'legacy':

@@ -29,6 +29,6 @@ def test_legacy_never_overflies():
 def test_gate_records_frame_anchor_transform():
     decision = _gate(1.0)
     assert decision.frame_id == 'map'
-    assert decision.anchor_id == 'local_map'
-    assert decision.transform_id == 'static_arm'
+    assert decision.anchor_id == 'local_map@stage1_placeholder'
+    assert decision.transform_id == 'static_arm@stage1_placeholder'
     assert decision.reason == 'c_map_rel'
