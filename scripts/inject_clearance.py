@@ -28,6 +28,14 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 # (时长 s, (前, 左, 右) 或 None=不发布)
+# detour：给新执行器侧向绕行用：4 s 后前向 0.4、左右开阔，持续 20 s，再放开
+SCENARIO_DETOUR = [
+    (4.0, None),
+    (20.0, (0.4, 3.0, 3.0)),
+    (8.0, (3.0, 3.0, 3.0)),
+    (4.0, None),
+]
+
 # demo：五态逐段验证（陈旧 / 通行 / 压速 / 左绕 / 右绕）
 SCENARIO_DEMO = [
     (8.0, None),
@@ -86,7 +94,7 @@ SCENARIO_ESCAPE_HOLD = [
     (900.0, (0.45, 0.4, 0.4)),
 ]
 
-SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN,
+SCENARIOS = {'demo': SCENARIO_DEMO, 'turn': SCENARIO_TURN, 'detour': SCENARIO_DETOUR,
              'escape': SCENARIO_ESCAPE, 'escape_flight': SCENARIO_ESCAPE_FLIGHT,
              'blind': SCENARIO_BLIND, 'escape_hold': SCENARIO_ESCAPE_HOLD}
 
