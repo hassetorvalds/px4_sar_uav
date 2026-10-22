@@ -111,3 +111,52 @@ def test_line_spacing_wins_over_overlap():
     spec, reasons = intent.compile()
     assert reasons == []
     assert spec.steps[1].params['spacing_m'] == 1.5
+
+
+def _fenced_intent():
+    intent = _polygon_intent()
+    intent.constraints['map_boundary'] = [[-1.0, -1.0], [5.0, -1.0],
+                                          [5.0, 5.0], [-1.0, 5.0]]
+    intent.constraints['keepout_polygons'] = []
+    return intent
+
+
+def test_polygon_inside_map_boundary_passes():
+    spec, reasons = _fenced_intent().compile()
+    assert reasons == []
+    assert spec.steps[1].params['polygon'][0] == [0.0, 0.0]
+
+
+def test_polygon_outside_map_boundary_rejected():
+    intent = _fenced_intent()
+    intent.constraints['area']['polygon'][0] = [6.0, 0.0]
+    reasons = intent.validate()
+    assert any(reason.code == 'ERROR_TARGET_OUTSIDE_MAP' for reason in reasons)
+    detail = next(r.detail for r in reasons if r.code == 'ERROR_TARGET_OUTSIDE_MAP')
+    assert 'area.polygon[0]' in detail
+
+
+def test_polygon_in_keepout_polygons_rejected():
+    intent = _fenced_intent()
+    intent.constraints['keepout_polygons'] = [
+        [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]]
+    reasons = intent.validate()
+    assert any(reason.code == 'ERROR_TARGET_IN_KEEPOUT' for reason in reasons)
+
+
+def test_missing_map_boundary_preserves_old_behavior():
+    intent = _polygon_intent()
+    intent.constraints.pop('map_boundary', None)
+    spec, reasons = intent.compile()
+    assert reasons == []
+    assert spec is not None
+
+
+def test_any_outside_polygon_point_rejects_with_index():
+    intent = _fenced_intent()
+    intent.constraints['area']['polygon'] = [
+        [0.0, 0.0], [6.0, 0.0], [4.0, 4.0], [0.0, 4.0]]
+    reasons = intent.validate()
+    detail = next(r.detail for r in reasons
+                  if r.code == 'ERROR_TARGET_OUTSIDE_MAP')
+    assert 'area.polygon[1]' in detail

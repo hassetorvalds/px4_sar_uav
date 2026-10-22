@@ -1,3 +1,15 @@
+## [2026-10-22] 编译器：area.polygon 的 map_boundary/keepout 拒绝
+
+- `SemanticIntent.validate` 在 polygon 形状/面积/自交之后、产出 TaskSpec 前：
+  - `constraints.map_boundary` inclusion；任一点在外 → `ERROR_TARGET_OUTSIDE_MAP`；
+  - `constraints.keepout_polygons` exclusion（缺失回退 `keepout`）；任一点在内 → `ERROR_TARGET_IN_KEEPOUT`；
+- `map_boundary` 未配置时跳过边界检查，保持旧行为；边界来源为 config 占位（来源待定）；
+- 不复用执行期 `TARGET_UNREACHABLE` 错误码。
+
+测试：mission 140 passed；全包 276 passed / 2 skipped。
+
+---
+
 ## [2026-10-22] 接口卫生：会话 epoch / C 占位标签 / detour 仅 goto
 
 ### 变更

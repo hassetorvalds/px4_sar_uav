@@ -27,12 +27,15 @@ SemanticIntent 1.0（服务器/未来 JSON 解析器，手写也可）
 | `constraints.altitude_band_m` | `[low, high]`，0.5–30 m，v1.0 用 `low` 作为任务高度 |
 | `constraints.altitude_frame` | 固定 `REL`；LCL → `UNSUPPORTED_ALTITUDE_FRAME` |
 | `constraints.speed_cap_mps` | 0.1–1.0 |
-| `constraints.keepout` | map 2D 多边形列表；目标在内 → `TARGET_IN_KEEPOUT` |
+| `constraints.keepout` | map 2D 多边形列表；目标点在内 → `TARGET_IN_KEEPOUT`（既有语义） |
+| `constraints.map_boundary` | **可选 inclusion 多边形**（`[[e,n],...]`，map 系）；配置后 `area.polygon` 任一点在外 → `ERROR_TARGET_OUTSIDE_MAP`；**缺失则跳过边界检查**（保持旧行为）。来源待定，当前为显式配置占位 |
+| `constraints.keepout_polygons` | **可选 exclusion 多边形列表**；配置后 `area.polygon` 任一点在内 → `ERROR_TARGET_IN_KEEPOUT`；缺失时回退用 `keepout` |
 | `constraints.area` | 1.1 正式：`frame_id=map`、`polygon`、`line_spacing_m`/`overlap`；兼容旧 `shape/center/width/height/spacing_m` |
 | `confidence` | `source=vlm` 且 <0.5 → `LOW_CONFIDENCE` |
 
 稳定错误码：`SCHEMA_INVALID / UNSUPPORTED_VERSION / UNKNOWN_TASK_TYPE /
 UNSUPPORTED_ALTITUDE_FRAME / TARGET_UNREACHABLE / TARGET_IN_KEEPOUT /
+ERROR_TARGET_OUTSIDE_MAP / ERROR_TARGET_IN_KEEPOUT /
 ALTITUDE_OUT_OF_BAND / CLEARANCE_TOO_LOW / LOW_CONFIDENCE / FACTS_CONFLICT /
 LOCAL_FACTS_STALE / OPERATOR_REQUIRED`，每条 `{code, field, detail}`。
 
@@ -56,6 +59,9 @@ LOCAL_FACTS_STALE / OPERATOR_REQUIRED`，每条 `{code, field, detail}`。
 - `source=vlm` 的 `area_cover` → `OPERATOR_REQUIRED`（模型不产可靠多边形）；
 - `target.label` 映射：person/victim→`person`；marker/color→`marker`；其他→`any`；
 - 目标距起飞点 >40 m 或 TaskSpec 校验失败 → `TARGET_UNREACHABLE`；
+- `area.polygon` 在配置的 `map_boundary` 外 → `ERROR_TARGET_OUTSIDE_MAP`；
+  在 `keepout_polygons`（或 `keepout`）内 → `ERROR_TARGET_IN_KEEPOUT`；
+  两者都在**编译器**（`SemanticIntent.validate`，产出 TaskSpec 前）拒绝，**不复用执行期错误码**；
 - 区域超出 40 m 围栏 / keepout 由 TaskSpec/本模块拒绝，不"尽力执行"。
 
 ## 真实验证（2026-10-21，--remote-intent）

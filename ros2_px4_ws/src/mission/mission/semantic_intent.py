@@ -16,7 +16,8 @@ ERROR_CODES = (
     'SCHEMA_INVALID', 'UNSUPPORTED_VERSION', 'UNKNOWN_TASK_TYPE',
     'UNSUPPORTED_ALTITUDE_FRAME', 'TARGET_UNREACHABLE', 'TARGET_IN_KEEPOUT',
     'ALTITUDE_OUT_OF_BAND', 'CLEARANCE_TOO_LOW', 'LOW_CONFIDENCE',
-    'FACTS_CONFLICT', 'LOCAL_FACTS_STALE', 'OPERATOR_REQUIRED')
+    'FACTS_CONFLICT', 'LOCAL_FACTS_STALE', 'OPERATOR_REQUIRED',
+    'ERROR_TARGET_OUTSIDE_MAP', 'ERROR_TARGET_IN_KEEPOUT')
 
 
 @dataclass
@@ -201,6 +202,52 @@ class SemanticIntent:
                     except (TypeError, ValueError, IndexError) as exc:
                         reasons.append(RejectedReason(
                             'SCHEMA_INVALID', 'constraints.area.polygon', str(exc)))
+                # 编译期 Geofence 语义：inclusion=map_boundary，exclusion=keepout_polygons。
+                # 未配置 map_boundary 时跳过边界检查（保持旧行为）。
+                try:
+                    points = [(float(p[0]), float(p[1])) for p in polygon]
+                except (TypeError, ValueError, IndexError):
+                    points = []
+                boundary = self.constraints.get('map_boundary')
+                if points and boundary is not None:
+                    try:
+                        boundary_points = [(float(p[0]), float(p[1]))
+                                           for p in boundary]
+                    except (TypeError, ValueError, IndexError):
+                        reasons.append(RejectedReason(
+                            'SCHEMA_INVALID', 'constraints.map_boundary',
+                            'map_boundary 必须是 [[e,n], ...]'))
+                        boundary_points = []
+                    for index, point in enumerate(points):
+                        if boundary_points and not _point_in_polygon(
+                                point[0], point[1], boundary_points):
+                            reasons.append(RejectedReason(
+                                'ERROR_TARGET_OUTSIDE_MAP',
+                                'constraints.area.polygon',
+                                f'area.polygon[{index}]=[{point[0]:.2f},{point[1]:.2f}] '
+                                '在 map_boundary 外'))
+                            break
+                keepouts = self.constraints.get('keepout_polygons')
+                if keepouts is None:
+                    keepouts = self.constraints.get('keepout')
+                if points and keepouts:
+                    for keepout_index, keepout in enumerate(keepouts):
+                        try:
+                            keepout_points = [(float(p[0]), float(p[1]))
+                                              for p in keepout]
+                        except (TypeError, ValueError, IndexError):
+                            continue
+                        for index, point in enumerate(points):
+                            if _point_in_polygon(point[0], point[1], keepout_points):
+                                reasons.append(RejectedReason(
+                                    'ERROR_TARGET_IN_KEEPOUT',
+                                    'constraints.area.polygon',
+                                    f'area.polygon[{index}]=[{point[0]:.2f},{point[1]:.2f}] '
+                                    f'在 keepout_polygons[{keepout_index}] 内'))
+                                break
+                        else:
+                            continue
+                        break
             if area.get('line_spacing_m') is not None and float(area['line_spacing_m']) <= 0:
                 reasons.append(RejectedReason(
                     'SCHEMA_INVALID', 'constraints.area.line_spacing_m', '必须 > 0'))
