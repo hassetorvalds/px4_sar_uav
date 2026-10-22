@@ -1,3 +1,13 @@
+## [2026-10-22] 新增未决事项/重要决策单一入口
+
+- `docs/OPEN_QUESTIONS.md`：按 `OPEN/BLOCKED/DEFERRED/DECIDED/CLOSED` 记录；
+- 当前未决：C 真实偏移/阶段2、Batch2a 进场、绕行真机验证、area 地图外校验、
+  epoch_id、anchor/transform、覆盖默认 overlap、起飞净空、VLM JSON；
+- 已拍板/已关闭项保留证据与边界，不重复讨论；
+- README 进度速览已挂链接；后续契约变化/验证结论/路线选择先更新此文档。
+
+---
+
 # 变更日志
 
 本文件记录本项目**所有**值得留痕的变更：新增功能、结构性调整、验证结果、

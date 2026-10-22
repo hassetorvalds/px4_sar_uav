@@ -7,7 +7,7 @@
 > findings `#1 target [36.19, 35.88, 5.73]` 已从 confirmed 升级为 inspected，并写入 Action result / Markdown；
 > 矩形覆盖搜索真机 6/6 航点（24 m²、22 m、预计 54 s）；
 > **观测覆盖：前视 0/24 → 下视 24/24（100%）**；L 形 20/20；双区域 36 m²、144/144；**SemanticIntent → TaskSpec → Action 真机 144/144**。见 [COVERAGE](docs/COVERAGE.md)、[SEMANTIC_INTENT](docs/SEMANTIC_INTENT.md)。
-> 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · **Action 接口：[docs/ACTION.md](docs/ACTION.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · 开发排期：[docs/roadmap.md](docs/roadmap.md)
+> 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · **Action 接口：[docs/ACTION.md](docs/ACTION.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · **未决/决策：[docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)** · 开发排期：[docs/roadmap.md](docs/roadmap.md)
 
 ---
 
