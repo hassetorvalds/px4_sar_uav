@@ -31,6 +31,7 @@ SemanticIntent 1.0（服务器/未来 JSON 解析器，手写也可）
 | `constraints.map_boundary` | **可选 inclusion 多边形**（`[[e,n],...]`，map 系）；配置后 `area.polygon` 任一点在外 → `ERROR_TARGET_OUTSIDE_MAP`；**缺失则跳过边界检查**（保持旧行为）。来源待定，当前为显式配置占位 |
 | `constraints.keepout_polygons` | **可选 exclusion 多边形列表**；配置后 `area.polygon` 任一点在内 → `ERROR_TARGET_IN_KEEPOUT`。**空列表语义：显式 `[]` = 无 exclusion，不回退；缺失 = 回退 `keepout`** |
 | `constraints.area` | 1.1 正式：`frame_id=map`、`polygon`、`line_spacing_m`/`overlap`；兼容旧 `shape/center/width/height/spacing_m` |
+| `constraints.area.overlap_override` | **可选占位**：缺失/null = 使用默认 overlap；显式数值（[0,1)）= 解析并记入 notes，**本轮不参与任何计算**；非法类型/范围 → `SCHEMA_INVALID`。切换 local/global planner 时再启用 |
 | `confidence` | `source=vlm` 且 <0.5 → `LOW_CONFIDENCE` |
 
 稳定错误码：`SCHEMA_INVALID / UNSUPPORTED_VERSION / UNKNOWN_TASK_TYPE /

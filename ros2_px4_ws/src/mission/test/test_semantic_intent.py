@@ -172,3 +172,38 @@ def test_explicit_empty_keepout_polygons_disables_fallback():
     spec, reasons = intent.compile()
     assert reasons == []
     assert spec is not None
+
+
+def test_overlap_override_missing_keeps_default():
+    intent = _polygon_intent()
+    spec, reasons = intent.compile()
+    assert reasons == []
+    assert abs(spec.steps[1].params['spacing_m'] - 3.0) < 1e-6
+    assert not any('overlap_override' in note for note in spec.notes)
+
+
+def test_overlap_override_is_recorded_without_changing_overlap():
+    intent = _polygon_intent()
+    intent.constraints['area']['overlap_override'] = 0.5
+    spec, reasons = intent.compile()
+    assert reasons == []
+    assert abs(spec.steps[1].params['spacing_m'] - 3.0) < 1e-6
+    assert 'area.overlap_override=0.5' in spec.notes
+
+
+def test_overlap_override_invalid_value_rejected():
+    intent = _polygon_intent()
+    intent.constraints['area']['overlap_override'] = 1.5
+    reasons = intent.validate()
+    assert any(reason.code == 'SCHEMA_INVALID'
+               and reason.field == 'constraints.area.overlap_override'
+               for reason in reasons)
+
+
+def test_missing_keepout_polygons_falls_back_to_keepout():
+    intent = _fenced_intent()
+    intent.constraints.pop('keepout_polygons', None)
+    intent.constraints['keepout'] = [
+        [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]]
+    reasons = intent.validate()
+    assert any(reason.code == 'ERROR_TARGET_IN_KEEPOUT' for reason in reasons)

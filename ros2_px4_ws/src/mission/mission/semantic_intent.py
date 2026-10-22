@@ -259,6 +259,17 @@ class SemanticIntent:
                 except (TypeError, ValueError):
                     reasons.append(RejectedReason(
                         'SCHEMA_INVALID', 'constraints.area.overlap', '需要 [0,1)'))
+            if area.get('overlap_override') is not None:
+                override = area['overlap_override']
+                if (isinstance(override, bool)
+                        or not isinstance(override, (int, float))):
+                    reasons.append(RejectedReason(
+                        'SCHEMA_INVALID', 'constraints.area.overlap_override',
+                        '必须为数值或 null'))
+                elif not (0.0 <= float(override) < 1.0):
+                    reasons.append(RejectedReason(
+                        'SCHEMA_INVALID', 'constraints.area.overlap_override',
+                        '需要 [0,1)'))
         keepout = self.constraints.get('keepout') or []
         world = target.get('world_enu')
         if world and isinstance(world, (list, tuple)) and len(world) >= 2:
@@ -278,6 +289,8 @@ class SemanticIntent:
                 notes.append(f'area.line_spacing_m={area["line_spacing_m"]}')
             if area.get('overlap') is not None:
                 notes.append(f'area.overlap={area["overlap"]}')
+            if area.get('overlap_override') is not None:
+                notes.append(f'area.overlap_override={area["overlap_override"]}')
             notes.append(f'area.effective_spacing_m={_area_spacing(area, altitude):.3f}')
         return notes
 
