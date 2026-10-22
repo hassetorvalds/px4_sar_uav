@@ -45,13 +45,27 @@ else
     fail=1
 fi
 
-# 地图是否在建图（frames>0）
-status="$(timeout 12 ros2 topic echo --once /local_map/status 2>/dev/null | grep -m1 'frames=' || true)"
-frames="$(printf '%s' "$status" | sed -n 's/.*frames=\([0-9]*\).*/\1/p')"
-if [ -n "$frames" ] && [ "$frames" -gt 0 ]; then
-    note OK "local_map frames" "$frames"
+# 地图是否在建图：连续 2 次 samples frames>0 才算 ready；失败打印实际等待时长
+map_start="$(date +%s)"
+frames="0"
+frames_ok=0
+for _ in 1 2 3; do
+    status="$(timeout 8 ros2 topic echo --once /local_map/status 2>/dev/null | grep -m1 'frames=' || true)"
+    current="$(printf '%s' "$status" | sed -n 's/.*frames=\([0-9]*\).*/\1/p')"
+    if [ -n "$current" ] && [ "$current" -gt 0 ]; then
+        frames="$current"
+        frames_ok="$((frames_ok + 1))"
+    else
+        frames_ok=0
+    fi
+    [ "$frames_ok" -ge 2 ] && break
+    sleep 1
+done
+map_wait="$(( $(date +%s) - map_start ))"
+if [ "$frames_ok" -ge 2 ]; then
+    note OK "local_map frames" "$frames（连续 2 次，等待 ${map_wait}s）"
 else
-    note FAIL "local_map frames" "0 或拿不到（检查相机/PX4 位置）"
+    note FAIL "local_map frames" "0/拿不到（等待 ${map_wait}s；检查相机/PX4 位置）"
     fail=1
 fi
 

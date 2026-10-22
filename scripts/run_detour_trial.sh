@@ -23,6 +23,7 @@ log_dir="logs/$(date +%Y-%m-%d)"
 # 注意：ROS 参数是 DOUBLE，整数写法（10）会被解析成 INTEGER 而报错 → 这里统一格式化成小数
 rot_deg="$(awk -v v="${ROT_DEG:-15}" 'BEGIN{printf "%.1f", v}')"
 rot_tol="$(awk -v v="${ROT_TOL:-1.5}" 'BEGIN{printf "%.2f", v}')"
+geofence_m="$(awk -v v="${GEOFENCE_M:-15.0}" 'BEGIN{printf "%.1f", v}')"
 # ② 仲裁接进主线（2026-10-16）：VLM 的速度不再直连 bridge，而是走 velocity_arbiter
 # （几何避障 avoid > 语义 vlm）。用 NO_ARBITER=1 可退回直连做对照。
 if [ "${NO_ARBITER:-0}" = "1" ]; then
@@ -90,7 +91,7 @@ timeout -s INT 900 ros2 run vlm vlm_navigator --ros-args \
     -p base_velocity:=0.3 -p max_speed:=0.3 -p forward_scale:=1.0 -p lateral_scale:=1.0 \
     -p velocity_topic:="${vlm_velocity_topic}" \
     -p max_lateral_speed:=0.3 -p max_yaw_rate:=0.5 -p yaw_lock_s:=0.0 \
-    -p run_duration_s:=150.0 -p geofence_max_distance_m:=15.0 \
+    -p run_duration_s:=150.0 -p geofence_max_distance_m:=${geofence_m} \
     -p avoidance_enabled:=true -p map_stale_s:=1.5 -p stale_forward_limit_mps:=0.1 \
     -p obstacle_slow_start_m:=1.2 -p obstacle_stop_m:=0.6 -p obstacle_release_m:=0.9 \
     -p obstacle_slow_min_forward_mps:=0.05 \
