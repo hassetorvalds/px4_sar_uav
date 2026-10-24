@@ -29,6 +29,7 @@
 | 5 | **覆盖默认 overlap 的统一**（本轮需求称 #7；当前表内 #5） | `DEFERRED` | 1.1 area 无 spacing/overlap 时默认 overlap=0.25（spacing=1.5×alt）；旧文本解析默认 spacing=2（2 m 高时约 50% 重叠）。**已预留 `area.overlap_override` 配置入口**：缺失/null=默认，显式数值仅记录、不参与计算，非法值 `SCHEMA_INVALID`；本轮不实现覆盖逻辑 | 影响航迹密度和覆盖率可比性 | 切换 global/密集障碍场景/planner 时启用 `overlap_override` 并实现覆盖算法 |
 | 6 | **起飞前机体周围净空检查** | `OPEN` | 曾从贴 TemplateCube 的落点起飞即碰撞；当前 arm 前只查状态/位置/preflight/failsafe/电池，不查机体周围净空 | 真实作业起飞安全 | 需要可用的近场障碍判据（地面点会干扰），否则不做假检查 |
 | 7 | **VLM `source=vlm` 的 JSON 路径** | `BLOCKED` | 模型仍是点预测器，不产可靠 JSON；`source=vlm` 的 `area_cover` 已按服务器要求 `OPERATOR_REQUIRED` 拒绝；当前 `--remote-intent` 用手写 operator SemanticIntent | 模型自动生成任务的能力；不影响任务层/Action | 等模型侧 JSON 约束解码；不要把 mock/手写当 VLM |
+| 8 | **SAR Demo v0 代理目标检测可靠性** | `OPEN` | 3 轮同一指令：搜索 8/8、无 abort、均落地；代理目标 2/3 命中、finding 2/3（轮3 miss）。目标为橙色物，**非人员检测** | 影响 Demo 可重复性；不影响任务/飞行链路 | 调 scan 时长/检测阈值/点位；先离线评估再跑少量真机；不要用单轮成功掩盖 2/3 |
 
 ---
 

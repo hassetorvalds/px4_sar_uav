@@ -102,6 +102,8 @@ def main(argv=None):
     parser.add_argument('--report', default='', help='执行报告路径（默认 logs/tasks/）')
     parser.add_argument('--no-hold-on-target', action='store_true',
                         help='检测到目标时不悬停（只记录）')
+    parser.add_argument('--proxy-target', action='store_true',
+                        help='标注为代理目标（非人员检测），写入报告')
     parser.add_argument('--no-summary', action='store_true',
                         help='不生成 Markdown 证据页')
     parser.add_argument('--order-regions', action='store_true',
@@ -221,6 +223,8 @@ def main(argv=None):
         cmd += ['-p', 'velocity_topic:=/velocity_arbiter/vlm_cmd']
     if args.no_hold_on_target:
         cmd += ['-p', 'hold_on_target:=false']
+    if args.proxy_target:
+        cmd += ['-p', 'target_demo_kind:=proxy']
     timeout = args.timeout or (spec.max_duration_s + 60.0)
     # 子进程不会自动带 ROS 环境：没找到 ros2 时用 `bash -c 'source env.sh && exec ...'`。
     if shutil.which('ros2') is None:

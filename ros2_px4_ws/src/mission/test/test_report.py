@@ -15,7 +15,7 @@ def _write_report(path):
         {'t': 6.0, 'event': 'takeoff_complete',
          'altitude_lcl': {'value_m': 2.0}, 'target': {'value_m': 2.0, 'frame': 'REL'}},
         {'t': 8.0, 'event': 'target_confirmed', 'world_enu': [1.0, 2.0, 3.0],
-         'step_type': 'scan'},
+         'step_type': 'scan', 'target_demo_kind': 'proxy'},
         {'t': 9.0, 'event': 'target_centered', 'error_deg': 2.0},
         {'t': 10.0, 'event': 'scan_complete'},
         {'t': 12.0, 'event': 'done', 'commands': [
@@ -43,6 +43,7 @@ def test_summarize_contains_target_and_commands(tmp_path):
     assert '# 任务报告' in text
     assert '成功完成' in text
     assert 'world=(1.00, 2.00, 3.00)' in text
+    assert '目标类型：**代理目标（非人员检测）**' in text
     assert '已对准' in text
     assert '| arm | completed | 1 | 0 |' in text
     assert '## 发现物' in text

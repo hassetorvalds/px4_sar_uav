@@ -97,6 +97,7 @@ class TaskExecutor(Node):
         self.declare_parameter('center_on_target', True)
         self.declare_parameter('center_tolerance_deg', 5.0)
         self.declare_parameter('center_yaw_rate_deg_s', 15.0)
+        self.declare_parameter('target_demo_kind', '')
         self.declare_parameter('findings_merge_radius_m', 3.0)
         self.declare_parameter('findings_merge_window_s', 30.0)
         self.declare_parameter('findings_radius_by_label', '{}')
@@ -144,6 +145,8 @@ class TaskExecutor(Node):
             self.get_parameter('center_yaw_rate_deg_s').value))
         self._findings_radius = float(
             self.get_parameter('findings_merge_radius_m').value)
+        self._target_demo_kind = str(
+            self.get_parameter('target_demo_kind').value).strip()
         self._findings_window = float(
             self.get_parameter('findings_merge_window_s').value)
         try:
@@ -635,6 +638,7 @@ class TaskExecutor(Node):
         self._report('target_confirmed', world_enu=world,
                      step_type=self._current_step_type(),
                      centering=bool(self._center_on_target),
+                     target_demo_kind=self._target_demo_kind,
                      finding_id=finding.finding_id)
         self._report('finding', action='confirmed', **finding.to_dict())
         self._target_hold_until = now + self._target_hold_s
@@ -813,6 +817,7 @@ class TaskExecutor(Node):
                      findings=self._findings.to_dicts(),
                      findings_path=findings_path,
                      findings_task_id=findings_task_id,
+                     target_demo_kind=self._target_demo_kind,
                      coverage=self._coverage)
         self.get_logger().info('已上锁，任务结束' + ('（强制上锁）' if forced else ''))
         # 先发一条 DONE 状态再退出：Action server 依赖它收结果；

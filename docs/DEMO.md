@@ -141,6 +141,37 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 预期：`search_waypoint 1/8 … 8/8` → `scan_dwell`（45° 一步，停 1.5 s）
 → `target_confirmed world=[...]` → `scan_complete → done`。
 
+## SAR Demo v0：搜索 + 代理目标检测 + 报告
+
+> **边界**：目标物是场景里的橙色物体，不算人员检测；报告会显式写
+> “代理目标（非人员检测）”。VLM JSON 路径仍未接，使用规则解析。
+
+```bash
+# 1) 栈里带检测器（前视单相机即可）
+scripts/bringup_legacy.sh with_detector:=true
+python3 scripts/flight_supervisor.py --ros-args -p timeout_s:=5.0 -p arm_grace_s:=6.0 &
+
+# 2) 一条命令跑完整 demo
+scripts/run_sar_demo.sh
+```
+
+默认指令：起飞 2 m → 搜索东侧 5 m/南侧 6 m、r=3 m → 原地扫描 30 s → 降落。
+报告会带：
+
+- `search_waypoint 8/8`、`search_plan`；
+- `target_confirmed world=[...]`（若检测到）、`target_demo_kind=proxy`；
+- `findings`/`target_findings` 与 Markdown 证据页；
+- `land_fast → done`，不把 `land_fast` 说成 AUTO_LAND。
+
+`run_sar_demo.sh` 不会自动起链路；检测器缺失时直接退出并提示，不会静默跳过。
+
+**2026-10-24 基线（3 轮，同一指令）**：搜索均 8/8、无 abort、均落地；
+代理目标检测 2/3、finding 2/3（轮3 未命中）。报告：
+`report_20261024-144302-567` / `144506-886` / `144705-850`。
+这证明链路成立，但不声称检测可靠；第 3 轮 miss 记入 OPEN_QUESTIONS #8。
+
+---
+
 > 搜索区要放在**出生点以南/东**；朝北的航点会被前方净空门拦下（这是安全行为，
 > 不是 bug）。场景正前方约 2 m 处就是墙体。
 

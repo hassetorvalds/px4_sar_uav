@@ -1,3 +1,29 @@
+## [2026-10-24] SAR Demo v0：代理目标端到端 + 3 轮基线
+
+### 新增
+
+- `scripts/run_sar_demo.sh`：一条命令跑“搜索/扫描 → 代理目标检测 → 报告 → 降落”；
+- `fly_task --proxy-target` + 执行器 `target_demo_kind=proxy`；
+- Markdown 报告显式写“代理目标（非人员检测）”；
+- 报告测试增加代理目标断言。
+
+### 3 轮真机（同一指令）
+
+```text
+轮1 report_20261024-144302-567：8/8，target×2，finding 1
+轮2 report_20261024-144506-886：8/8，target×1，finding 1
+轮3 report_20261024-144705-850：8/8，target 0，finding 0
+三轮均无 abort、均 landed；检测命中 2/3
+```
+
+### 边界
+
+- 橙色代理目标，不是人员检测；
+- 第 3 轮未命中，检测可靠性仍是 OPEN #8；
+- 不改变 VLM/C/Batch2a 口径。
+
+---
+
 ## [2026-10-22] 编译器：area.polygon 的 map_boundary/keepout 拒绝
 
 - `SemanticIntent.validate` 在 polygon 形状/面积/自交之后、产出 TaskSpec 前：

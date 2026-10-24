@@ -168,6 +168,12 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
         lines.append(f'- 转场：{len(transits)} 段，合计 {_fmt(total_transit, 1)} m')
     if targets:
         lines.append(f'- 目标：{len(targets)} 次确认')
+        demo_kinds = {item.get('target_demo_kind') for item in targets
+                      if item.get('target_demo_kind')}
+        if 'proxy' in demo_kinds:
+            lines.append('- 目标类型：**代理目标（非人员检测）**')
+        elif demo_kinds:
+            lines.append(f'- 目标类型：{" / ".join(sorted(demo_kinds))}')
         for target in targets:
             lines.append(f'  - t={target.get("t")} s，world={_world(target.get("world_enu"))}，'
                          f'阶段 {target.get("step_type", "?")}')
