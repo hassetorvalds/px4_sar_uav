@@ -25,7 +25,7 @@
    - provider 策略：LightNav-0 作为现有 baseline；Qwen3-VL-8B 作为候选挑战者；
      Cosmos-Reason2-8B 官方最低 32GB/Hopper-Blackwell，**不满足当前 24GB 约束**；
      Openfly 只作为路径先验/研究参考，不承担覆盖保证；Molmo 作为 pointing 备选；
-   - 下一步：用已有 AirSim 帧做离线 grounding 基线（见 [GROUNDING_BASELINE](docs/GROUNDING_BASELINE.md)），再跑 1 轮 `go_to`；
+   - 已完成 LightNav 离线 grounding 基线（见 [GROUNDING_BASELINE](docs/GROUNDING_BASELINE.md)）；下一步接 Qwen/Molmo provider 对比，再跑 1 轮 `go_to`；
 2. **SAR Demo v0 可靠性**：代理目标 3 轮搜索均 8/8、无 abort，但检测命中 2/3；
    先做离线检测评测/参数调整，不把 2/3 说成可靠；
 3. **人员检测（后置）**：需要真实人员素材/模型与误报评估，等导航闭环稳定后再做；

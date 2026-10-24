@@ -18,32 +18,35 @@
 # 抓帧（只读 AirSim 相机，不起 PX4）
 # logs/grounding/frames/yaw*.png
 
-# 基线调用
-python3 scripts/vlm_remote_check.py --ros-args \
-  -p image_path:=logs/grounding/frames/yaw045.png \
-  -p instruction:="go to the orange ball ahead" -p repeat:=3
+# 可复现评测（5 帧 × 1 指令 × 3 次）
+python3 scripts/eval_grounding.py \
+  --manifest examples/grounding_manifest.json --repeat 3
 ```
 
 橙色目标 bbox 由颜色阈值离线计算（仅用于评估，不进入飞行），
-得到目标中心的归一化坐标作为“视觉中心”。
+得到目标中心的归一化坐标作为“视觉中心”；误差为指向点与中心的归一化 L2。
 
-## 2. 结果
+## 2. 结果（`lightnav_20261024-151402.json`）
 
-| 帧 | 指令 | 往返 | 状态/动作 | 指向点 (x,y) | 橙色目标中心 | Δy |
-|---|---|---|---|---|---|---|
-| yaw045 | go to the orange ball ahead | 158/154/203 ms | 首次 `rot_left`/无坐标；后两次 `point` | 0.510, 0.982 | 0.487, 0.406 | 0.576 |
-| yaw060 | fly toward the orange ball | 167/155 ms | 首次 `rot_left`/无坐标；后 `point` | 0.385, 0.648 | 0.349, 0.425 | 0.223 |
-| yaw030 | go to the collapsed building ahead | 236/157 ms | 两次 `rot_right`/无坐标 | — | 0.623, 0.403 | — |
+| 帧 | 橙色目标中心 | 平均指向误差 | 延迟 | 动作 |
+|---|---|---|---|---|
+| yaw000 | 0.958, 0.371 | 0.654 | 126–159 ms | point ×3 |
+| yaw030 | 0.623, 0.403 | 0.397 | 129–133 ms | point ×3 |
+| yaw045 | 0.487, 0.406 | 0.339 | 124–133 ms | point ×3 |
+| yaw060 | 0.349, 0.425 | 0.323 | 122–164 ms | point ×3 |
+| yaw090 | 0.033, 0.347 | 0.569 | 123–129 ms | point ×3 |
 
-延迟：**154–236 ms**，与历史 153–188 ms 同量级。  
-首帧存在会话预热差异：第 0 次常给 `rot_left/right`，后续才给 `point`。
+汇总：**平均误差 0.456（中位 0.457，范围 0.195–0.794）**；
+延迟 **122–164 ms（均值 133.4 ms）**。
+
+早期用 `vlm_remote_check.py` 手动跑 yaw045 时首帧给过 `rot_left`，
+本次系统评测五次都是 `point`；说明会话/首帧行为不稳定，不能只取第一次。
 
 ## 3. 解释（不要过度解读）
 
 - LightNav 是**导航动作/指向模型**，`point` 不保证是目标 bbox 中心；
-  y≈0.98 的点在地面附近，不能直接当“橙色目标世界坐标”；
-- `rot_right` 对“目标在画面右侧”是合理的导航动作（yaw030 目标 x=0.623），
-  但这不是 3D grounding；
+  y 误差 0.2–0.8，指向点常落在地面/非目标处，不能直接当“橙色目标世界坐标”；
+- `rot_right/left` 作为导航动作可能合理，但不是 3D grounding；
 - 因此：**LightNav 可用于短时视觉导航 baseline，不能作为唯一目标定位源**；
 - 本轮没有 Qwen/Molmo 对比：服务器只起了 LightNav，未部署其他权重；
   不在本机擅自拉模型/起 vLLM。
@@ -58,8 +61,8 @@ python3 scripts/vlm_remote_check.py --ros-args \
 
 ## 5. 证据
 
-- 帧：`logs/grounding/frames/yaw030/045/060.png`（本地，不入库）；
-- 调用日志：本次 `vlm_remote_check` 输出（154–236 ms）；
+- 帧：`logs/grounding/frames/yaw000/030/045/060/090.png`（本地，不入库）；
+- 调用日志：`logs/grounding/lightnav_20261024-151402.json`/`.csv`（122–164 ms）；
 - 目标 bbox：橙色阈值离线计算，中心见上表；
 - 服务：LightNav-0 `/health ready`，GPU1。
 

@@ -1,0 +1,7 @@
+[
+  {"id": "yaw000", "image": "logs/grounding/frames/yaw000.png", "instruction": "go to the orange ball ahead"},
+  {"id": "yaw030", "image": "logs/grounding/frames/yaw030.png", "instruction": "go to the orange ball ahead"},
+  {"id": "yaw045", "image": "logs/grounding/frames/yaw045.png", "instruction": "go to the orange ball ahead"},
+  {"id": "yaw060", "image": "logs/grounding/frames/yaw060.png", "instruction": "go to the orange ball ahead"},
+  {"id": "yaw090", "image": "logs/grounding/frames/yaw090.png", "instruction": "go to the orange ball ahead"}
+]
