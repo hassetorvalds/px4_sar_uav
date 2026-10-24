@@ -1,3 +1,14 @@
+## [2026-10-24] Qwen3-VL-8B 同帧 grounding 对比
+
+- 服务器在 18081 起 Qwen3-VL-8B（GPU0，BF16，vLLM 0.19.1）；LightNav 18080 未动；
+- 同一 5 帧 AirSim 前视帧：Qwen EN/ZH 均 15/15 可解析；
+  平均误差 **0.0258 / 0.0297**（LightNav 0.456），稳态延迟 **~470 ms**（LightNav 133 ms）；
+- Qwen 输出 `[0,1000]` 坐标，评测脚本已换算并剥 ```json 围栏；
+- 结论：Qwen 列为 grounding 候选，LightNav 保留 fallback；未接飞控、未跑 go_to；
+- 新增 `scripts/eval_qwen_grounding.py`、`examples/grounding_manifest_zh.json`。
+
+---
+
 ## [2026-10-24] SAR Demo v0：代理目标端到端 + 3 轮基线
 
 ### 新增

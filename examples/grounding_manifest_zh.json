@@ -1,0 +1,7 @@
+[
+  {"id": "yaw000", "lang": "zh", "image": "logs/grounding/frames/yaw000.png", "instruction": "飞到前方橙色目标附近"},
+  {"id": "yaw030", "lang": "zh", "image": "logs/grounding/frames/yaw030.png", "instruction": "飞到前方橙色目标附近"},
+  {"id": "yaw045", "lang": "zh", "image": "logs/grounding/frames/yaw045.png", "instruction": "飞到前方橙色目标附近"},
+  {"id": "yaw060", "lang": "zh", "image": "logs/grounding/frames/yaw060.png", "instruction": "飞到前方橙色目标附近"},
+  {"id": "yaw090", "lang": "zh", "image": "logs/grounding/frames/yaw090.png", "instruction": "飞到前方橙色目标附近"}
+]

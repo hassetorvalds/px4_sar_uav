@@ -1,6 +1,6 @@
-# 自然语言导航：LightNav-0 离线 grounding 基线
+# 自然语言导航：LightNav-0 vs Qwen3-VL-8B 离线 grounding 基线
 
-> **状态：基线（2026-10-24），未实施新模型，未飞。**
+> **状态：离线基线（2026-10-24），未接飞控、未跑 `go_to`。**
 > 目的：按 README 现行规划，先回答“VLM 作为 grounding provider 能不能用”，
 > 而不是直接换模型/上真机。
 
@@ -8,62 +8,78 @@
 
 - 图像：AirSim 前视相机，2 m 高、原点附近，yaw 0/30/45/60/90；
 - 目标：场景里橙色球（**代理目标，非人员**）；
-- 指令：英文（远端 `/navigate` 只接受英文）；
-- 服务：LightNav-0，`127.0.0.1:18080`，GPU1；
-- 这不是 TaskSpec 生成，也不是区域覆盖；只测 grounding/指向。
+- 指令：LightNav 只测英文；Qwen 测英文 + 中文；
+- 服务：LightNav-0 `18080`（GPU1）、Qwen3-VL-8B `18081`（GPU0，vLLM 0.19.1，BF16）；
+- 只测 grounding/指向，不产 TaskSpec、不做区域覆盖。
 
 ## 1. 方法
 
 ```bash
-# 抓帧（只读 AirSim 相机，不起 PX4）
-# logs/grounding/frames/yaw*.png
-
-# 可复现评测（5 帧 × 1 指令 × 3 次）
+# 5 帧 × 3 次 × 2 provider；Qwen 中文另用 manifest_zh
 python3 scripts/eval_grounding.py \
   --manifest examples/grounding_manifest.json --repeat 3
+python3 scripts/eval_qwen_grounding.py \
+  --manifest examples/grounding_manifest.json --repeat 3
+python3 scripts/eval_qwen_grounding.py \
+  --manifest examples/grounding_manifest_zh.json --repeat 3
 ```
 
-橙色目标 bbox 由颜色阈值离线计算（仅用于评估，不进入飞行），
-得到目标中心的归一化坐标作为“视觉中心”；误差为指向点与中心的归一化 L2。
+橙色目标 bbox 由颜色阈值离线计算（仅用于评估，不进入飞行）；
+误差为指向点与 bbox 中心的归一化 L2。
 
-## 2. 结果（`lightnav_20261024-151402.json`）
+Qwen 输出是 **[0,1000] 归一化坐标**（不是像素），脚本先按 `/1000` 转成
+[0,1] 再算误差；中文响应可能包 ```json 围栏，脚本先剥围栏。
 
-| 帧 | 橙色目标中心 | 平均指向误差 | 延迟 | 动作 |
+## 2. 结果
+
+### LightNav-0（EN，5 帧 × 3 次）
+
+| 帧 | 目标中心 | 平均误差 | 延迟 |
+|---|---|---|---|
+| yaw000 | 0.958, 0.371 | 0.654 | 126–159 ms |
+| yaw030 | 0.623, 0.403 | 0.397 | 129–133 ms |
+| yaw045 | 0.487, 0.406 | 0.339 | 124–133 ms |
+| yaw060 | 0.349, 0.425 | 0.323 | 122–164 ms |
+| yaw090 | 0.033, 0.347 | 0.569 | 123–129 ms |
+
+汇总：**平均误差 0.456（0.195–0.794），延迟 122–164 ms（均值 133.4 ms）**。
+所有样本都是 `point`，但点常落在地面/非目标处；首帧行为不稳定。
+
+### Qwen3-VL-8B（EN / ZH，各 5 帧 × 3 次）
+
+| 语言 | 可解析 | 平均误差 | 误差范围 | 延迟（稳态） |
 |---|---|---|---|---|
-| yaw000 | 0.958, 0.371 | 0.654 | 126–159 ms | point ×3 |
-| yaw030 | 0.623, 0.403 | 0.397 | 129–133 ms | point ×3 |
-| yaw045 | 0.487, 0.406 | 0.339 | 124–133 ms | point ×3 |
-| yaw060 | 0.349, 0.425 | 0.323 | 122–164 ms | point ×3 |
-| yaw090 | 0.033, 0.347 | 0.569 | 123–129 ms | point ×3 |
+| EN | 15/15 | **0.0258** | 0.0099–0.0525 | ~470 ms（首帧 471–705） |
+| ZH | 15/15 | **0.0297** | 0.0146–0.0514 | ~467 ms（首帧 454–561） |
 
-汇总：**平均误差 0.456（中位 0.457，范围 0.195–0.794）**；
-延迟 **122–164 ms（均值 133.4 ms）**。
+Qwen 中文示例：`{"x":672,"y":527,"confidence":0.99}` → 归一化 (0.672,0.527)；
+坐标口径为 [0,1000]，已按服务端要求换算。
 
-早期用 `vlm_remote_check.py` 手动跑 yaw045 时首帧给过 `rot_left`，
-本次系统评测五次都是 `point`；说明会话/首帧行为不稳定，不能只取第一次。
+## 3. 解释
 
-## 3. 解释（不要过度解读）
+- **Qwen grounding 明显优于 LightNav**：误差约低一个数量级（0.03 vs 0.46），
+  EN/ZH 都 15/15 可解析；适合做**一次性目标点/bbox provider**。
+- **Qwen 延迟约 0.47 s，LightNav 约 0.13 s**：Qwen 不能跟上 4 Hz（250 ms）实时回路；
+  但作为 0.5 m/s 低速任务的 one-shot target provider，可异步/降频使用。
+- Qwen 的 `confidence=0.99` 过自信，不能当安全门限；必须用 WSL 的几何/围栏/时效校验。
+- LightNav 仍是更快的短时导航 baseline；**不替换默认 provider**，先做 Qwen → `go_to` 验证。
+- 本轮没有 Qwen 真机、没有 TaskSpec/行为树、没有区域覆盖。
 
-- LightNav 是**导航动作/指向模型**，`point` 不保证是目标 bbox 中心；
-  y 误差 0.2–0.8，指向点常落在地面/非目标处，不能直接当“橙色目标世界坐标”；
-- `rot_right/left` 作为导航动作可能合理，但不是 3D grounding；
-- 因此：**LightNav 可用于短时视觉导航 baseline，不能作为唯一目标定位源**；
-- 本轮没有 Qwen/Molmo 对比：服务器只起了 LightNav，未部署其他权重；
-  不在本机擅自拉模型/起 vLLM。
+## 4. 决策与下一步
 
-## 4. 下一步（按 README 规划）
-
-1. 建一个 provider-agnostic 离线 manifest（同帧、同指令、同评估）；
-2. 若服务器能起 Qwen3-VL-8B，按相同帧比较指向/bbox 与延迟（24GB 需实测）；
-3. Cosmos-Reason2-8B 在 24GB 下先排除（官方最低 32GB/Hopper-Blackwell）；
-4. Molmo-7B 只作为 pointing 备选，先确认 serving 方式；
-5. 基线稳定后，才选一个 provider 跑 1 轮 `go_to`；不先烧真机。
+1. Qwen 列为 **grounding 候选 provider**，LightNav 保留为快速 baseline/fallback；
+2. 做 Qwen 目标适配器：图像 + 中文指令 → bbox/point → 深度/几何 → ENU 目标；
+3. 目标必须过 WSL 校验（frame_seq/时效/围栏/keepout），失败就拒绝，不猜坐标；
+4. 跑 **1 轮 `go_to`**，只验证“目标点生成 + 到点”，不做视觉伺服；
+5. 若 Qwen 目标点稳定，再考虑异步 2 Hz 更新；若需要 4 Hz，继续用 LightNav 或量化/更小模型。
 
 ## 5. 证据
 
 - 帧：`logs/grounding/frames/yaw000/030/045/060/090.png`（本地，不入库）；
-- 调用日志：`logs/grounding/lightnav_20261024-151402.json`/`.csv`（122–164 ms）；
-- 目标 bbox：橙色阈值离线计算，中心见上表；
-- 服务：LightNav-0 `/health ready`，GPU1。
+- LightNav：`logs/grounding/lightnav_20261024-151402.json/.csv`；
+- Qwen EN：`logs/grounding/qwen_20261024-154832.json/.csv`；
+- Qwen ZH：`logs/grounding/qwen_20261024-154843.json/.csv`；
+- 服务：LightNav 18080（GPU1）、Qwen 18081（GPU0，BF16，vLLM 0.19.1）。
 
-**结论：LightNav 基线可用但指向不是目标级 grounding；先做 provider 对比，再决定是否替换。**
+**结论：Qwen 适合做 grounding 目标 provider；LightNav 继续做快速 baseline/fallback；
+下一步是 Qwen 目标适配器 + 1 轮 `go_to`，不是直接替换。**
