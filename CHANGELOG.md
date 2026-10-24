@@ -1,3 +1,13 @@
+## [2026-10-24] Qwen one-shot 目标 → go_to 真机
+
+- 新增 `scripts/qwen_target.py`：AirSim 图像 + 中文指令 → Qwen [0,1000] 点 → 深度/航向 → ENU；
+- 代理目标 bbox 自检（偏差 0.049 < 0.15），50 m 围栏，生成 TaskSpec；
+- 真机：目标 (28.43,32.53)，实际 (28.65,32.39)，水平误差≈0.27 m；
+  一次 detour、无 abort、landed；Qwen 延迟 673.5 ms；
+- 边界：one-shot go_to，不是视觉伺服/4Hz；目标为橙色代理物，非人员。
+
+---
+
 ## [2026-10-24] Qwen3-VL-8B 同帧 grounding 对比
 
 - 服务器在 18081 起 Qwen3-VL-8B（GPU0，BF16，vLLM 0.19.1）；LightNav 18080 未动；

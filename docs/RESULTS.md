@@ -61,6 +61,7 @@
 | SAR Demo v0（代理目标） | ⚠️ 2/3 命中 | 3 轮搜索均 8/8、无 abort、均落地；代理目标 2/3、finding 2/3；**非人员检测** |
 | LightNav grounding 基线 | ⚠️ 基线 | 5 帧×3 次：122–164 ms；平均指向误差 0.456、范围 0.195–0.794；不是目标级 grounding |
 | Qwen3-VL-8B grounding | ✅ 离线 | 同 5 帧：EN/ZH 15/15 可解析；平均误差 0.026/0.030；稳态约 470 ms；未接飞控 |
+| Qwen one-shot go_to | ✅ 真机 | 目标 (28.43,32.53)，实际 (28.65,32.39)，误差≈0.27 m；一次 detour、无 abort、landed；**非视觉伺服** |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
 | 通用任务执行（起飞/航点/悬停/返航/搜索） | ✅ 最小/前进/返航/小半径搜索均已飞验 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |

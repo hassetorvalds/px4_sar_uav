@@ -65,21 +65,37 @@ Qwen 中文示例：`{"x":672,"y":527,"confidence":0.99}` → 归一化 (0.672,0
 - LightNav 仍是更快的短时导航 baseline；**不替换默认 provider**，先做 Qwen → `go_to` 验证。
 - 本轮没有 Qwen 真机、没有 TaskSpec/行为树、没有区域覆盖。
 
-## 4. 决策与下一步
+## 4. one-shot `go_to` 真机验证（2026-10-24）
+
+`scripts/qwen_target.py`：AirSim 图像 + 中文指令 → Qwen [0,1000] 点 → 深度/航向
+→ 相对 ENU 目标 → TaskSpec（`go_to`，50 m 围栏）→ `fly_task` 执行。
+
+```text
+Qwen：pixel=(1199,270)，depth=32.53 m，proxy bbox 偏差=0.049，latency=673.5 ms
+目标：ENU (east 28.43, north 32.53)，距离 43.2 m，在 50 m 围栏内
+实际到点：ENU (28.65, 32.39)，水平误差 ≈ 0.27 m
+一次 detour_start/done；无 abort；landed，armed=false
+报告：logs/tasks/report_20261024-155204-639.jsonl
+```
+
+**边界**：这是 **one-shot 目标点 → go_to**，不是视觉伺服，也不是 4 Hz 实时导航；
+目标仍是橙色代理物，不是人员。
+
+## 5. 决策与下一步
 
 1. Qwen 列为 **grounding 候选 provider**，LightNav 保留为快速 baseline/fallback；
-2. 做 Qwen 目标适配器：图像 + 中文指令 → bbox/point → 深度/几何 → ENU 目标；
-3. 目标必须过 WSL 校验（frame_seq/时效/围栏/keepout），失败就拒绝，不猜坐标；
-4. 跑 **1 轮 `go_to`**，只验证“目标点生成 + 到点”，不做视觉伺服；
-5. 若 Qwen 目标点稳定，再考虑异步 2 Hz 更新；若需要 4 Hz，继续用 LightNav 或量化/更小模型。
+2. one-shot `go_to` 已通过；下一步可做异步 2 Hz 目标更新，但不要假装 4 Hz；
+3. 若 Qwen 目标点稳定，再考虑视觉伺服；若需要 4 Hz，继续用 LightNav 或量化/更小模型；
+4. 目标必须过 WSL 校验（frame_seq/时效/围栏/keepout），失败就拒绝，不猜坐标。
 
-## 5. 证据
+## 6. 证据
 
 - 帧：`logs/grounding/frames/yaw000/030/045/060/090.png`（本地，不入库）；
 - LightNav：`logs/grounding/lightnav_20261024-151402.json/.csv`；
 - Qwen EN：`logs/grounding/qwen_20261024-154832.json/.csv`；
 - Qwen ZH：`logs/grounding/qwen_20261024-154843.json/.csv`；
-- 服务：LightNav 18080（GPU1）、Qwen 18081（GPU0，BF16，vLLM 0.19.1）。
+- 服务：LightNav 18080（GPU1）、Qwen 18081（GPU0，BF16，vLLM 0.19.1）；
+- `go_to`：`logs/tasks/report_20261024-155204-639.jsonl` 与 `.md`。
 
 **结论：Qwen 适合做 grounding 目标 provider；LightNav 继续做快速 baseline/fallback；
 下一步是 Qwen 目标适配器 + 1 轮 `go_to`，不是直接替换。**
