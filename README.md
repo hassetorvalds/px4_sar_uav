@@ -11,6 +11,41 @@
 
 ---
 
+## 0. 现行规划（2026-10-24）
+
+> 当前阶段：从“能飞、能避障”的原型，进入“自然语言导航 + SAR Demo”的集成阶段。
+> 详细未决项/证据等级见 [OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)；C 的 real 级计划见 [REPLAY_PLAN.md](docs/REPLAY_PLAN.md)。
+
+**优先级**
+
+1. **自然语言导航（当前主线）**
+   - 任务层：规则解析 / 未来 SemanticIntent → TaskSpec，WSL 做几何与安全校验；
+   - 视觉层：VLM 只做 grounding（目标/方位/bbox），不直接产 TaskSpec；
+   - 区域覆盖：继续由现有确定性几何规划负责，不交给 VLM；
+   - provider 策略：LightNav-0 作为现有 baseline；Qwen3-VL-8B 作为候选挑战者；
+     Cosmos-Reason2-8B 官方最低 32GB/Hopper-Blackwell，**不满足当前 24GB 约束**；
+     Openfly 只作为路径先验/研究参考，不承担覆盖保证；Molmo 作为 pointing 备选；
+   - 下一步：用已有 AirSim 帧做离线 grounding 基线（见 [GROUNDING_BASELINE](docs/GROUNDING_BASELINE.md)），再跑 1 轮 `go_to`；
+2. **SAR Demo v0 可靠性**：代理目标 3 轮搜索均 8/8、无 abort，但检测命中 2/3；
+   先做离线检测评测/参数调整，不把 2/3 说成可靠；
+3. **人员检测（后置）**：需要真实人员素材/模型与误报评估，等导航闭环稳定后再做；
+4. **后续增强**：VLM 任务级 JSON（等模型侧约束解码）、行为树、LiDAR/时间同步、
+   全局/局部规划升级；不在当前 Demo 中混跑。
+
+**边界**
+
+- 不追求“单一 VLM 直接输出 TaskSpec”；文本任务与视觉 grounding 分层；
+- `source=vlm` 的 `area_cover` 按服务器契约拒绝；
+- 当前 C 仍只声明 `model + injection`，real 级未验证；detour 仅 `goto` 段；
+- `epoch_id` 为会话级，与 `task_id` 解耦；C 的 anchor/transform 仍是 stage1 占位符。
+
+参考项目的使用边界：`aerial-autonomy-stack`（后续行为树）、
+`px4-ros2-interface-lib`（后续 MissionExecutor 架构）、
+`AhmedHisham1/UAV-Search`（后续人员检测/地理定位）、
+PX4 Obstacle Avoidance/VFH+（局部规划升级）；当前不直接引入其重型框架。
+
+---
+
 ## 1. 项目最终目标
 
 本项目的最终目标是构建一个面向**灾害搜救**的自主无人机系统，具备以下能力：
