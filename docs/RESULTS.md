@@ -64,6 +64,7 @@
 | Qwen one-shot go_to | ✅ 真机 | 目标 (28.43,32.53)，实际 (28.65,32.39)，误差≈0.27 m；一次 detour、无 abort、landed；**非视觉伺服** |
 | Qwen 目标一致性 | ⚠️ 1–2 m | 5 个 yaw：均值 (29.6,31.5)，σ≈(1.35,0.73) m；修复相机航向不同步 |
 | Qwen 稳定化 go_to | ✅ 真机 | 3 样本中位数 spread 0.25 m；到点误差 0.41 m；无 detour/abort/landed |
+| Qwen 异步 dynamic go_to | ⚠️ 真机 | 初始 20/24，更新到 ~28/32，到点 0.70 m；provider 实测 0.75Hz（非 2Hz）；无 stale/abort |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
 | 通用任务执行（起飞/航点/悬停/返航/搜索） | ✅ 最小/前进/返航/小半径搜索均已飞验 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |

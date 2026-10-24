@@ -105,6 +105,28 @@ spread 超过 2 m 则拒绝。
 **注意**：单次目标飞行误差 0.27 m、稳定化 0.41 m；控制落点误差占主导，
 不能宣称“稳定化提高最终精度”。稳定化主要降低目标采样跳变/异常值风险。
 
+## 4.2 异步动态目标更新（best-effort）
+
+`scripts/qwen_target_pub.py` 标称 2 Hz，发布 `/qwen/target`；执行器 `goto` 带
+`dynamic_target:true` 时使用最新目标。
+
+**实测更新率：0.747 Hz**（不是 2 Hz）；单次采集 + Qwen 约 0.65–0.78 s。
+目标短暂不可见时 provider 保持最后有效目标；执行器不回退初始目标。
+
+动态 go_to（初始目标故意偏到 20/24）：
+
+```text
+初始：east 20.0, north 24.0
+Qwen 更新：约 28.0–28.5 / 32.2–33.0
+最终落地：27.74, 32.62
+水平误差：0.70 m
+dynamic_target 事件：9；stale：0；无 abort；landed
+报告：logs/tasks/report_20261024-161950-388.jsonl
+```
+
+**边界**：0.747 Hz 是 best-effort；若严格要求 2 Hz，需要并发 Qwen/独立采集，
+不能把当前实现说成 2 Hz。
+
 ## 5. 目标 3D 一致性（重要修复）
 
 同一橙色目标、同一位置、yaw 0/30/45/60/90，各跑一次 `qwen_target.py`：

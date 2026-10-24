@@ -89,6 +89,7 @@ class TaskExecutor(Node):
         self.declare_parameter('velocity_topic', '/offboard_bridge/velocity_setpoint')
         self.declare_parameter('heartbeat_topic', '/flight_heartbeat')
         self.declare_parameter('map_status_topic', '/local_map/status')
+        self.declare_parameter('dynamic_target_topic', '/qwen/target')
         self.declare_parameter('best_topic', '/perception/best')
         self.declare_parameter('report_path', '')
         self.declare_parameter('dry_run', True)
@@ -184,6 +185,10 @@ class TaskExecutor(Node):
         self._clearance_right = None
         self._frame_size = (0, 0)
         self._best_meta = {}
+        self._dynamic_target = None
+        self._dynamic_target_at = 0.0
+        self._dynamic_target_seen = False
+        self._last_dynamic_report = None
         self._findings_dir = str(self.get_parameter('findings_dir').value)
         self._persist_findings = bool(
             self.get_parameter('persist_findings').value)
@@ -248,6 +253,10 @@ class TaskExecutor(Node):
         self._transit_active = False
         self._transit_phase = ''
         self._transit_up_lcl = None
+        self._dynamic_target = None
+        self._dynamic_target_at = 0.0
+        self._dynamic_target_seen = False
+        self._last_dynamic_report = None
         self._detour_active = False
         self._detour_until = 0.0
         self._detour_direction = 1
@@ -308,6 +317,9 @@ class TaskExecutor(Node):
         self.create_subscription(
             String, str(self.get_parameter('best_meta_topic').value),
             self._on_best_meta, 10)
+        self.create_subscription(
+            PoseStamped, str(self.get_parameter('dynamic_target_topic').value),
+            self._on_dynamic_target, 10)
 
         self._open_report()
         self._load_task()
@@ -404,6 +416,12 @@ class TaskExecutor(Node):
             self._best_meta = json.loads(msg.data)
         except json.JSONDecodeError:
             pass
+
+    def _on_dynamic_target(self, msg: PoseStamped) -> None:
+        self._dynamic_target = (float(msg.pose.position.x),
+                                float(msg.pose.position.y))
+        self._dynamic_target_at = time.monotonic()
+        self._dynamic_target_seen = True
 
     def _on_battery(self, msg: BatteryStatus) -> None:
         remaining = float(msg.remaining)
@@ -544,6 +562,10 @@ class TaskExecutor(Node):
         self._transit_active = False
         self._transit_phase = ''
         self._transit_up_lcl = None
+        self._dynamic_target = None
+        self._dynamic_target_at = 0.0
+        self._dynamic_target_seen = False
+        self._last_dynamic_report = None
         self._detour_active = False
         self._detour_until = 0.0
         self._detour_direction = 1
@@ -946,9 +968,26 @@ class TaskExecutor(Node):
             if self._spec.coordinate_frame == 'relative':
                 east += self._origin_enu[0]
                 north += self._origin_enu[1]
-            self._run_goto(position, (east, north,
-                                      float(step.params.get('altitude_m',
-                                                            self._spec.altitude_m))))
+            target = (east, north,
+                      float(step.params.get('altitude_m', self._spec.altitude_m)))
+            if step.params.get('dynamic_target') and self._dynamic_target_seen:
+                age = time.monotonic() - self._dynamic_target_at
+                dx, dy = self._dynamic_target
+                # 一旦获得动态目标，就保持最后有效目标；过期只告警，不回退到
+                # 初始目标（否则 0.75 Hz 更新中断会把飞机拉回初始点）。
+                if inside_geofence((dx, dy, 0.0), self._origin_enu,
+                                   self._spec.geofence_radius_m, margin_m=0.0):
+                    target = (dx, dy, target[2])
+                    if (self._last_dynamic_report is None
+                            or math.hypot(dx - self._last_dynamic_report[0],
+                                          dy - self._last_dynamic_report[1]) > 0.2):
+                        self._last_dynamic_report = (dx, dy)
+                        self._report('dynamic_target', east_m=round(dx, 2),
+                                     north_m=round(dy, 2),
+                                     age_s=round(age, 2))
+                    if age > 4.0:
+                        self._report('dynamic_target_stale', age_s=round(age, 2))
+            self._run_goto(position, target)
         elif step.type == 'forward':
             if self._step_target is None:
                 if self._heading_enu is None:

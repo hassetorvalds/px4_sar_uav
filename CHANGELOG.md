@@ -1,3 +1,14 @@
+## [2026-10-24] Qwen 异步动态目标（best-effort 0.75Hz）
+
+- 新增 `scripts/qwen_target_pub.py`：发布 `/qwen/target`，低置信/目标不可见/跳变 >3 m 拒绝；
+- 执行器 `goto` 支持 `dynamic_target:true`，获得动态目标后保持最后有效目标，不回退初始；
+- 真机：初始 20/24，Qwen 更新到 ~28/32，最终 27.74/32.62，误差 0.70 m；
+  9 次更新、stale 0、无 abort、landed；
+- **实测 0.747 Hz，不是 2 Hz**；2 Hz 需要并发 Qwen/独立采集，当前不宣称；
+- 仍在代理目标、非视觉伺服、非 4 Hz。
+
+---
+
 ## [2026-10-24] Qwen 目标 3 样本稳定化 + go_to
 
 - 新增 `scripts/qwen_target_avg.py`：连续 3 次 Qwen/深度目标取中位数，spread > 2 m 拒绝；
