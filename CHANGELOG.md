@@ -1,3 +1,13 @@
+## [2026-10-24] Qwen 目标 3 样本稳定化 + go_to
+
+- 新增 `scripts/qwen_target_avg.py`：连续 3 次 Qwen/深度目标取中位数，spread > 2 m 拒绝；
+- 3 样本中位数 (28.43,32.53)，spread 0.25 m；
+- 真机到点 (28.16,32.22)，误差 0.41 m；无 detour/abort/landed；
+- 单次 0.27 m vs 稳定化 0.41 m：控制落点误差占主导，不宣称稳定化提高最终精度；
+- 仍非视觉伺服/4Hz；未改飞控/任务层。
+
+---
+
 ## [2026-10-24] 修复 Qwen 目标航向不同步；5 yaw 一致性
 
 - `qwen_target.py` 改用相机 `simGetCameraInfo().pose.orientation` 的航向；
