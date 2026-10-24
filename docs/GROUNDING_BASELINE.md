@@ -81,21 +81,48 @@ Qwen：pixel=(1199,270)，depth=32.53 m，proxy bbox 偏差=0.049，latency=673.
 **边界**：这是 **one-shot 目标点 → go_to**，不是视觉伺服，也不是 4 Hz 实时导航；
 目标仍是橙色代理物，不是人员。
 
-## 5. 决策与下一步
+## 5. 目标 3D 一致性（重要修复）
+
+同一橙色目标、同一位置、yaw 0/30/45/60/90，各跑一次 `qwen_target.py`：
+
+```text
+修复前：目标 east 从 +28.4 变到 -30.7（随 yaw 翻转）——不是 Qwen，
+        是 simSetVehiclePose 后 getMultirotorState().orientation 滞后，
+        而相机图像已按新姿态渲染，导致航向/图像不同步。
+
+修复：qwen_target.py 改用 simGetCameraInfo('0').pose.orientation 的航向。
+```
+
+修复后 5 个目标：
+
+| yaw | ENU (east, north) | heading_enu |
+|---|---|---|
+| 0 | 28.37, 32.69 | 90° |
+| 30 | 29.36, 30.83 | 60° |
+| 45 | 29.48, 31.42 | 45° |
+| 60 | 28.71, 31.95 | 30° |
+| 90 | 32.19, 30.71 | 0° |
+
+均值 **(29.62, 31.52)**；σ **(1.35, 0.73) m**；范围 x 3.8 m、y 2.0 m。
+说明 Qwen + 深度目标在 yaw 变化下**基本一致**，但仍有约 1–2 m 的 3D 不确定性；
+`go_to` 到点误差 0.27 m 是单次结果，不应解释成目标精度。
+
+## 6. 决策与下一步
 
 1. Qwen 列为 **grounding 候选 provider**，LightNav 保留为快速 baseline/fallback；
 2. one-shot `go_to` 已通过；下一步可做异步 2 Hz 目标更新，但不要假装 4 Hz；
 3. 若 Qwen 目标点稳定，再考虑视觉伺服；若需要 4 Hz，继续用 LightNav 或量化/更小模型；
 4. 目标必须过 WSL 校验（frame_seq/时效/围栏/keepout），失败就拒绝，不猜坐标。
 
-## 6. 证据
+## 7. 证据
 
 - 帧：`logs/grounding/frames/yaw000/030/045/060/090.png`（本地，不入库）；
 - LightNav：`logs/grounding/lightnav_20261024-151402.json/.csv`；
 - Qwen EN：`logs/grounding/qwen_20261024-154832.json/.csv`；
 - Qwen ZH：`logs/grounding/qwen_20261024-154843.json/.csv`；
 - 服务：LightNav 18080（GPU1）、Qwen 18081（GPU0，BF16，vLLM 0.19.1）；
-- `go_to`：`logs/tasks/report_20261024-155204-639.jsonl` 与 `.md`。
+- `go_to`：`logs/tasks/report_20261024-155204-639.jsonl` 与 `.md`；
+- 目标一致性：`logs/grounding/consistency3/yaw*.json`（本地，不入库）。
 
 **结论：Qwen 适合做 grounding 目标 provider；LightNav 继续做快速 baseline/fallback；
 下一步是 Qwen 目标适配器 + 1 轮 `go_to`，不是直接替换。**

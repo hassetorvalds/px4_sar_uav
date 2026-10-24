@@ -1,3 +1,13 @@
+## [2026-10-24] 修复 Qwen 目标航向不同步；5 yaw 一致性
+
+- `qwen_target.py` 改用相机 `simGetCameraInfo().pose.orientation` 的航向；
+  修复 teleport 后 vehicle orientation 滞后导致目标 ENU 随 yaw 翻转；
+- 5 个 yaw 目标均值 (29.6,31.5)，σ≈(1.35,0.73) m；范围 3.8/2.0 m；
+- 说明 Qwen 目标 3D 仍有 1–2 m 不确定性；不把单次 0.27 m 到点误差当目标精度；
+- 未改飞控/任务层；未再飞。
+
+---
+
 ## [2026-10-24] Qwen one-shot 目标 → go_to 真机
 
 - 新增 `scripts/qwen_target.py`：AirSim 图像 + 中文指令 → Qwen [0,1000] 点 → 深度/航向 → ENU；

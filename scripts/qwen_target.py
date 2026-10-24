@@ -89,8 +89,10 @@ def main():
     client.confirmConnection()
     state = client.getMultirotorState()
     pose = state.kinematics_estimated.position
-    orientation = state.kinematics_estimated.orientation
-    _, _, yaw_ned = airsim.to_eularian_angles(orientation)
+    # 以相机实际姿态为准：teleport 后 vehicle state 的 orientation 可能滞后，
+    # 而图像已经按新相机姿态渲染；用错航向会把目标 ENU 旋转到错误方向。
+    camera_info = client.simGetCameraInfo('0', vehicle_name='Drone1')
+    _, _, yaw_ned = airsim.to_eularian_angles(camera_info.pose.orientation)
     position_enu = ned_to_enu(pose.x_val, pose.y_val, pose.z_val)
     heading_enu = ned_yaw_to_enu_yaw(yaw_ned)
 

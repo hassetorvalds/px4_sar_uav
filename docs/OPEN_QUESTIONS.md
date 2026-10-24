@@ -30,7 +30,7 @@
 | 6 | **起飞前机体周围净空检查** | `OPEN` | 曾从贴 TemplateCube 的落点起飞即碰撞；当前 arm 前只查状态/位置/preflight/failsafe/电池，不查机体周围净空 | 真实作业起飞安全 | 需要可用的近场障碍判据（地面点会干扰），否则不做假检查 |
 | 7 | **VLM `source=vlm` 的 JSON 路径** | `BLOCKED` | 模型仍是点预测器，不产可靠 JSON；`source=vlm` 的 `area_cover` 已按服务器要求 `OPERATOR_REQUIRED` 拒绝；当前 `--remote-intent` 用手写 operator SemanticIntent | 模型自动生成任务的能力；不影响任务层/Action | 等模型侧 JSON 约束解码；不要把 mock/手写当 VLM |
 | 8 | **SAR Demo v0 代理目标检测可靠性** | `OPEN` | 3 轮同一指令：搜索 8/8、无 abort、均落地；代理目标 2/3 命中、finding 2/3（轮3 miss）。目标为橙色物，**非人员检测** | 影响 Demo 可重复性；不影响任务/飞行链路 | 调 scan 时长/检测阈值/点位；先离线评估再跑少量真机；不要用单轮成功掩盖 2/3 |
-| 9 | **VLM grounding provider 选择** | `PARTIAL` | Qwen3-VL-8B 同帧 offline：EN/ZH 15/15、平均误差 0.026/0.030、稳态 ~470 ms；LightNav 0.456、122–164 ms。Qwen one-shot `go_to` 真机到点误差≈0.27 m、一次 detour、无 abort；**未做视觉伺服/4Hz** | 确定 Qwen 可做 one-shot 目标 provider，LightNav 保留快速 fallback | 异步 2 Hz/视觉伺服再评估；4Hz 仍用 LightNav 或量化 |
+| 9 | **VLM grounding provider 选择** | `PARTIAL` | Qwen3-VL-8B 同帧 offline：EN/ZH 15/15、平均误差 0.026/0.030、稳态 ~470 ms；LightNav 0.456、122–164 ms。Qwen one-shot `go_to` 真机到点误差≈0.27 m；5 yaw 目标一致性 σ≈(1.35,0.73) m；**未做视觉伺服/4Hz** | Qwen 可做 one-shot 目标 provider，LightNav 保留快速 fallback；目标仍有 1–2 m 不确定性 | 异步 2 Hz/视觉伺服再评估；4Hz 仍用 LightNav 或量化 |
 
 ---
 
