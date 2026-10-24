@@ -1,96 +1,101 @@
-# WSL → 服务器：v1.0 对齐进度 + 两个必须拍板的语义
+# WSL → 服务器：Qwen3-VL-8B 试部署 + 同帧 grounding 对比（LightNav 保留）
 
-> 收到 2026-10-20 答复（2026-10-21 整理）。路径按你们习惯即可，我们不再纠正文件名。
-> 本轮先把能落地的落了；真机数据因 AirSim 未启动暂时缺一轮。
+> 本轮只请求**并行试部署**，不要求替换现有 LightNav-0，也不要求改 `/navigate` 契约。
+> 服务状态按你们最新 `/health`（GPU1 ready）；我们这边只做离线帧评测，不飞。
 
-## 已落地（代码 + 自检）
+## 一、先同步 LightNav 基线（为什么还要试 Qwen）
 
-1. **SemanticIntent 1.0**
-   - `SemanticIntent` 校验/稳定错误码/编译已实现；
-   - `--remote-intent` 现在自动识别 SemanticIntent 1.0（有 `contract_version/task_type`），
-     编译成 TaskSpec；旧 IntentFrame 仍保留，但必须配自然语言，二者不混用；
-   - `area_cover` 目前需要 `constraints.area`（WSL 扩展：你们 1.0 只给了目标点，没有区域几何）；
-     等你们补正式字段后可直接对齐。
-2. **Finding 1.0**
-   - `schema/task/epoch/frame_seq/frame_size/first_seen_ros_ns/last_seen_ros_ns/
-     clock_source/pose_at_first_seen/revisit_of/discarded/discard_reason/history` 已落；
-   - 30 s **monotonic** 合并窗；半径按 label 可配（默认 3 m）；状态只升；
-   - `discarded` 独立终态，不改 status。
-3. **安全**
-   - 旧驱动 `legacy_no_overfly=True` 硬禁飞越；未知 `height_source` 直接 `ValueError`；
-   - `land`/`land_fast` bridge 2 s 去重；
-   - 外部 disarm → `LANDED_ELSEWHERE` → `external_land/DONE`，不再发落地；
-   - `task_executor_simcheck` 先探域，域不可达 exit 2。
-
-## 需要你们拍板
-
-### A. 终态后再 cancel 的 result
-
-ROS 2 Action 的状态机是：goal 进入终态（succeeded/aborted/canceled）后，
-`cancel_goal_async()` 只能拿到 cancel response，**不会再产生一条 result**。
-我们能保证的是：
-
-- cancel 只生效一次；
-- result 只发一次；
-- 终态后 cancel 返回终态/拒绝，不伪造新 result。
-
-如果你们坚持“终态后 cancel 也要回 result”，只能改接口，例如：
-
-- 加 `/mission/task_result` 服务（返回缓存的上一条 result）；
-- 或客户端先查 `/mission/status`，终态则不再 cancel。
-
-请选一个，或确认“终态 cancel 无新 result”可接受。
-
-### B. Finding `candidate`
-
-我们的 `best` 话题只在检测器 `hits >= 3` 后发布（多帧确认），
-所以第一条 finding 直接是 `confirmed`，没有单帧 `candidate`。
-如果你们要求“单帧 candidate → 多帧 confirmed”，需要再加一个候选话题；
-否则请确认“finding 入口即 confirmed”可接受。
-
-## 真机数据（2026-10-21）
-
-`--remote-intent` 已跑通一轮手写 SemanticIntent（operator，非模型 JSON）：
+我们用 5 张 AirSim 前视帧（2 m 高，yaw 0/30/45/60/90，橙色代理目标）
+对 LightNav-0 做了 3 次/帧的离线 `/navigate` 评测：
 
 ```text
-命令：scripts/fly_task.py --remote-intent examples/semantic_intent_area_cover_rel.json --execute
-area_cover 4×4 m、REL 2 m
-→ search_waypoint 8/8，area 16 m²
-→ coverage 64/64（100%），heatmap logs/coverage/coverage_20261021-191109.png
-→ pose_age 0.001 s，eph/epv 0.078/0.077 m
-→ landed，armed=false
-报告：logs/tasks/report_20261021-191101-802.jsonl
+延迟：122–164 ms（均值 133.4 ms）
+平均指向误差（归一化 L2）：0.456；范围 0.195–0.794
+9 次中 point 输出与橙色目标 bbox 中心偏差较大，常落到地面/非目标处
+结论：LightNav 适合做短时视觉导航 baseline，但不是目标级 grounding
 ```
 
-这一轮没有 VLM 的 `/navigate` 调用（模型仍不产 JSON），是 WSL 手写语义；
-等模型侧有 JSON 约束解码后再接 `source=vlm`。
+所以下一步不是“换掉 LightNav”，而是**同帧对比 Qwen3-VL-8B 的 grounding 质量**。
 
-## 其它
+## 二、请求：Qwen3-VL-8B 试部署（独立端口）
 
-- 覆盖 25% 重叠接受；我们默认路径间距仍可配，报告带高度/FOV/重叠/位姿误差；
-- 热力图 PNG + `pose_age/eph/epv` 已落；
-- Batch2 继续等高度 C 的稳定判定，不抢跑。
+请在不影响 LightNav 的前提下试部署 Qwen3-VL-8B（模型 ID/权重以你们实际可用为准）：
 
-## C 阶段 1（2026-10-21 本轮新增）
+1. **端口**：建议 `18081`，OpenAI-compatible `/v1/chat/completions`；
+   LightNav 继续在 `18080`，`/navigate` 契约不变；
+2. **图像输入**：接受 base64 JPEG + 中文/英文文本指令；
+3. **不要**要求它输出 TaskSpec JSON；本轮只验证 bbox/point/相对方位等 grounding；
+4. **失败不强行**：若 24GB 总显存无法稳定承载，直接回报失败/量化选项，
+   不要让 Qwen 挤掉 LightNav。
 
-旧驱动已加 `height_gate_mode=legacy|c_map_rel`（默认 legacy；C 用
-`map_z - cluster_top_z`，与 PX4/AirSim 高度解耦），并记录
-`frame_id/anchor_id/transform_id/phase/px4_z/airsim_z/map_z`。
-
-注入簇实飞（不依赖真实结构）：
+### 请回报这些信息
 
 ```text
-A 档 top=1.0 m：px4=2.38 airsim=3.38 map=2.38 gap=1.38
-                → overflyable=True，overflyable=1，landed
-B 档 top=5.0 m：px4=2.37 airsim=3.45 map=2.37 gap=-2.63
-                → overflyable=False → SCAN → land
-日志：logs/2026-10-21/c_A4_top1_driver.log / c_B2_top5_driver.log
-CSV ：logs/2026-10-21/c_A4_top1.csv / c_B2_top5.csv
+- GPU 型号、总显存、当前空闲（nvidia-smi）
+- vLLM 版本；是否原生支持 Qwen3-VL 图像输入
+- 实际模型 ID / 权重路径 / license
+- dtype（bf16/fp16/awq...）、max_model_len、gpu_memory_utilization
+- 启动命令（脱敏即可）
+- GET /v1/models 与 /health 的返回
+- 单张 AirSim 图 + 中文/英文指令的示例响应
+- 单并发 p50/p95 延迟、峰值显存；连续 10 次是否有 503/崩溃
 ```
 
-模型级 ±0.5 m 偏移：common_drift_invariant=true、px4_only_drift_invariant=true；
-取证 `logs/height_gate/c_validation_20261021-195034.json`。
+> 你们 `/health` 显示 GPU1 free 约 36.9GB，但项目约束写 24GB；请以**实际总显存**为准。
+> 若总显存是 24GB，8B BF16 + KV cache 很可能吃紧，请优先尝试量化/限制
+> `max_model_len`/并发；仍不稳定就停，保留 LightNav。
 
-**边界**：±0.5 m 偏移目前是模型级，不是真实 PX4 偏移注入；阶段 2（真实低/高结构各 1 轮）未做。
-Batch2a 可按 legacy/no-overfly 基线开跑，但必须标 `height_gate=legacy_no_overfly`、
-`overflyable=not_exercised`；不与 C 并表。
+参考启动形态（不是硬性命令，按 vLLM 实际版本调整）：
+
+```bash
+# 计划示例，未在你们机器上验证
+vllm serve <Qwen3-VL-8B 模型ID> --port 18081 \
+  --dtype bfloat16 --max-model-len 8192 \
+  --gpu-memory-utilization 0.5
+```
+
+## 三、对比协议（WSL 侧执行，不飞）
+
+- 帧：同一批 AirSim `logs/grounding/frames/yaw*.png`（5 张，橙色代理目标）；
+- 指令：同一组英文 + 中文（例如“go to the orange ball ahead” / “飞到前方橙色目标”）；
+- 指标：
+  1. 指向点 vs 橙色目标 bbox 中心的归一化 L2；
+  2. 输出可解析率（point/bbox/action）；
+  3. 单并发 p50/p95 延迟；
+  4. 中文成功率；
+  5. 显存/稳定性；
+- 不要求 Qwen 产 TaskSpec；不要求它替代几何覆盖规划；
+- 不跑真机；不接飞控；不与 C/Batch2a 混跑。
+
+## 四、选择规则
+
+```text
+Qwen 明显优于 LightNav（误差/中文/可解析）且延迟/显存可接受
+  → 作为候选 provider，LightNav 保留为 fallback；
+Qwen 只在英文好、中文差
+  → 先做中→英适配，不直接切；
+Qwen 显存/延迟不可接受
+  → 保留 LightNav，Qwen 只做离线研究；
+```
+
+**本轮不切换默认 provider**；等对比数据出来再定。
+
+## 五、边界
+
+- 不改 `/navigate`；不要求服务器发起任务或反向控制；
+- 不让 VLM 直接产 TaskSpec；`source=vlm` 的 `area_cover` 仍拒绝；
+- Cosmos-Reason2-8B 不在 24GB 约束下本轮评估（官方最低 32GB/Hopper-Blackwell）；
+- Openfly/Molmo 暂不部署；先把 Qwen 对比做干净；
+- 不烧真机、不跑 Batch2a、不引入 Replay。
+
+## 六、需要你们回复的最小集
+
+```text
+1. Qwen3-VL-8B 能否在独立端口起来：yes/no
+2. 实际 GPU 总显存 / vLLM 版本 / 模型 ID
+3. /v1/models + 一张图的示例响应
+4. 单并发 p50/p95 + 峰值显存
+5. 若起不来：卡在哪（显存/版本/权重/license）
+```
+
+我们拿到 endpoint 后，用同一 manifest 做离线对比，再把数据发回。
