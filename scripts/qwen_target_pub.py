@@ -27,6 +27,8 @@ class QwenTargetPub(Node):
     def __init__(self):
         super().__init__('qwen_target_pub')
         self.declare_parameter('instruction', '飞到前方橙色目标附近')
+        self.declare_parameter('target_prompt', '')
+        self.declare_parameter('require_orange', True)
         self.declare_parameter('qwen_url',
                                'http://127.0.0.1:18081/v1/chat/completions')
         self.declare_parameter('topic', '/qwen/target')
@@ -38,6 +40,8 @@ class QwenTargetPub(Node):
         self.declare_parameter('max_spread_m', 2.0)
         self.declare_parameter('max_history', 5)
         self._instruction = str(self.get_parameter('instruction').value)
+        self._target_prompt = str(self.get_parameter('target_prompt').value).strip()
+        self._require_orange = bool(self.get_parameter('require_orange').value)
         self._url = str(self.get_parameter('qwen_url').value)
         self._geofence = float(self.get_parameter('geofence_m').value)
         self._hfov = float(self.get_parameter('hfov_deg').value)
@@ -77,14 +81,22 @@ class QwenTargetPub(Node):
         image.save(jpeg, format='JPEG', quality=85)
         dw, dh = int(depth_response.width), int(depth_response.height)
         depth = np.asarray(depth_response.image_data_float, dtype=float).reshape(dh, dw)
+        prompt = None
+        if self._target_prompt:
+            prompt = ('请定位图像中的“%s”，只输出 JSON：x、y 为 [0,1000] '
+                      '归一化坐标（左上原点），以及 confidence（0-1）。'
+                      '不要 markdown。' % self._target_prompt)
         u, v, confidence, latency = qwen_grounding(
-            self._url, jpeg.getvalue(), self._instruction, (width, height))
-        expected = orange_center(image)
-        if expected is None:
-            raise ValueError('orange target not visible')
-        proxy_error = math.hypot(u / width - expected[0], v / height - expected[1])
-        if proxy_error > 0.15:
-            raise ValueError(f'Qwen proxy error {proxy_error:.3f} > 0.15')
+            self._url, jpeg.getvalue(), self._instruction, (width, height),
+            prompt=prompt)
+        proxy_error = None
+        if self._require_orange:
+            expected = orange_center(image)
+            if expected is None:
+                raise ValueError('orange target not visible')
+            proxy_error = math.hypot(u / width - expected[0], v / height - expected[1])
+            if proxy_error > 0.15:
+                raise ValueError(f'Qwen proxy error {proxy_error:.3f} > 0.15')
         if confidence is not None and float(confidence) < 0.5:
             raise ValueError(f'Qwen confidence too low: {confidence}')
         depth_m = depth_patch_median(depth, u * dw / width, v * dh / height, radius=2)

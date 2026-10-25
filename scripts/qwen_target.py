@@ -40,8 +40,8 @@ def orange_center(image):
     return float(xs.mean() / image.width), float(ys.mean() / image.height)
 
 
-def qwen_grounding(url, image_bytes, instruction, size):
-    prompt = ZH_PROMPT if any('\u4e00' <= ch <= '\u9fff' for ch in instruction) else EN_PROMPT
+def qwen_grounding(url, image_bytes, instruction, size, prompt=None):
+    prompt = prompt or (ZH_PROMPT if any('\u4e00' <= ch <= '\u9fff' for ch in instruction) else EN_PROMPT)
     payload = json.dumps({
         'model': 'Qwen3-VL-8B-Instruct',
         'messages': [{'role': 'user', 'content': [

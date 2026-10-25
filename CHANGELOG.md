@@ -1,3 +1,13 @@
+## [2026-10-25] Qwen 通用搜索目标检测
+
+- `qwen_target_pub` 支持任意 `target_prompt`，可发布 `/perception/best`；
+- `require_orange=false` 时不依赖固定橙色 bbox，只用 Qwen 置信度/时序 spread/跳变；
+- 真机：搜索 8/8、扫描 20s、目标 3 次确认、2 findings、无 abort；
+  报告 `report_20261025-093438-842`；
+- 仍是橙色代理物，不是人员检测；没有 bbox 校验，误报风险高于颜色 backend。
+
+---
+
 ## [2026-10-25] Hybrid NL 支持搜索/扫描 + 视觉目标
 
 - `hybrid_parser` 复用 `parse_task` 的 search/scan 几何；

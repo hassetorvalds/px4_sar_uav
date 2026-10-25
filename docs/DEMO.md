@@ -141,6 +141,35 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 预期：`search_waypoint 1/8 … 8/8` → `scan_dwell`（45° 一步，停 1.5 s）
 → `target_confirmed world=[...]` → `scan_complete → done`。
 
+## 通用 Qwen 搜索目标检测（任意文本 prompt）
+
+不启动固定颜色/人员 backend，用 Qwen 按文本 prompt 检测，发布到
+`/perception/best`，复用 search/scan 的目标保持/finding/report：
+
+```bash
+# 1) Qwen 隧道 + 栈（不带 color detector）
+scripts/vlm_tunnel.sh start
+scripts/bringup_legacy.sh
+
+# 2) Qwen 通用检测器（prompt 可换成“红色屋顶/车辆/…”）
+python3 scripts/qwen_target_pub.py --ros-args \
+  -p topic:=/perception/best \
+  -p target_prompt:=橙色球 \
+  -p require_orange:=false -p rate_hz:=2.0
+
+# 3) 搜索/扫描
+FLY_TASK_CONFIRM=1 scripts/fly_task.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，扫描 20 秒，降落" \
+  --execute
+```
+
+验收：搜索 8/8、扫描 20 s、目标 3 次确认、2 个 finding、无 abort；
+报告 `logs/tasks/report_20261025-093438-842.md`。
+目标仍是橙色代理物，不是人员；`require_orange=false` 时没有颜色 bbox 校验，
+只有 Qwen 置信度/时序 spread/跳变约束。
+
+---
+
 ## Hybrid 自然语言任务（动作 + 视觉目标）
 
 一条中文指令同时包含动作序列和视觉目标：

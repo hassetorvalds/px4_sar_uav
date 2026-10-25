@@ -25,7 +25,7 @@
    - provider 策略：LightNav-0 作为现有 baseline；Qwen3-VL-8B 作为候选挑战者；
      Cosmos-Reason2-8B 官方最低 32GB/Hopper-Blackwell，**不满足当前 24GB 约束**；
      Openfly 只作为路径先验/研究参考，不承担覆盖保证；Molmo 作为 pointing 备选；
-   - 已完成 LightNav + Qwen3-VL-8B 同帧 grounding 对比（[GROUNDING_BASELINE](docs/GROUNDING_BASELINE.md)）：Qwen EN/ZH 平均误差 0.026/0.030，稳态约 470 ms；LightNav 0.456、约 133 ms。Qwen 列为 grounding 候选，LightNav 保留 fallback；Qwen one-shot `go_to` 真机已到点（误差约 0.27 m）；5 个 yaw 的目标 3D 一致性 σ≈1.35/0.73 m；3 样本中位数 spread 0.25 m、稳定化 go_to 到点 0.41 m；异步 dynamic go_to 到点 0.70–0.71 m（实测约 0.75Hz，非 2Hz；含 acquire/stale/围栏 abort）；Markdown 报告已含视觉目标来源/状态/失败分类/误差；真实 dynamic 失败路径已验证；入口 `scripts/run_qwen_nav.sh`（one-shot/dynamic）；Hybrid NL `scripts/fly_nl.py`（起飞/搜索/扫描/悬停 + 视觉目标）；
+   - 已完成 LightNav + Qwen3-VL-8B 同帧 grounding 对比（[GROUNDING_BASELINE](docs/GROUNDING_BASELINE.md)）：Qwen EN/ZH 平均误差 0.026/0.030，稳态约 470 ms；LightNav 0.456、约 133 ms。Qwen 列为 grounding 候选，LightNav 保留 fallback；Qwen one-shot `go_to` 真机已到点（误差约 0.27 m）；5 个 yaw 的目标 3D 一致性 σ≈1.35/0.73 m；3 样本中位数 spread 0.25 m、稳定化 go_to 到点 0.41 m；异步 dynamic go_to 到点 0.70–0.71 m（实测约 0.75Hz，非 2Hz；含 acquire/stale/围栏 abort）；Markdown 报告已含视觉目标来源/状态/失败分类/误差；真实 dynamic 失败路径已验证；入口 `scripts/run_qwen_nav.sh`（one-shot/dynamic）；Hybrid NL `scripts/fly_nl.py`（起飞/搜索/扫描/悬停 + 视觉目标）；Qwen 通用检测可发 `/perception/best`；
 2. **SAR Demo v0 可靠性**：代理目标 3 轮搜索均 8/8、无 abort，但检测命中 2/3；
    先做离线检测评测/参数调整，不把 2/3 说成可靠；
 3. **人员检测（后置）**：需要真实人员素材/模型与误报评估，等导航闭环稳定后再做；

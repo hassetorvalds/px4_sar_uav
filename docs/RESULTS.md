@@ -69,6 +69,7 @@
 | Qwen 动态失败路径 | ✅ 真机 | 无 provider：goto 后 3.1 s abort `dynamic_target_unavailable`，landed；报告状态/分类正确 |
 | Hybrid 自然语言任务 | ✅ 真机 | “起飞→飞到前方橙色目标→悬停3s→降落”；到点 0.21 m；步骤按指令顺序执行 |
 | Hybrid 搜索/扫描+目标 | ✅ 真机 | 搜索 8/8、扫描 10s、Qwen goto 到点 0.37 m、无 abort；legacy 无下视，覆盖 0/144 |
+| Qwen 通用搜索检测 | ✅ 真机 | 文本 prompt 发布 `/perception/best`；搜索 8/8、扫描 20s、目标 3 次确认、2 findings、无 abort |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
 | 通用任务执行（起飞/航点/悬停/返航/搜索） | ✅ 最小/前进/返航/小半径搜索均已飞验 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |
