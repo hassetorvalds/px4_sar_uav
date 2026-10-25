@@ -31,6 +31,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('require_orange', True)
         self.declare_parameter('verify_roi', False)
         self.declare_parameter('use_bbox', False)
+        self.declare_parameter('bbox_area_tolerance', 0.6)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
@@ -51,6 +52,8 @@ class QwenTargetPub(Node):
         self._require_orange = bool(self.get_parameter('require_orange').value)
         self._verify_roi = bool(self.get_parameter('verify_roi').value)
         self._use_bbox = bool(self.get_parameter('use_bbox').value)
+        self._bbox_area_tol = float(self.get_parameter('bbox_area_tolerance').value)
+        self._bbox_area_history = []
         self._last_bbox = None
         self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
         self._roi_tol = float(self.get_parameter('roi_tolerance_ratio').value)
@@ -70,6 +73,7 @@ class QwenTargetPub(Node):
         self._client.confirmConnection()
         self._history = []
         self._depth_history = []
+        self._bbox_area_history = []
         self._last_published = None
         self._locked_target = None
         self._busy = False
@@ -114,9 +118,25 @@ class QwenTargetPub(Node):
                 bbox, confidence, latency = qwen_bbox(
                     self._url, jpeg.getvalue(), self._instruction,
                     (width, height), prompt=bbox_prompt)
-                self._last_bbox = [round(float(v), 1) for v in bbox]
-                u = (bbox[0] + bbox[2]) / 2.0
-                v = (bbox[1] + bbox[3]) / 2.0
+                clipped = (bbox[0] <= 1.0 or bbox[1] <= 1.0
+                           or bbox[2] >= width - 1.0 or bbox[3] >= height - 1.0)
+                if clipped:
+                    # 截断 bbox 中心有偏；退回 Qwen 点，不拿裁边中心当目标。
+                    self._last_bbox = None
+                    u, v, confidence, latency = qwen_grounding(
+                        self._url, jpeg.getvalue(), self._instruction,
+                        (width, height), prompt=prompt)
+                else:
+                    area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+                    if self._bbox_area_history:
+                        if abs(area - self._bbox_area_history[-1]) / max(
+                                self._bbox_area_history[-1], 1.0) > self._bbox_area_tol:
+                            raise ValueError('bbox area changed too much')
+                    self._bbox_area_history.append(area)
+                    self._bbox_area_history = self._bbox_area_history[-5:]
+                    self._last_bbox = [round(float(v), 1) for v in bbox]
+                    u = (bbox[0] + bbox[2]) / 2.0
+                    v = (bbox[1] + bbox[3]) / 2.0
             except (KeyError, ValueError):
                 # 点预测 fallback：bbox 缺失时仍保留可用目标。
                 self._last_bbox = None
