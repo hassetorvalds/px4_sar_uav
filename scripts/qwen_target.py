@@ -72,6 +72,49 @@ def qwen_grounding(url, image_bytes, instruction, size, prompt=None):
     return x / 1000.0 * size[0], y / 1000.0 * size[1], data.get('confidence'), latency
 
 
+BBOX_ZH_PROMPT = ('请定位图像中的“%s”，输出 JSON：bbox=[x1,y1,x2,y2]，'
+                  '坐标归一化到 [0,1000]，以及 confidence。只输出 JSON。')
+
+
+def qwen_bbox(url, image_bytes, instruction, size, prompt=None):
+    prompt = prompt or ('请定位图像中的目标，输出 JSON：bbox=[x1,y1,x2,y2]，'
+                        '坐标归一化到 [0,1000]，以及 confidence。只输出 JSON。')
+    payload = json.dumps({
+        'model': 'Qwen3-VL-8B-Instruct',
+        'messages': [{'role': 'user', 'content': [
+            {'type': 'text', 'text': prompt + '\n' + instruction},
+            {'type': 'image_url', 'image_url': {
+                'url': 'data:image/jpeg;base64,' +
+                       base64.b64encode(image_bytes).decode('ascii')}},
+        ]}],
+        'temperature': 0.0, 'max_tokens': 160,
+    }).encode('utf-8')
+    request = urllib.request.Request(
+        url, data=payload, method='POST',
+        headers={'Content-Type': 'application/json'})
+    started = time.monotonic()
+    with urllib.request.urlopen(request, timeout=20) as response:
+        body = response.read().decode('utf-8')
+    latency = (time.monotonic() - started) * 1000.0
+    content = json.loads(body)['choices'][0]['message']['content']
+    content = re.sub(r'^```(?:json)?\s*|```$', '', content.strip(),
+                     flags=re.IGNORECASE).strip()
+    start, end = content.find('{'), content.rfind('}')
+    if start < 0 or end <= start:
+        raise ValueError(f'Qwen 没有返回 bbox JSON：{content[:160]!r}')
+    data = json.loads(content[start:end + 1])
+    raw = [float(v) for v in data['bbox']]
+    if len(raw) != 4 or not all(0.0 <= v <= 1000.0 for v in raw):
+        raise ValueError(f'bbox 越界/格式错误：{raw}')
+    x1, y1, x2, y2 = raw
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError(f'bbox 宽高无效：{raw}')
+    width, height = size
+    bbox = [x1 / 1000.0 * width, y1 / 1000.0 * height,
+            x2 / 1000.0 * width, y2 / 1000.0 * height]
+    return bbox, data.get('confidence'), latency
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--instruction', default='飞到前方橙色目标附近')

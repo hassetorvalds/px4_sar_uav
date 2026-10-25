@@ -1,3 +1,14 @@
+## [2026-10-25] Qwen bbox 接入通用搜索
+
+- `qwen_target.py` 增加 `qwen_bbox`：输出 [0,1000] bbox；
+- `qwen_target_pub` 支持 `use_bbox=true`，bbox 中心作为目标；bbox 缺失退回点；
+- `fly_nl.py` 自动 detector 启用 bbox；
+- 离线 5 帧 bbox IoU 0.50–0.64；真机搜索 3 次确认、无 abort；
+  贴边 bbox 被裁，中心约 1.4m 偏移，finding #2 revisit；
+- 不是人员检测。
+
+---
+
 ## [2026-10-25] 通用目标跨帧稳定性门
 
 - `qwen_target_pub` 增加 `stable_hits=3`：累计 3 个样本才发布；

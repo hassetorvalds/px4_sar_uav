@@ -20,7 +20,7 @@ from rclpy.node import Node
 from perception.geometry import (CameraIntrinsics, depth_patch_median,
                                  pixel_to_world_enu)
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
-from qwen_target import orange_center, qwen_grounding
+from qwen_target import orange_center, qwen_bbox, qwen_grounding
 
 
 class QwenTargetPub(Node):
@@ -30,6 +30,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('target_prompt', '')
         self.declare_parameter('require_orange', True)
         self.declare_parameter('verify_roi', False)
+        self.declare_parameter('use_bbox', False)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
@@ -49,6 +50,8 @@ class QwenTargetPub(Node):
         self._target_prompt = str(self.get_parameter('target_prompt').value).strip()
         self._require_orange = bool(self.get_parameter('require_orange').value)
         self._verify_roi = bool(self.get_parameter('verify_roi').value)
+        self._use_bbox = bool(self.get_parameter('use_bbox').value)
+        self._last_bbox = None
         self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
         self._roi_tol = float(self.get_parameter('roi_tolerance_ratio').value)
         self._url = str(self.get_parameter('qwen_url').value)
@@ -100,10 +103,31 @@ class QwenTargetPub(Node):
             prompt = ('请定位图像中的“%s”，只输出 JSON：x、y 为 [0,1000] '
                       '归一化坐标（左上原点），以及 confidence（0-1）。'
                       '不要 markdown。' % self._target_prompt)
-        u, v, confidence, latency = qwen_grounding(
-            self._url, jpeg.getvalue(), self._instruction, (width, height),
-            prompt=prompt)
-        if self._verify_roi and not (
+        if self._use_bbox:
+            try:
+                bbox_prompt = None
+                if self._target_prompt:
+                    bbox_prompt = ('请定位图像中的“%s”，只输出 JSON：'
+                                   'bbox=[x1,y1,x2,y2]，坐标归一化到 [0,1000]，'
+                                   '以及 confidence。不要 markdown。'
+                                   % self._target_prompt)
+                bbox, confidence, latency = qwen_bbox(
+                    self._url, jpeg.getvalue(), self._instruction,
+                    (width, height), prompt=bbox_prompt)
+                self._last_bbox = [round(float(v), 1) for v in bbox]
+                u = (bbox[0] + bbox[2]) / 2.0
+                v = (bbox[1] + bbox[3]) / 2.0
+            except (KeyError, ValueError):
+                # 点预测 fallback：bbox 缺失时仍保留可用目标。
+                self._last_bbox = None
+                u, v, confidence, latency = qwen_grounding(
+                    self._url, jpeg.getvalue(), self._instruction,
+                    (width, height), prompt=prompt)
+        else:
+            u, v, confidence, latency = qwen_grounding(
+                self._url, jpeg.getvalue(), self._instruction, (width, height),
+                prompt=prompt)
+        if not self._use_bbox and self._verify_roi and not (
                 0.15 * width < u < 0.85 * width
                 and 0.15 * height < v < 0.85 * height):
             self.get_logger().info('target near image border; skip ROI verify',
@@ -200,7 +224,7 @@ class QwenTargetPub(Node):
             self._last_publish = time.monotonic()
             self.get_logger().info(
                 f'Qwen target=({mx:.2f},{my:.2f}) spread={spread:.2f} '
-                f'lat={latency:.0f}ms conf={confidence}',
+                f'lat={latency:.0f}ms conf={confidence} bbox={self._last_bbox}',
                 throttle_duration_sec=1.0)
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warn(f'目标采样失败：{type(exc).__name__}: {exc}',

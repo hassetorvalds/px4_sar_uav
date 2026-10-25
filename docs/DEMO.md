@@ -195,9 +195,12 @@ python3 scripts/fly_nl.py \
 额外：`verify_roi=true` 会裁 ROI 二次问 Qwen；目标贴近画面边缘
 （<15% 或 >85%）时跳过 crop 验证，避免裁掉目标。
 检测器还要求 `stable_hits=3` 且深度变化 ≤3 m 才发布。
+`fly_nl.py` 自动 detector 现在用 `use_bbox=true`：Qwen 返回 bbox，
+取 bbox 中心作为目标；bbox 缺失时退回点。
 
-复测：搜索 8/8、扫描 20s、3 次确认、无 abort；finding #1/#2 坐标均为
-(28.95,31.27)，#2 为 revisit；报告 `report_20261025-095900-340`。
+bbox 离线 IoU：5 帧 0.50–0.64。真机 bbox 搜索：3 次确认、无 abort；
+贴边 bbox 会被裁到图像边界，中心仍有约 1.4 m 偏移（finding #2 revisit）；
+报告 `report_20261025-100401-423`。
 
 ---
 

@@ -113,7 +113,8 @@ def main():
              '-p', 'topic:=/perception/best',
              '-p', f'target_prompt:={search_prompt}',
              '-p', 'require_orange:=false',
-             '-p', 'verify_roi:=true',
+             '-p', 'verify_roi:=false',
+             '-p', 'use_bbox:=true',
              '-p', 'lock_radius_m:=2.0',
              '-p', f'instruction:={args.instruction}'],
             env=env, stdout=detector_log, stderr=subprocess.STDOUT)
