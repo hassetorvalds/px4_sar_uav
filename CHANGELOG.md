@@ -1,3 +1,13 @@
+## [2026-10-25] Qwen 自然语言导航入口
+
+- 新增 `scripts/run_qwen_nav.sh`：`--target-only` / one-shot / `--dynamic`；
+- dynamic 自动起 `qwen_target_pub` 并等待 `/qwen/target`，退出时清理；
+- 入口不替代任务层：VLM 只 grounding，TaskSpec/PX4 offboard 仍由本地层；
+- 目标-only 生成 (28.43,32.53) TaskSpec；完整 one-shot 真机到点 0.39 m；
+- 报告补上 one-shot 的初始 goto 目标/最终误差路径。
+
+---
+
 ## [2026-10-25] 报告明确 VLM 只做 grounding
 
 - “视觉目标”段增加：VLM=Qwen3-VL-8B，只做图像 grounding，不直接输出飞控速度；

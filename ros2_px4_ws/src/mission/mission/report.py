@@ -102,6 +102,17 @@ def _visual_target_section(events, spec, done, aborts):
                 target = None
         if target:
             lines.append(f'- Qwen 目标：{_world(target)}')
+        elif goto and goto.get('east_m') is not None and goto.get('north_m') is not None:
+            east = float(goto.get('east_m'))
+            north = float(goto.get('north_m'))
+            takeoff = next((event for event in events
+                            if event.get('event') == 'takeoff_complete'), None)
+            origin = (takeoff or {}).get('position_enu') or [0.0, 0.0]
+            if spec.get('coordinate_frame') == 'relative':
+                east += float(origin[0])
+                north += float(origin[1])
+            target = (east, north)
+            lines.append(f'- Qwen 目标（初始 goto）：{_world(target)}')
 
     if aborts:
         lines.append(f'- 中止：{aborts[-1].get("reason", "?")}')

@@ -141,6 +141,26 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 预期：`search_waypoint 1/8 … 8/8` → `scan_dwell`（45° 一步，停 1.5 s）
 → `target_confirmed world=[...]` → `scan_complete → done`。
 
+## Qwen 自然语言导航（one-shot / dynamic）
+
+前提：Qwen 18081 隧道、PX4/ROS 栈已启动；目标仍为橙色代理物。
+
+```bash
+# 只生成目标与 TaskSpec，不飞
+scripts/run_qwen_nav.sh --target-only "飞到前方橙色目标附近"
+
+# one-shot：Qwen 取目标 → go_to → 报告
+scripts/run_qwen_nav.sh "飞到前方橙色目标附近"
+
+# dynamic：后台 2Hz 标称 provider（实测约 0.75Hz）更新目标
+scripts/run_qwen_nav.sh --dynamic "飞到前方橙色目标附近"
+```
+
+边界：Qwen 只做图像 grounding；ENU/TaskSpec/PX4 offboard 由本地层负责；
+dynamic 不是 4Hz 视觉伺服；目标丢失/超时会 abort，不猜初始目标。
+
+---
+
 ## SAR Demo v0：搜索 + 代理目标检测 + 报告
 
 > **边界**：目标物是场景里的橙色物体，不算人员检测；报告会显式写
