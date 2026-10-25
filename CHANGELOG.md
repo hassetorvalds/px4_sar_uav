@@ -1,3 +1,14 @@
+## [2026-10-25] 通用搜索 ROI 二次确认
+
+- `qwen_target_pub` 增加 `verify_roi`：首轮点裁 ROI 再问 Qwen；
+- 目标贴近画面边缘（<15%/>85%）跳过 crop，避免裁掉目标；
+- `fly_nl.py` 自动 detector 启用 `verify_roi=true`；
+- 真机：搜索 8/8、扫描 20s、3 次确认、无 abort；
+  finding #1/#2 均为 (28.89,31.41)，#2 revisit；报告 `report_20261025-095520-638`；
+- ROI 验证增加约 1.2–1.4 s/次；不是人员检测。
+
+---
+
 ## [2026-10-25] NL → target prompt → 通用检测器闭环
 
 - hybrid parser 从“寻找橙色球”提取 `target.prompt`，挂到 search；

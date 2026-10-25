@@ -192,6 +192,11 @@ python3 scripts/fly_nl.py \
 边界：detector 自动启动/清理；若 12 s 内没有目标发布，拒绝执行；
 仍需 Qwen 隧道；不是人员检测。
 
+额外：`verify_roi=true` 会裁 ROI 二次问 Qwen；目标贴近画面边缘
+（<15% 或 >85%）时跳过 crop 验证，避免裁掉目标。
+复测：搜索 8/8、扫描 20s、3 次确认、无 abort；finding #1/#2 坐标均为
+(28.89,31.41)，#2 为 revisit；报告 `report_20261025-095520-638`。
+
 ---
 
 ## Hybrid 自然语言任务（动作 + 视觉目标）

@@ -29,6 +29,9 @@ class QwenTargetPub(Node):
         self.declare_parameter('instruction', '飞到前方橙色目标附近')
         self.declare_parameter('target_prompt', '')
         self.declare_parameter('require_orange', True)
+        self.declare_parameter('verify_roi', False)
+        self.declare_parameter('roi_margin_ratio', 0.2)
+        self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
                                'http://127.0.0.1:18081/v1/chat/completions')
         self.declare_parameter('topic', '/qwen/target')
@@ -43,6 +46,9 @@ class QwenTargetPub(Node):
         self._instruction = str(self.get_parameter('instruction').value)
         self._target_prompt = str(self.get_parameter('target_prompt').value).strip()
         self._require_orange = bool(self.get_parameter('require_orange').value)
+        self._verify_roi = bool(self.get_parameter('verify_roi').value)
+        self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
+        self._roi_tol = float(self.get_parameter('roi_tolerance_ratio').value)
         self._url = str(self.get_parameter('qwen_url').value)
         self._geofence = float(self.get_parameter('geofence_m').value)
         self._hfov = float(self.get_parameter('hfov_deg').value)
@@ -92,6 +98,32 @@ class QwenTargetPub(Node):
         u, v, confidence, latency = qwen_grounding(
             self._url, jpeg.getvalue(), self._instruction, (width, height),
             prompt=prompt)
+        if self._verify_roi and not (
+                0.15 * width < u < 0.85 * width
+                and 0.15 * height < v < 0.85 * height):
+            self.get_logger().info('target near image border; skip ROI verify',
+                                   throttle_duration_sec=2.0)
+        elif self._verify_roi:
+            margin_x = max(width * self._roi_margin, 16.0)
+            margin_y = max(height * self._roi_margin, 16.0)
+            x1 = max(0, int(u - margin_x))
+            y1 = max(0, int(v - margin_y))
+            x2 = min(width, int(u + margin_x))
+            y2 = min(height, int(v + margin_y))
+            crop = image.crop((x1, y1, x2, y2))
+            crop_buf = io.BytesIO()
+            crop.save(crop_buf, format='JPEG', quality=85)
+            cu, cv, crop_conf, crop_latency = qwen_grounding(
+                self._url, crop_buf.getvalue(), self._instruction,
+                (crop.width, crop.height), prompt=prompt)
+            latency += crop_latency
+            full_cu, full_cv = x1 + cu, y1 + cv
+            offset = math.hypot(full_cu - u, full_cv - v)
+            tolerance = max(width, height) * self._roi_tol
+            if crop_conf is not None and float(crop_conf) < 0.5:
+                raise ValueError(f'ROI confidence too low: {crop_conf}')
+            if offset > tolerance:
+                raise ValueError(f'ROI point offset {offset:.1f}px > {tolerance:.1f}px')
         proxy_error = None
         if self._require_orange:
             expected = orange_center(image)
