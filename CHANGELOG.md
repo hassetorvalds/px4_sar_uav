@@ -1,3 +1,11 @@
+## [2026-10-25] 报告明确 VLM 只做 grounding
+
+- “视觉目标”段增加：VLM=Qwen3-VL-8B，只做图像 grounding，不直接输出飞控速度；
+- 控制方式写明：VLM 目标 → ENU 目标 → TaskSpec goto → PX4 offboard；
+- 避免把“VLM 辅助导航”误读成“VLM 直接飞”。
+
+---
+
 ## [2026-10-25] 视觉目标报告（来源/更新/误差）
 
 - Markdown 新增“视觉目标”段：来源、初始 goto、Qwen 采样/spread/延迟/像素/深度/bbox、

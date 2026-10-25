@@ -70,6 +70,9 @@ def _visual_target_section(events, spec, done, aborts):
     lines = ['', '## 视觉目标', '']
     source = spec.get('intent_source') or ('qwen_dynamic' if dynamic else 'qwen_grounding')
     lines.append(f'- 来源：{source}')
+    if str(source).startswith('qwen'):
+        lines.append('- VLM：Qwen3-VL-8B，只做图像 grounding，不直接输出飞控速度')
+    lines.append('- 控制方式：VLM 目标 → ENU 目标 → TaskSpec goto → PX4 offboard')
     if goto:
         lines.append(f'- 初始 goto：东 {_fmt(goto.get("east_m"))} m，'
                      f'北 {_fmt(goto.get("north_m"))} m')

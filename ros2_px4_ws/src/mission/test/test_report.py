@@ -119,5 +119,7 @@ def test_summarize_visual_dynamic_target(tmp_path):
     output = summarize(str(report))
     text = open(output, encoding='utf-8').read()
     assert '## 视觉目标' in text
+    assert '只做图像 grounding' in text
+    assert 'TaskSpec goto → PX4 offboard' in text
     assert '动态更新：1 次' in text
     assert '到点误差（水平）：0.50 m' in text
