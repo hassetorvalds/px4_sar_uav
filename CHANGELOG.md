@@ -1,3 +1,14 @@
+## [2026-10-25] Hybrid NL：动作 + 视觉目标
+
+- 新增 `mission/hybrid_parser.py`：规则解析起飞/视觉目标/悬停/方向/降落，
+  视觉目标用 `visual_goto` 槽；限制“视觉目标紧接起飞”；
+- 新增 `scripts/fly_nl.py`：解析 → Qwen 目标填充 → TaskSpec → 可选执行；
+- 真机验收：“起飞到2米，飞到前方橙色目标附近，悬停3秒，降落”
+  目标 (28.59,31.98)，到点 0.21 m，报告 `report_20261025-092311-206.md`；
+- 新增 3 个 parser 单测；mission 150 passed，总计 286 passed / 2 skipped。
+
+---
+
 ## [2026-10-25] 真实 dynamic 失败路径
 
 - 不启动 Qwen provider，dynamic goto 后 3.1 s abort；

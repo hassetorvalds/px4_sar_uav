@@ -141,6 +141,24 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 预期：`search_waypoint 1/8 … 8/8` → `scan_dwell`（45° 一步，停 1.5 s）
 → `target_confirmed world=[...]` → `scan_complete → done`。
 
+## Hybrid 自然语言任务（动作 + 视觉目标）
+
+一条中文指令同时包含动作序列和视觉目标：
+
+```bash
+source scripts/env.sh
+python3 scripts/fly_nl.py \
+  "起飞到 2 米，飞到前方橙色目标附近，悬停 3 秒，降落" --execute
+```
+
+真机验收：目标 (28.59,31.98)，实际到点 0.21 m；报告
+`logs/tasks/report_20261025-092311-206.md`。
+
+边界：视觉目标必须紧接起飞；只支持一个视觉目标；仍为橙色代理物；
+不是 VLM 直接输出飞控速度。
+
+---
+
 ## Qwen 自然语言导航（one-shot / dynamic）
 
 前提：Qwen 18081 隧道、PX4/ROS 栈已启动；目标仍为橙色代理物。
