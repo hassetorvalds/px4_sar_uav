@@ -91,3 +91,33 @@ def test_summarize_multi_region_and_transit(tmp_path):
     assert '转场：1 段，合计 11.0 m' in text
     assert '| 1 | 20.0 | 8 | 80/80（100.0%） | 0 |' in text
     assert '| 2 | 16.0 | 6 | 60/64（93.8%） | 4 |' in text
+
+
+def test_summarize_visual_dynamic_target(tmp_path):
+    report = tmp_path / 'report.jsonl'
+    events = [
+        {'t': 0.0, 'event': 'task_accepted',
+         'summary': 'Qwen dynamic go_to',
+         'spec': {'altitude_m': 2.0, 'altitude_frame': 'REL',
+                  'max_speed_mps': 0.5, 'geofence_radius_m': 50.0,
+                  'intent_source': 'qwen_grounding',
+                  'steps': [
+                      {'type': 'takeoff', 'params': {'altitude_m': 2.0}},
+                      {'type': 'goto', 'params': {'east_m': 1.0,
+                                                  'north_m': 2.0,
+                                                  'dynamic_target': True}},
+                      {'type': 'land', 'params': {}},
+                  ]}},
+        {'t': 1.0, 'event': 'dynamic_target', 'east_m': 3.0,
+         'north_m': 4.0, 'age_s': 0.1},
+        {'t': 2.0, 'event': 'done', 'position_enu': [3.5, 4.0, -0.2],
+         'commands': []},
+    ]
+    with open(report, 'w', encoding='utf-8') as handle:
+        for event in events:
+            handle.write(json.dumps(event) + '\n')
+    output = summarize(str(report))
+    text = open(output, encoding='utf-8').read()
+    assert '## 视觉目标' in text
+    assert '动态更新：1 次' in text
+    assert '到点误差（水平）：0.50 m' in text

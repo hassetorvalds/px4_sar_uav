@@ -8,6 +8,7 @@
 
 import argparse
 import json
+import math
 import os
 import time
 
@@ -48,6 +49,66 @@ def _world(value):
     if not value:
         return '—'
     return '(' + ', '.join(f'{float(v):.2f}' for v in value) + ')'
+
+def _note(notes, key):
+    for note in notes or []:
+        if isinstance(note, str) and note.startswith(key + '='):
+            return note.split('=', 1)[1]
+    return None
+
+
+def _visual_target_section(events, spec, done, aborts):
+    """Qwen/动态目标的可解释结果；没有视觉目标时返回空。"""
+    notes = spec.get('notes') or []
+    dynamic = [event for event in events if event.get('event') == 'dynamic_target']
+    if not dynamic and not any(str(note).startswith('qwen_') for note in notes):
+        return []
+
+    steps = spec.get('steps') or []
+    goto = next((step.get('params') or {} for step in steps
+                 if step.get('type') == 'goto'), {})
+    lines = ['', '## 视觉目标', '']
+    source = spec.get('intent_source') or ('qwen_dynamic' if dynamic else 'qwen_grounding')
+    lines.append(f'- 来源：{source}')
+    if goto:
+        lines.append(f'- 初始 goto：东 {_fmt(goto.get("east_m"))} m，'
+                     f'北 {_fmt(goto.get("north_m"))} m')
+    for key, label in (('qwen_samples', 'Qwen 采样'), ('qwen_spread_m', '目标 spread'),
+                       ('qwen_latency_ms', 'Qwen 延迟'), ('pixel', '目标像素'),
+                       ('depth_m', '目标深度'), ('proxy_error_norm', 'bbox 偏差')):
+        value = _note(notes, key)
+        if value is not None:
+            suffix = {'qwen_spread_m': ' m', 'qwen_latency_ms': ' ms',
+                      'depth_m': ' m'}.get(key, '')
+            lines.append(f'- {label}：{value}{suffix}')
+
+    target = None
+    if dynamic:
+        last = dynamic[-1]
+        target = (float(last.get('east_m')), float(last.get('north_m')))
+        ages = [event.get('age_s') for event in dynamic if event.get('age_s') is not None]
+        lines.append(f'- 动态更新：{len(dynamic)} 次；最后目标 {_world(target)}'
+                     + (f'，age {_fmt(min(ages), 2)} s' if ages else ''))
+    else:
+        median = _note(notes, 'qwen_median_enu')
+        if median:
+            try:
+                east, north = (float(item) for item in median.split(','))
+                target = (east, north)
+            except (TypeError, ValueError):
+                target = None
+        if target:
+            lines.append(f'- Qwen 目标：{_world(target)}')
+
+    if aborts:
+        lines.append(f'- 中止：{aborts[-1].get("reason", "?")}')
+    if target and done and done.get('position_enu'):
+        position = done['position_enu']
+        error = math.hypot(float(position[0]) - target[0],
+                           float(position[1]) - target[1])
+        lines.append(f'- 最终位置：{_world(position)}')
+        lines.append(f'- 到点误差（水平）：{error:.2f} m')
+    return lines
 
 
 def summarize(report_path: str, intent_path: str = '', output_path: str = '') -> str:
@@ -183,6 +244,7 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
                          f'（t={item.get("t")} s）')
     if done and done.get('findings_path'):
         lines.append(f'- 发现物记录：`{done.get("findings_path")}`')
+    lines.extend(_visual_target_section(events, spec, done, aborts))
     if len(plans) > 1:
         lines.append('')
         lines.append('## 搜索区域')

@@ -127,6 +127,9 @@ dynamic_target 事件：9；stale：0；无 abort；landed
 **边界**：0.747 Hz 是 best-effort；若严格要求 2 Hz，需要并发 Qwen/独立采集，
 不能把当前实现说成 2 Hz。
 
+报告口径：Markdown 的“到点误差”按**最后动态目标**算（0.37 m）；
+本文前面的 0.70/0.71 m 是按**原始目标 28.43/32.53**算；两者口径不同，均如实保留。
+
 **安全语义（2026-10-25 复测）**：
 
 - 动态 `goto` 3 s 内未获得目标 → `abort: dynamic_target_unavailable`，收工降落；
