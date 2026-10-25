@@ -32,7 +32,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **286 passed / 2 skipped**（vlm 45 / mission 150 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip） |
+| 单元测试 | ✅ | **287 passed / 2 skipped**（vlm 45 / mission 151 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -68,6 +68,7 @@
 | Qwen 自然语言入口 | ✅ 真机 | `run_qwen_nav.sh` one-shot：目标 (28.51,32.12)，最终 0.39 m；报告含来源/目标/误差 |
 | Qwen 动态失败路径 | ✅ 真机 | 无 provider：goto 后 3.1 s abort `dynamic_target_unavailable`，landed；报告状态/分类正确 |
 | Hybrid 自然语言任务 | ✅ 真机 | “起飞→飞到前方橙色目标→悬停3s→降落”；到点 0.21 m；步骤按指令顺序执行 |
+| Hybrid 搜索/扫描+目标 | ✅ 真机 | 搜索 8/8、扫描 10s、Qwen goto 到点 0.37 m、无 abort；legacy 无下视，覆盖 0/144 |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
 | 自然语言 → 任务（规则解析） | ✅ 规则解析 + 意图帧；VLM 未接 | `mission/task_parser.py` + `intent.py`：中英/全角/中文数字；`IntentFrame` 带 provenance/置信度/缺失；**本地事实优先**合并 VLM（`--remote-intent` 已验证拒绝改写） |
 | 通用任务执行（起飞/航点/悬停/返航/搜索） | ✅ 最小/前进/返航/小半径搜索均已飞验 | `task_executor.py` + `executor_core.py`：围栏/净空门/总时限/接管暂停；**命令 ACK 生命周期**；假 PX4 自检 4 场景 PASS |

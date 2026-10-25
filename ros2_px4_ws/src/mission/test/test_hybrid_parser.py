@@ -1,9 +1,6 @@
 """Hybrid NL 解析器单测。"""
 
-import pytest
-
 from mission.hybrid_parser import parse_hybrid_instruction
-from mission.task_spec import TaskError
 
 
 def test_visual_target_after_takeoff():
@@ -24,6 +21,19 @@ def test_visual_target_auto_takeoff_land():
     assert any('自动补降落' in note for note in parsed['notes'])
 
 
-def test_visual_target_must_follow_takeoff():
-    with pytest.raises(TaskError, match='视觉目标必须紧接起飞'):
-        parse_hybrid_instruction('起飞到 2 米，向北飞 5 米，飞到前方橙色目标附近，降落')
+def test_visual_target_after_direction():
+    parsed = parse_hybrid_instruction(
+        '起飞到 2 米，向北飞 5 米，飞到前方橙色目标附近，降落')
+    types = [step['type'] for step in parsed['steps']]
+    assert types == ['takeoff', 'goto', 'visual_goto', 'land']
+    assert parsed['visual_index'] == 2
+
+
+def test_search_scan_then_visual_target():
+    parsed = parse_hybrid_instruction(
+        '起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，扫描 10 秒，'
+        '飞到前方橙色目标附近，降落')
+    types = [step['type'] for step in parsed['steps']]
+    assert types == ['takeoff', 'search', 'scan', 'visual_goto', 'land']
+    assert parsed['visual_index'] == 3
+    assert parsed['steps'][2]['params']['seconds'] == 10.0

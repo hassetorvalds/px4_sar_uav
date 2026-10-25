@@ -1,3 +1,14 @@
+## [2026-10-25] Hybrid NL 支持搜索/扫描 + 视觉目标
+
+- `hybrid_parser` 复用 `parse_task` 的 search/scan 几何；
+- 支持“起飞→搜索→扫描→飞到前方橙色目标→降落”；
+- 视觉目标不再强制紧接起飞，但仍在起飞前从原点拍摄；
+- 真机：搜索 8/8、扫描 10s、Qwen goto 到点 0.37 m、无 abort；
+  报告 `report_20261025-092818-149`；
+- 单测 4 个；mission 151 passed，总计 287 passed / 2 skipped。
+
+---
+
 ## [2026-10-25] Hybrid NL：动作 + 视觉目标
 
 - 新增 `mission/hybrid_parser.py`：规则解析起飞/视觉目标/悬停/方向/降落，

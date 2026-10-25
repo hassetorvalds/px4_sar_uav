@@ -7,7 +7,8 @@
 import re
 
 from .task_parser import (_DIRECTIONS, _RE_DIR_DIST, _RE_FORWARD, _RE_HOVER,
-                          _RE_LAND, _RE_TAKEOFF, _RE_TAKEOFF_ALT, _clauses, _num)
+                          _RE_LAND, _RE_SCAN, _RE_SEARCH, _RE_TAKEOFF,
+                          _RE_TAKEOFF_ALT, _clauses, _num, parse_task)
 from .task_spec import TaskError
 
 _RE_VISUAL = re.compile(
@@ -38,6 +39,21 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
         if hover and ('悬停' in clause or '等待' in clause or 'hover' in clause.lower()):
             seconds = _num(hover.group('num')) if hover.group('num') else 5.0
             steps.append({'type': 'hover', 'params': {'seconds': seconds}})
+            continue
+        if _RE_SEARCH.search(clause) or _RE_SCAN.search(clause):
+            # 复用现有搜索几何/扫描参数，不复制 lawnmower 逻辑。
+            try:
+                parsed_clause = parse_task(clause)
+            except TaskError as exc:
+                raise TaskError(f'搜索/扫描子句解析失败：{clause!r}：{exc}') from exc
+            here = [step for step in parsed_clause.steps
+                    if step.type in ('search', 'scan')]
+            if not here:
+                raise TaskError(f'搜索/扫描子句没有产生动作：{clause!r}')
+            for step in here:
+                params = dict(step.params)
+                params['altitude_m'] = altitude
+                steps.append({'type': step.type, 'params': params})
             continue
         if _RE_VISUAL.search(clause):
             if visual_index is not None:
@@ -82,7 +98,7 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
     if steps[-1]['type'] != 'land':
         steps.append({'type': 'land', 'params': {}})
         notes.append('未显式说降落：已自动补降落')
-    if visual_index is not None and visual_index != 1:
-        raise TaskError('视觉目标必须紧接起飞；暂不支持先移动再找目标')
+    # 视觉目标可以在搜索/扫描后；Qwen 目标在起飞前从原点拍摄，
+    # 因此 TaskSpec 仍按相对起飞原点解释，不做“移动后重拍”。
     return {'steps': steps, 'visual_index': visual_index,
             'altitude_m': altitude, 'notes': notes, 'source_text': text}
