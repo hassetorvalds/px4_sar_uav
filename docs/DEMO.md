@@ -194,8 +194,10 @@ python3 scripts/fly_nl.py \
 
 额外：`verify_roi=true` 会裁 ROI 二次问 Qwen；目标贴近画面边缘
 （<15% 或 >85%）时跳过 crop 验证，避免裁掉目标。
+检测器还要求 `stable_hits=3` 且深度变化 ≤3 m 才发布。
+
 复测：搜索 8/8、扫描 20s、3 次确认、无 abort；finding #1/#2 坐标均为
-(28.89,31.41)，#2 为 revisit；报告 `report_20261025-095520-638`。
+(28.95,31.27)，#2 为 revisit；报告 `report_20261025-095900-340`。
 
 ---
 

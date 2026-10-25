@@ -42,6 +42,8 @@ class QwenTargetPub(Node):
         self.declare_parameter('geofence_m', 50.0)
         self.declare_parameter('max_spread_m', 2.0)
         self.declare_parameter('lock_radius_m', 2.0)
+        self.declare_parameter('stable_hits', 3)
+        self.declare_parameter('depth_gate_m', 3.0)
         self.declare_parameter('max_history', 5)
         self._instruction = str(self.get_parameter('instruction').value)
         self._target_prompt = str(self.get_parameter('target_prompt').value).strip()
@@ -54,6 +56,8 @@ class QwenTargetPub(Node):
         self._hfov = float(self.get_parameter('hfov_deg').value)
         self._max_spread = float(self.get_parameter('max_spread_m').value)
         self._lock_radius = float(self.get_parameter('lock_radius_m').value)
+        self._stable_hits = max(int(self.get_parameter('stable_hits').value), 1)
+        self._depth_gate = float(self.get_parameter('depth_gate_m').value)
         self._max_history = max(int(self.get_parameter('max_history').value), 1)
         self._pub = self.create_publisher(
             PoseStamped, str(self.get_parameter('topic').value), 10)
@@ -62,6 +66,7 @@ class QwenTargetPub(Node):
             port=int(self.get_parameter('airsim_port').value), timeout_value=10)
         self._client.confirmConnection()
         self._history = []
+        self._depth_history = []
         self._last_published = None
         self._locked_target = None
         self._busy = False
@@ -144,20 +149,33 @@ class QwenTargetPub(Node):
                               world[1] - position_enu[1])
         if distance > self._geofence:
             raise ValueError(f'target distance {distance:.1f} m > geofence')
-        return world, latency, confidence, proxy_error
+        return world, latency, confidence, proxy_error, float(depth_m)
 
     def _tick(self):
         if self._busy:
             return
         self._busy = True
         try:
-            world, latency, confidence, proxy_error = self._capture()
+            world, latency, confidence, proxy_error, depth_m = self._capture()
             if (self._lock_radius > 0.0 and self._locked_target is not None
                     and math.hypot(world[0] - self._locked_target[0],
                                    world[1] - self._locked_target[1]) > self._lock_radius):
                 raise ValueError('target jumped outside fixed lock radius')
+            if self._depth_history:
+                depth_median = statistics.median(self._depth_history)
+                if abs(depth_m - depth_median) > self._depth_gate:
+                    raise ValueError(
+                        f'depth jump {abs(depth_m - depth_median):.2f} m '
+                        f'> {self._depth_gate:.2f} m')
             self._history.append(tuple(float(v) for v in world))
             self._history = self._history[-self._max_history:]
+            self._depth_history.append(depth_m)
+            self._depth_history = self._depth_history[-self._max_history:]
+            if len(self._history) < self._stable_hits:
+                self.get_logger().info(
+                    f'稳定样本 {len(self._history)}/{self._stable_hits}，暂不发布',
+                    throttle_duration_sec=1.0)
+                return
             xs = [p[0] for p in self._history]
             ys = [p[1] for p in self._history]
             mx, my = statistics.median(xs), statistics.median(ys)
