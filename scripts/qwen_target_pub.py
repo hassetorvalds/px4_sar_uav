@@ -108,6 +108,10 @@ class QwenTargetPub(Node):
         world = pixel_to_world_enu(
             u, v, depth_m, CameraIntrinsics.from_hfov(width, height, self._hfov),
             heading_enu, position_enu)
+        distance = math.hypot(world[0] - position_enu[0],
+                              world[1] - position_enu[1])
+        if distance > self._geofence:
+            raise ValueError(f'target distance {distance:.1f} m > geofence')
         return world, latency, confidence, proxy_error
 
     def _tick(self):

@@ -1,3 +1,14 @@
+## [2026-10-25] NL → target prompt → 通用检测器闭环
+
+- hybrid parser 从“寻找橙色球”提取 `target.prompt`，挂到 search；
+- `fly_nl.py` 自动启动/清理 Qwen 通用检测器，发布 `/perception/best`；
+- 检测器 12 s 内无目标则拒绝执行；增加 target geofence 拒绝；
+- 真机：搜索 8/8、扫描 20s、目标 3 次确认、2 findings（#2 revisit）、无 abort；
+  报告 `report_20261025-094733-823`；
+- 新增 parser 单测；mission 152 passed，总计 288 passed / 2 skipped。
+
+---
+
 ## [2026-10-25] 通用搜索目标固定 anchor
 
 - `qwen_target_pub` 增加 `lock_radius_m`（默认 2.0）：首个有效目标固定 anchor，

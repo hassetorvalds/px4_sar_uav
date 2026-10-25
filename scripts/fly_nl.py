@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.request
 
 from mission.hybrid_parser import parse_hybrid_instruction
 
@@ -29,6 +30,15 @@ def qwen_target(instruction, out, qwen_url):
     return goto, (task.get('notes') or [])
 
 
+def _qwen_ready(url):
+    health = url.rsplit('/v1/', 1)[0] + '/v1/models'
+    try:
+        with urllib.request.urlopen(health, timeout=5) as response:
+            return response.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('instruction')
@@ -43,6 +53,12 @@ def main():
     steps = parsed['steps']
     notes = list(parsed['notes'])
     qwen_notes = []
+    search_prompt = None
+    for step in steps:
+        if step['type'] == 'search':
+            prompt = (step['params'].get('target') or {}).get('prompt')
+            if prompt:
+                search_prompt = prompt
     if parsed['visual_index'] is not None:
         stamp = time.strftime('%Y%m%d-%H%M%S')
         qwen_task = f'logs/tasks/nl_qwen_{stamp}.json'
@@ -84,10 +100,56 @@ def main():
 
     env = dict(os.environ)
     env['FLY_TASK_CONFIRM'] = '1'
-    completed = subprocess.run(
-        [sys.executable, 'scripts/fly_task.py', '--task-json', out, '--execute'],
-        env=env)
-    return completed.returncode
+    detector = None
+    detector_log = None
+    if search_prompt:
+        if not _qwen_ready(args.qwen_url):
+            print('[nl] 搜索目标 prompt 存在，但 Qwen 18081 不可达；拒绝执行', file=sys.stderr)
+            return 4
+        detector_log = open(f'logs/tasks/nl_detector_{time.strftime("%Y%m%d-%H%M%S")}.log',
+                            'w', encoding='utf-8')
+        detector = subprocess.Popen(
+            [sys.executable, '-u', 'scripts/qwen_target_pub.py', '--ros-args',
+             '-p', 'topic:=/perception/best',
+             '-p', f'target_prompt:={search_prompt}',
+             '-p', 'require_orange:=false',
+             '-p', 'lock_radius_m:=2.0',
+             '-p', f'instruction:={args.instruction}'],
+            env=env, stdout=detector_log, stderr=subprocess.STDOUT)
+        print(f'[nl] detector pid={detector.pid} log={detector_log.name}')
+        ready = False
+        deadline = time.time() + 12.0
+        while time.time() < deadline:
+            if detector.poll() is not None:
+                break
+            try:
+                with open(detector_log.name, encoding='utf-8') as handle:
+                    if 'Qwen target=' in handle.read():
+                        ready = True
+                        break
+            except OSError:
+                pass
+            time.sleep(0.5)
+        if not ready:
+            detector.terminate()
+            print(f'[nl] Qwen 检测器未在 12 s 内确认目标；'
+                  f'log={detector_log.name}', file=sys.stderr)
+            return 5
+        print(f'[nl] 通用检测器已启动，prompt={search_prompt!r}')
+    try:
+        completed = subprocess.run(
+            [sys.executable, 'scripts/fly_task.py', '--task-json', out, '--execute'],
+            env=env)
+        return completed.returncode
+    finally:
+        if detector is not None:
+            detector.terminate()
+            try:
+                detector.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                detector.kill()
+        if detector_log is not None:
+            detector_log.close()
 
 
 if __name__ == '__main__':

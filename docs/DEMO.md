@@ -174,6 +174,26 @@ finding #2 `revisit_of=1`；搜索/扫描/无 abort；
 
 ---
 
+## NL 驱动的通用搜索检测
+
+一条命令里说“寻找什么”，`fly_nl.py` 自动启动 Qwen 通用检测器，
+不启动固定 color detector：
+
+```bash
+source scripts/env.sh
+python3 scripts/fly_nl.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，寻找橙色球，扫描 20 秒，降落" \
+  --execute
+```
+
+验收：搜索 8/8、扫描 20 s、目标 3 次确认、2 个 finding（#2 `revisit_of=1`）、
+无 abort；报告 `logs/tasks/report_20261025-094733-823.md`。
+
+边界：detector 自动启动/清理；若 12 s 内没有目标发布，拒绝执行；
+仍需 Qwen 隧道；不是人员检测。
+
+---
+
 ## Hybrid 自然语言任务（动作 + 视觉目标）
 
 一条中文指令同时包含动作序列和视觉目标：

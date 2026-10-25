@@ -14,6 +14,20 @@ from .task_spec import TaskError
 _RE_VISUAL = re.compile(
     r'(?:飞到|飞向|前往|接近|靠近|去)\s*.*?(?:目标|物体|建筑|橙色|红色|画面|前方|那里|它)',
     re.IGNORECASE)
+_RE_TARGET_PROMPT = re.compile(
+    r'(?:寻找|查找|找一下|搜寻|find|look\s+for|search\s+for)\s*'
+    r'(?P<prompt>[^，,。；;]+)', re.IGNORECASE)
+
+
+def _target_prompt(clause: str):
+    match = _RE_TARGET_PROMPT.search(clause)
+    if not match:
+        return None
+    prompt = match.group('prompt').strip(' ，,。；;')
+    prompt = re.sub(r'^(一下|一个|那个)', '', prompt).strip()
+    if not prompt or prompt in ('区域', '范围'):
+        return None
+    return prompt
 
 
 def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
@@ -25,6 +39,7 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
     steps = []
     notes = []
     visual_index = None
+    pending_prompt = None
     for clause in _clauses(text):
         takeoff = _RE_TAKEOFF_ALT.search(clause)
         if takeoff:
@@ -42,17 +57,43 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
             continue
         if _RE_SEARCH.search(clause) or _RE_SCAN.search(clause):
             # 复用现有搜索几何/扫描参数，不复制 lawnmower 逻辑。
+            prompt = _target_prompt(clause)
             try:
                 parsed_clause = parse_task(clause)
-            except TaskError as exc:
-                raise TaskError(f'搜索/扫描子句解析失败：{clause!r}：{exc}') from exc
+            except TaskError:
+                # “寻找橙色球”只有目标、没有区域；作为 prompt 挂到 search。
+                if prompt and steps and steps[-1]['type'] == 'search':
+                    target = dict(steps[-1]['params'].get('target') or {})
+                    target['prompt'] = prompt
+                    steps[-1]['params']['target'] = target
+                    continue
+                if prompt:
+                    pending_prompt = prompt
+                    continue
+                raise
             here = [step for step in parsed_clause.steps
                     if step.type in ('search', 'scan')]
             if not here:
+                # “寻找橙色球”这类只给目标、不带区域的子句：挂到上一条 search
+                if prompt and steps and steps[-1]['type'] == 'search':
+                    target = dict(steps[-1]['params'].get('target') or {})
+                    target['prompt'] = prompt
+                    steps[-1]['params']['target'] = target
+                    continue
+                if prompt:
+                    pending_prompt = prompt
+                    continue
                 raise TaskError(f'搜索/扫描子句没有产生动作：{clause!r}')
             for step in here:
                 params = dict(step.params)
                 params['altitude_m'] = altitude
+                if step.type == 'search':
+                    target = dict(params.get('target') or {})
+                    used_prompt = prompt or pending_prompt
+                    if used_prompt:
+                        target['prompt'] = used_prompt
+                        pending_prompt = None
+                    params['target'] = target
                 steps.append({'type': step.type, 'params': params})
             continue
         if _RE_VISUAL.search(clause):
@@ -87,6 +128,8 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
         raise TaskError(
             f'未识别的子句：{clause!r}；支持：起飞/飞到前方目标/方向移动/悬停/降落')
 
+    if pending_prompt is not None:
+        raise TaskError(f'目标描述“{pending_prompt}”没有挂到搜索区域')
     if not steps:
         raise TaskError('没有识别出可执行动作')
     if steps[0]['type'] != 'takeoff':

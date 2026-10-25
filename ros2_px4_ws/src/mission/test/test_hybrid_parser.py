@@ -37,3 +37,11 @@ def test_search_scan_then_visual_target():
     assert types == ['takeoff', 'search', 'scan', 'visual_goto', 'land']
     assert parsed['visual_index'] == 3
     assert parsed['steps'][2]['params']['seconds'] == 10.0
+
+
+def test_search_target_prompt():
+    parsed = parse_hybrid_instruction(
+        '起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，'
+        '寻找橙色球，扫描 20 秒，降落')
+    search = next(step for step in parsed['steps'] if step['type'] == 'search')
+    assert search['params']['target']['prompt'] == '橙色球'
