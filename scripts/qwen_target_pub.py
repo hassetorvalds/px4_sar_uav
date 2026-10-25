@@ -38,6 +38,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('hfov_deg', 90.0)
         self.declare_parameter('geofence_m', 50.0)
         self.declare_parameter('max_spread_m', 2.0)
+        self.declare_parameter('lock_radius_m', 2.0)
         self.declare_parameter('max_history', 5)
         self._instruction = str(self.get_parameter('instruction').value)
         self._target_prompt = str(self.get_parameter('target_prompt').value).strip()
@@ -46,6 +47,7 @@ class QwenTargetPub(Node):
         self._geofence = float(self.get_parameter('geofence_m').value)
         self._hfov = float(self.get_parameter('hfov_deg').value)
         self._max_spread = float(self.get_parameter('max_spread_m').value)
+        self._lock_radius = float(self.get_parameter('lock_radius_m').value)
         self._max_history = max(int(self.get_parameter('max_history').value), 1)
         self._pub = self.create_publisher(
             PoseStamped, str(self.get_parameter('topic').value), 10)
@@ -55,6 +57,7 @@ class QwenTargetPub(Node):
         self._client.confirmConnection()
         self._history = []
         self._last_published = None
+        self._locked_target = None
         self._busy = False
         self._last_publish = 0.0
         rate = max(float(self.get_parameter('rate_hz').value), 0.5)
@@ -113,10 +116,10 @@ class QwenTargetPub(Node):
         self._busy = True
         try:
             world, latency, confidence, proxy_error = self._capture()
-            if (self._last_published is not None
-                    and math.hypot(world[0] - self._last_published[0],
-                                   world[1] - self._last_published[1]) > 3.0):
-                raise ValueError('target jump > 3 m')
+            if (self._lock_radius > 0.0 and self._locked_target is not None
+                    and math.hypot(world[0] - self._locked_target[0],
+                                   world[1] - self._locked_target[1]) > self._lock_radius):
+                raise ValueError('target jumped outside fixed lock radius')
             self._history.append(tuple(float(v) for v in world))
             self._history = self._history[-self._max_history:]
             xs = [p[0] for p in self._history]
@@ -138,6 +141,8 @@ class QwenTargetPub(Node):
             pose.pose.orientation.w = 1.0
             self._pub.publish(pose)
             self._last_published = (mx, my)
+            if self._locked_target is None:
+                self._locked_target = (mx, my)
             self._last_publish = time.monotonic()
             self.get_logger().info(
                 f'Qwen target=({mx:.2f},{my:.2f}) spread={spread:.2f} '

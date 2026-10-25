@@ -166,7 +166,11 @@ FLY_TASK_CONFIRM=1 scripts/fly_task.py \
 验收：搜索 8/8、扫描 20 s、目标 3 次确认、2 个 finding、无 abort；
 报告 `logs/tasks/report_20261025-093438-842.md`。
 目标仍是橙色代理物，不是人员；`require_orange=false` 时没有颜色 bbox 校验，
-只有 Qwen 置信度/时序 spread/跳变约束。
+只有 Qwen 置信度/时序 spread/固定 anchor（`lock_radius_m=2.0`）约束。
+
+加固定 anchor 后复测：目标 28.49/32.34，revisit 28.96/31.04（偏离 1.39 m），
+finding #2 `revisit_of=1`；搜索/扫描/无 abort；
+报告 `logs/tasks/report_20261025-094118-745.md`。
 
 ---
 

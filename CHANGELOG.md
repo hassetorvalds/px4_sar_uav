@@ -1,3 +1,14 @@
+## [2026-10-25] 通用搜索目标固定 anchor
+
+- `qwen_target_pub` 增加 `lock_radius_m`（默认 2.0）：首个有效目标固定 anchor，
+  后续偏离超限拒绝并保持 anchor，避免滚动漂移；
+- 复测：搜索 8/8、扫描 20s、目标 3 次确认、无 abort；
+  目标 28.49/32.34，revisit 28.96/31.04（偏离 1.39m），finding #2 `revisit_of=1`；
+  报告 `report_20261025-094118-745`；
+- 仍非人员检测；无 bbox 校验。
+
+---
+
 ## [2026-10-25] Qwen 通用搜索目标检测
 
 - `qwen_target_pub` 支持任意 `target_prompt`，可发布 `/perception/best`；
