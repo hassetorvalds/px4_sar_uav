@@ -90,6 +90,8 @@ class TaskExecutor(Node):
         self.declare_parameter('heartbeat_topic', '/flight_heartbeat')
         self.declare_parameter('map_status_topic', '/local_map/status')
         self.declare_parameter('dynamic_target_topic', '/qwen/target')
+        self.declare_parameter('dynamic_target_acquire_timeout_s', 3.0)
+        self.declare_parameter('dynamic_target_stale_timeout_s', 8.0)
         self.declare_parameter('best_topic', '/perception/best')
         self.declare_parameter('report_path', '')
         self.declare_parameter('dry_run', True)
@@ -189,6 +191,10 @@ class TaskExecutor(Node):
         self._dynamic_target_at = 0.0
         self._dynamic_target_seen = False
         self._last_dynamic_report = None
+        self._dynamic_target_acquire_timeout = float(
+            self.get_parameter('dynamic_target_acquire_timeout_s').value)
+        self._dynamic_target_stale_timeout = float(
+            self.get_parameter('dynamic_target_stale_timeout_s').value)
         self._findings_dir = str(self.get_parameter('findings_dir').value)
         self._persist_findings = bool(
             self.get_parameter('persist_findings').value)
@@ -257,6 +263,10 @@ class TaskExecutor(Node):
         self._dynamic_target_at = 0.0
         self._dynamic_target_seen = False
         self._last_dynamic_report = None
+        self._dynamic_target_acquire_timeout = float(
+            self.get_parameter('dynamic_target_acquire_timeout_s').value)
+        self._dynamic_target_stale_timeout = float(
+            self.get_parameter('dynamic_target_stale_timeout_s').value)
         self._detour_active = False
         self._detour_until = 0.0
         self._detour_direction = 1
@@ -566,6 +576,10 @@ class TaskExecutor(Node):
         self._dynamic_target_at = 0.0
         self._dynamic_target_seen = False
         self._last_dynamic_report = None
+        self._dynamic_target_acquire_timeout = float(
+            self.get_parameter('dynamic_target_acquire_timeout_s').value)
+        self._dynamic_target_stale_timeout = float(
+            self.get_parameter('dynamic_target_stale_timeout_s').value)
         self._detour_active = False
         self._detour_until = 0.0
         self._detour_direction = 1
@@ -970,23 +984,35 @@ class TaskExecutor(Node):
                 north += self._origin_enu[1]
             target = (east, north,
                       float(step.params.get('altitude_m', self._spec.altitude_m)))
-            if step.params.get('dynamic_target') and self._dynamic_target_seen:
-                age = time.monotonic() - self._dynamic_target_at
-                dx, dy = self._dynamic_target
-                # 一旦获得动态目标，就保持最后有效目标；过期只告警，不回退到
-                # 初始目标（否则 0.75 Hz 更新中断会把飞机拉回初始点）。
-                if inside_geofence((dx, dy, 0.0), self._origin_enu,
-                                   self._spec.geofence_radius_m, margin_m=0.0):
+            if step.params.get('dynamic_target'):
+                if not self._dynamic_target_seen:
+                    # 动态模式不允许拿初始目标“猜着飞”；超时直接收工。
+                    if now - self._step_started > self._dynamic_target_acquire_timeout:
+                        self._report('abort', reason='dynamic_target_unavailable')
+                        self._begin_land()
+                        return
+                else:
+                    age = now - self._dynamic_target_at
+                    dx, dy = self._dynamic_target
+                    if age > self._dynamic_target_stale_timeout:
+                        self._report('abort', reason='dynamic_target_stale',
+                                     age_s=round(age, 2))
+                        self._begin_land()
+                        return
+                    if not inside_geofence(
+                            (dx, dy, 0.0), self._origin_enu,
+                            self._spec.geofence_radius_m, margin_m=0.0):
+                        self._report('abort', reason='dynamic_target_out_of_geofence')
+                        self._begin_land()
+                        return
+                    # 一旦获得动态目标，就保持最后有效目标；不回退初始目标。
                     target = (dx, dy, target[2])
                     if (self._last_dynamic_report is None
                             or math.hypot(dx - self._last_dynamic_report[0],
                                           dy - self._last_dynamic_report[1]) > 0.2):
                         self._last_dynamic_report = (dx, dy)
                         self._report('dynamic_target', east_m=round(dx, 2),
-                                     north_m=round(dy, 2),
-                                     age_s=round(age, 2))
-                    if age > 4.0:
-                        self._report('dynamic_target_stale', age_s=round(age, 2))
+                                     north_m=round(dy, 2), age_s=round(age, 2))
             self._run_goto(position, target)
         elif step.type == 'forward':
             if self._step_target is None:

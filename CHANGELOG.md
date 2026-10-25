@@ -1,3 +1,13 @@
+## [2026-10-25] 动态目标安全语义 + 复测
+
+- 动态 `goto`：3 s 未获得目标 → abort；8 s 无更新 → abort；
+  目标出围栏 → abort；不再拿初始目标猜着飞；
+- 复测：初始 20/24 → Qwen ~28/32，到点 0.71 m，13 次更新，无 abort；
+- 报告 `logs/tasks/report_20261025-090841-673.jsonl`；
+- 仍 0.75Hz best-effort、非视觉伺服/4Hz、代理目标。
+
+---
+
 ## [2026-10-24] Qwen 异步动态目标（best-effort 0.75Hz）
 
 - 新增 `scripts/qwen_target_pub.py`：发布 `/qwen/target`，低置信/目标不可见/跳变 >3 m 拒绝；

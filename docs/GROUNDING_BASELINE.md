@@ -127,6 +127,14 @@ dynamic_target 事件：9；stale：0；无 abort；landed
 **边界**：0.747 Hz 是 best-effort；若严格要求 2 Hz，需要并发 Qwen/独立采集，
 不能把当前实现说成 2 Hz。
 
+**安全语义（2026-10-25 复测）**：
+
+- 动态 `goto` 3 s 内未获得目标 → `abort: dynamic_target_unavailable`，收工降落；
+- 已获得但 8 s 无更新 → `abort: dynamic_target_stale`；
+- 目标出围栏 → `abort: dynamic_target_out_of_geofence`；
+- 复测：到点 0.71 m、dynamic 13 次、无 abort；
+  报告 `logs/tasks/report_20261025-090841-673.jsonl`。
+
 ## 5. 目标 3D 一致性（重要修复）
 
 同一橙色目标、同一位置、yaw 0/30/45/60/90，各跑一次 `qwen_target.py`：
