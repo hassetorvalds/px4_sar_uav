@@ -1,3 +1,12 @@
+## [2026-10-25] 失败报告：目标状态 + 失败分类
+
+- “视觉目标”段增加目标状态：未获得/已过期/出围栏/已获得并更新/等待；
+- abort 时写失败分类（dynamic_target_unavailable/stale/out_of_geofence）；
+- 无 dynamic 事件但 dynamic_target 请求失败时也会生成视觉目标段；
+- 新增 abort 单测；mission 147 passed，总计 283 passed / 2 skipped。
+
+---
+
 ## [2026-10-25] Qwen 自然语言导航入口
 
 - 新增 `scripts/run_qwen_nav.sh`：`--target-only` / one-shot / `--dynamic`；

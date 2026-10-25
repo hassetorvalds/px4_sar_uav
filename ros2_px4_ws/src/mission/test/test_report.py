@@ -123,3 +123,24 @@ def test_summarize_visual_dynamic_target(tmp_path):
     assert 'TaskSpec goto → PX4 offboard' in text
     assert '动态更新：1 次' in text
     assert '到点误差（水平）：0.50 m' in text
+
+
+def test_summarize_visual_abort_unavailable(tmp_path):
+    report = tmp_path / 'report.jsonl'
+    events = [
+        {'t': 0.0, 'event': 'task_accepted',
+         'summary': 'Qwen dynamic go_to',
+         'spec': {'coordinate_frame': 'relative',
+                  'steps': [{'type': 'goto', 'params': {
+                      'east_m': 10.0, 'north_m': 10.0,
+                      'dynamic_target': True}}]}},
+        {'t': 3.0, 'event': 'abort',
+         'reason': 'dynamic_target_unavailable'},
+    ]
+    with open(report, 'w', encoding='utf-8') as handle:
+        for event in events:
+            handle.write(json.dumps(event) + '\n')
+    output = summarize(str(report))
+    text = open(output, encoding='utf-8').read()
+    assert '目标状态：未获得动态目标' in text
+    assert '失败分类：dynamic_target_unavailable' in text

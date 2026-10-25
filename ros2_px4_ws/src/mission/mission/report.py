@@ -61,12 +61,15 @@ def _visual_target_section(events, spec, done, aborts):
     """Qwen/动态目标的可解释结果；没有视觉目标时返回空。"""
     notes = spec.get('notes') or []
     dynamic = [event for event in events if event.get('event') == 'dynamic_target']
-    if not dynamic and not any(str(note).startswith('qwen_') for note in notes):
-        return []
-
     steps = spec.get('steps') or []
     goto = next((step.get('params') or {} for step in steps
                  if step.get('type') == 'goto'), {})
+    dynamic_requested = bool(goto.get('dynamic_target'))
+    abort_reason = aborts[-1].get('reason') if aborts else None
+    if (not dynamic and not dynamic_requested
+            and not str(abort_reason or '').startswith('dynamic_target')
+            and not any(str(note).startswith('qwen_') for note in notes)):
+        return []
     lines = ['', '## 视觉目标', '']
     source = spec.get('intent_source') or ('qwen_dynamic' if dynamic else 'qwen_grounding')
     lines.append(f'- 来源：{source}')
@@ -114,8 +117,21 @@ def _visual_target_section(events, spec, done, aborts):
             target = (east, north)
             lines.append(f'- Qwen 目标（初始 goto）：{_world(target)}')
 
+    if dynamic_requested or dynamic:
+        if abort_reason == 'dynamic_target_unavailable':
+            status = '未获得动态目标'
+        elif abort_reason == 'dynamic_target_stale':
+            status = '动态目标已过期'
+        elif abort_reason == 'dynamic_target_out_of_geofence':
+            status = '动态目标出围栏'
+        elif dynamic:
+            status = '已获得并持续更新'
+        else:
+            status = '等待动态目标'
+        lines.append(f'- 目标状态：{status}')
+
     if aborts:
-        lines.append(f'- 中止：{aborts[-1].get("reason", "?")}')
+        lines.append(f'- 失败分类：{abort_reason or "?"}')
     if target and done and done.get('position_enu'):
         position = done['position_enu']
         error = math.hypot(float(position[0]) - target[0],
