@@ -1,101 +1,123 @@
-# WSL → 服务器：Qwen3-VL-8B 试部署 + 同帧 grounding 对比（LightNav 保留）
+# WSL → 服务器：轻量 open-vocab bbox detector 试部署（Qwen/LightNav 保持不动）
 
-> 本轮只请求**并行试部署**，不要求替换现有 LightNav-0，也不要求改 `/navigate` 契约。
-> 服务状态按你们最新 `/health`（GPU1 ready）；我们这边只做离线帧评测，不飞。
+> 本轮只请求**并行试部署一个 bbox 检测器**，不替换 Qwen、不改 LightNav `/navigate`，
+> 不要求模型产出 TaskSpec，也不跑飞控/真机。
 
-## 一、先同步 LightNav 基线（为什么还要试 Qwen）
+## 一、为什么需要 bbox detector
 
-我们用 5 张 AirSim 前视帧（2 m 高，yaw 0/30/45/60/90，橙色代理目标）
-对 LightNav-0 做了 3 次/帧的离线 `/navigate` 评测：
-
-```text
-延迟：122–164 ms（均值 133.4 ms）
-平均指向误差（归一化 L2）：0.456；范围 0.195–0.794
-9 次中 point 输出与橙色目标 bbox 中心偏差较大，常落到地面/非目标处
-结论：LightNav 适合做短时视觉导航 baseline，但不是目标级 grounding
-```
-
-所以下一步不是“换掉 LightNav”，而是**同帧对比 Qwen3-VL-8B 的 grounding 质量**。
-
-## 二、请求：Qwen3-VL-8B 试部署（独立端口）
-
-请在不影响 LightNav 的前提下试部署 Qwen3-VL-8B（模型 ID/权重以你们实际可用为准）：
-
-1. **端口**：建议 `18081`，OpenAI-compatible `/v1/chat/completions`；
-   LightNav 继续在 `18080`，`/navigate` 契约不变；
-2. **图像输入**：接受 base64 JPEG + 中文/英文文本指令；
-3. **不要**要求它输出 TaskSpec JSON；本轮只验证 bbox/point/相对方位等 grounding；
-4. **失败不强行**：若 24GB 总显存无法稳定承载，直接回报失败/量化选项，
-   不要让 Qwen 挤掉 LightNav。
-
-### 请回报这些信息
+我们已实测 Qwen3-VL-8B 的 bbox 能力（不是纯点）：
 
 ```text
-- GPU 型号、总显存、当前空闲（nvidia-smi）
-- vLLM 版本；是否原生支持 Qwen3-VL 图像输入
-- 实际模型 ID / 权重路径 / license
-- dtype（bf16/fp16/awq...）、max_model_len、gpu_memory_utilization
-- 启动命令（脱敏即可）
-- GET /v1/models 与 /health 的返回
-- 单张 AirSim 图 + 中文/英文指令的示例响应
-- 单并发 p50/p95 延迟、峰值显存；连续 10 次是否有 503/崩溃
+5 张 AirSim 帧，橙色代理目标，Qwen bbox vs 颜色真值 IoU：0.50–0.64
+bbox 中心可做目标；bbox 缺失/截断时可退回点
 ```
 
-> 你们 `/health` 显示 GPU1 free 约 36.9GB，但项目约束写 24GB；请以**实际总显存**为准。
-> 若总显存是 24GB，8B BF16 + KV cache 很可能吃紧，请优先尝试量化/限制
-> `max_model_len`/并发；仍不稳定就停，保留 LightNav。
-
-参考启动形态（不是硬性命令，按 vLLM 实际版本调整）：
-
-```bash
-# 计划示例，未在你们机器上验证
-vllm serve <Qwen3-VL-8B 模型ID> --port 18081 \
-  --dtype bfloat16 --max-model-len 8192 \
-  --gpu-memory-utilization 0.5
-```
-
-## 三、对比协议（WSL 侧执行，不飞）
-
-- 帧：同一批 AirSim `logs/grounding/frames/yaw*.png`（5 张，橙色代理目标）；
-- 指令：同一组英文 + 中文（例如“go to the orange ball ahead” / “飞到前方橙色目标”）；
-- 指标：
-  1. 指向点 vs 橙色目标 bbox 中心的归一化 L2；
-  2. 输出可解析率（point/bbox/action）；
-  3. 单并发 p50/p95 延迟；
-  4. 中文成功率；
-  5. 显存/稳定性；
-- 不要求 Qwen 产 TaskSpec；不要求它替代几何覆盖规划；
-- 不跑真机；不接飞控；不与 C/Batch2a 混跑。
-
-## 四、选择规则
+但实际使用暴露了限制：
 
 ```text
-Qwen 明显优于 LightNav（误差/中文/可解析）且延迟/显存可接受
-  → 作为候选 provider，LightNav 保留为 fallback；
-Qwen 只在英文好、中文差
-  → 先做中→英适配，不直接切；
-Qwen 显存/延迟不可接受
-  → 保留 LightNav，Qwen 只做离线研究；
+- bbox 贴图像边缘会截断，中心偏移约 1.4 m；
+- 自动搜索启动时，边缘目标偶发天空/14 km 假点，被 geofence 拒绝；
+- 当前自动链路因此仍用「Qwen 点 + ROI 二次确认 + 3 样本/深度门」；
+- bbox 只作为可选手动模式，不敢设为默认。
 ```
 
-**本轮不切换默认 provider**；等对比数据出来再定。
+所以我们想要一个**专门的 open-vocab bbox detector**：给图像 + 文本 prompt，
+返回真正的 bbox，而不是继续从 Qwen 的点/bbox 里猜。
 
-## 五、边界
+## 二、请求部署
 
-- 不改 `/navigate`；不要求服务器发起任务或反向控制；
-- 不让 VLM 直接产 TaskSpec；`source=vlm` 的 `area_cover` 仍拒绝；
-- Cosmos-Reason2-8B 不在 24GB 约束下本轮评估（官方最低 32GB/Hopper-Blackwell）；
-- Openfly/Molmo 暂不部署；先把 Qwen 对比做干净；
-- 不烧真机、不跑 Batch2a、不引入 Replay。
-
-## 六、需要你们回复的最小集
+### 基本要求
 
 ```text
-1. Qwen3-VL-8B 能否在独立端口起来：yes/no
-2. 实际 GPU 总显存 / vLLM 版本 / 模型 ID
-3. /v1/models + 一张图的示例响应
-4. 单并发 p50/p95 + 峰值显存
-5. 若起不来：卡在哪（显存/版本/权重/license）
+- 独立端口：建议 18082（Qwen 18081、LightNav 18080 保持原样）
+- 输入：base64 JPEG + 文本 prompt（中文/英文都尽量支持）
+- 输出：bbox 列表 + score + label；坐标建议直接给像素，并带 frame_size
+- 只做检测：不产 TaskSpec、不接飞控、不发起任务
+- 失败/超时：返回明确错误，不要返回假框
 ```
 
-我们拿到 endpoint 后，用同一 manifest 做离线对比，再把数据发回。
+### 推荐接口（可按你们实现调整，但要稳定）
+
+```http
+POST /detect
+{
+  "image_b64": "...",
+  "prompt": "orange ball",
+  "meta": {"frame_seq": 0}
+}
+
+200 {
+  "frame_size": [1280, 720],
+  "boxes": [
+    {"x1": 556, "y1": 228, "x2": 695, "y2": 356,
+     "score": 0.82, "label": "orange ball"}
+  ],
+  "latency_ms": 85
+}
+```
+
+坐标请明确是**像素**还是归一化；我们更希望像素 + `frame_size`，避免 Qwen 的
+[0,1000] 口径混淆。
+
+### 候选模型（你们选，先核对 license/权重）
+
+```text
+优先：Grounding DINO（Swin-T/Tiny）——开放词检测、bbox 稳定
+备选：OWLv2 / OWL-ViT（HF transformers）——接口简单、开放词
+速度备选：YOLO-World（ultralytics）——快，但需核对 license
+不要求 vLLM；transformers/torch HTTP wrapper 即可
+```
+
+部署位置建议 **GPU1**（LightNav 当前约 11.5 GiB，GPU1 空闲约 36.9 GiB），
+不要挤占 Qwen GPU0 的 40.7 GiB 池；如果显存/依赖不允许，直接回报，不要强上。
+
+### 需要回报的最小集
+
+```text
+1. 模型 ID / 权重 / license
+2. 部署 GPU、显存占用、启动命令（脱敏）
+3. GET /health 或 /v1/models；POST /detect 示例响应
+4. 单张 AirSim 图 + "orange ball" 的 bbox 与 latency
+5. 单并发 p50/p95；连续 10 次是否 503/崩溃
+6. 若失败：卡在显存/依赖/权重/license 哪一步
+```
+
+## 三、验收对比（WSL 侧，不飞）
+
+用同一批 5 张 AirSim 帧（`logs/grounding/frames/yaw000/030/045/060/090.png`）：
+
+```text
+- bbox vs 橙色颜色真值 IoU（仅评测用）
+- 贴边目标是否仍给合理框
+- 任意 prompt 的可用性（orange ball / red roof / vehicle；人员后续）
+- 单并发 p50/p95
+- 与 Qwen bbox（IoU 0.50–0.64）对比
+```
+
+目标不是“换掉 Qwen”：
+
+```text
+Qwen：语义/点/ROI 二次确认继续保留
+open-vocab detector：提供稳定 bbox
+WSL：几何/围栏/anchor/finding 继续负责
+```
+
+## 四、边界
+
+- 不改 Qwen 18081、不改 LightNav 18080；
+- 不要求 detector 产 TaskSpec 或直接控制飞机；
+- 不跑 Batch2a、不跑 C、不引入 Replay；
+- 不做人员检测，本轮只验证通用 bbox；
+- 起不来就保留当前 Qwen 点+ROI，不伪造 bbox。
+
+## 五、请回复
+
+```text
+1. 能否在 18082 起 open-vocab bbox detector：yes/no
+2. 模型/license/GPU/显存/启动命令
+3. /detect 示例响应 + 一张 AirSim 图的 bbox/latency
+4. 单并发 p50/p95 + 10 次稳定性
+5. 起不来时具体卡点
+```
+
+我们拿到 endpoint 后，用同一批帧做 IoU/延迟对比，再把结果发回。
