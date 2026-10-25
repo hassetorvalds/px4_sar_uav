@@ -1,3 +1,12 @@
+## [2026-10-25] 真实 dynamic 失败路径
+
+- 不启动 Qwen provider，dynamic goto 后 3.1 s abort；
+- `dynamic_target_unavailable` → 收工降落，t=16.43 done；
+- 报告正确显示来源 qwen_dynamic、目标状态“未获得”、失败分类；
+- 修复：dynamic 未获得目标时不再把初始 goto 当 Qwen 目标、不显示虚假到点误差。
+
+---
+
 ## [2026-10-25] 失败报告：目标状态 + 失败分类
 
 - “视觉目标”段增加目标状态：未获得/已过期/出围栏/已获得并更新/等待；

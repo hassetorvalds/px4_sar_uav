@@ -142,5 +142,7 @@ def test_summarize_visual_abort_unavailable(tmp_path):
             handle.write(json.dumps(event) + '\n')
     output = summarize(str(report))
     text = open(output, encoding='utf-8').read()
+    assert '来源：qwen_dynamic' in text
     assert '目标状态：未获得动态目标' in text
     assert '失败分类：dynamic_target_unavailable' in text
+    assert '到点误差' not in text

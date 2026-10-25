@@ -71,7 +71,8 @@ def _visual_target_section(events, spec, done, aborts):
             and not any(str(note).startswith('qwen_') for note in notes)):
         return []
     lines = ['', '## 视觉目标', '']
-    source = spec.get('intent_source') or ('qwen_dynamic' if dynamic else 'qwen_grounding')
+    source = spec.get('intent_source') or (
+        'qwen_dynamic' if (dynamic or dynamic_requested) else 'qwen_grounding')
     lines.append(f'- 来源：{source}')
     if str(source).startswith('qwen'):
         lines.append('- VLM：Qwen3-VL-8B，只做图像 grounding，不直接输出飞控速度')
@@ -105,7 +106,8 @@ def _visual_target_section(events, spec, done, aborts):
                 target = None
         if target:
             lines.append(f'- Qwen 目标：{_world(target)}')
-        elif goto and goto.get('east_m') is not None and goto.get('north_m') is not None:
+        elif (not dynamic_requested and goto
+              and goto.get('east_m') is not None and goto.get('north_m') is not None):
             east = float(goto.get('east_m'))
             north = float(goto.get('north_m'))
             takeoff = next((event for event in events
@@ -132,7 +134,7 @@ def _visual_target_section(events, spec, done, aborts):
 
     if aborts:
         lines.append(f'- 失败分类：{abort_reason or "?"}')
-    if target and done and done.get('position_enu'):
+    if target and not aborts and done and done.get('position_enu'):
         position = done['position_enu']
         error = math.hypot(float(position[0]) - target[0],
                            float(position[1]) - target[1])

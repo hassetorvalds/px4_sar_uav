@@ -136,7 +136,11 @@ dynamic_target 事件：9；stale：0；无 abort；landed
 - 已获得但 8 s 无更新 → `abort: dynamic_target_stale`；
 - 目标出围栏 → `abort: dynamic_target_out_of_geofence`；
 - 复测：到点 0.71 m、dynamic 13 次、无 abort；
-  报告 `logs/tasks/report_20261025-090841-673.jsonl`。
+  报告 `logs/tasks/report_20261025-090841-673.jsonl`；
+- **真实失败路径**：不启动 provider，goto 后 3.1 s 触发
+  `dynamic_target_unavailable`，收工降落；报告
+  `logs/tasks/report_20261025-091931-992.jsonl` 正确显示
+  “目标状态：未获得 / 失败分类”，不再显示未使用目标的到点误差。
 
 ## 5. 目标 3D 一致性（重要修复）
 
