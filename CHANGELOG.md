@@ -1,3 +1,14 @@
+## [2026-10-25] Grounding DINO bbox 离线基线
+
+- 服务 18082：grounding-dino-tiny，GPU1，像素 bbox，英文 prompt；
+- 5 帧 orange ball：IoU 0.483–0.618（均值 0.548），延迟 166–183 ms；
+  Qwen bbox IoU 0.501–0.636（均值 0.569）；
+- 开放词 red roof/grey building 可用，vehicle 0 框；
+- 边缘 bbox 仍多包地面；暂不替换 Qwen 默认链路；
+- 文档 `docs/BBox_DINO.md`。
+
+---
+
 ## [2026-10-25] bbox 边缘/面积一致性；自动链路保留点+ROI
 
 - bbox 截断到图像边缘时不再取裁边中心，退回 Qwen 点；
