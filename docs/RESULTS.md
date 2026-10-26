@@ -15,7 +15,9 @@
 - **通用搜索检测**：文本 prompt → `/perception/best`；单 finding、revisit 合并、目标轨迹报告；
 - **DINO bbox**：5 帧 IoU 0.48–0.62，~170 ms；edge-aware 已验证；
 - **测试**：294 passed / 2 skipped（mission 158）；px4_offboard flake8 受沙箱 semaphore 限制；
-- **仍未做**：人员检测、视觉伺服/4Hz、VLM 任务级 JSON；C real 仅计划。
+- **仍未做**：人员检测、视觉伺服/4Hz、VLM 任务级 JSON；C real 仅计划；
+- **限制（OPEN #11）**：视觉测试固定机头；`goto` 未自动对齐航向，净空门只查前向；
+  不能把当前避障结果说成完整覆盖。
 
 ## 0. 证据口径（先读）
 

@@ -20,6 +20,12 @@
 | [COVERAGE.md](COVERAGE.md) | 下视覆盖热力图与指标 |
 | [REPLAY_PLAN.md](REPLAY_PLAN.md) | C real 级 Replay 计划（未实现） |
 
+## 当前最优先风险
+
+- **OPEN #11：固定机头 / 前向净空不覆盖航迹**。视觉测试用固定 yaw 让目标入镜；
+  `goto` 未自动对齐航向，净空门只看 heading 前向。下一步 P0 先做 heading alignment +
+  航迹方向净空，再做多物体泛化；不能把当前结果说成完整避障。
+
 ## 当前已验证（摘要）
 
 - **SAR Demo v0**：代理橙色目标 3 轮搜索 8/8、无 abort；检测命中 2/3（不是人员检测）。

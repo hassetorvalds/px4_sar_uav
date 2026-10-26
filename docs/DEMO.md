@@ -23,6 +23,9 @@ python3 scripts/visual_target.py --target-prompt cone --backend dino --standoff-
 边界：目标必须当前可见；DINO 英文 prompt；中文由 Qwen 翻译；检测/深度失败拒绝；
 不是人员检测；不是 VLM 直接输出飞控速度。
 
+**安全限制（OPEN #11）**：当前 `goto` 不会自动把机头转向目标；净空门只看机头前向。
+固定 yaw 测试只适用于“目标在机头前方”；侧向目标/侧障碍尚未验证。
+
 ---
 
 
