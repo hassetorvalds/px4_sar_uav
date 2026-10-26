@@ -406,3 +406,21 @@ pkill -f flight_supervisor || true
 | 首条 arm 依赖 0.5 s 静置 | `arm_settle_s` 已默认开启；否则首条 ACK 可能丢 | 若首条命令无 ACK，先看 `command_timeout` 与 DDS 订阅匹配 |
 | 实机电池检查 | SITL 无电池读数时按 unknown/warn | 实机设 `require_battery:=true` + `min_battery_ratio` |
 | 搜索步骤未飞验 | 起飞/悬停/降落、向前/返航已飞通；搜索航点尚未实飞 | 先小半径（r=3 m）验证，再放大 |
+
+
+## 其他物体导航 smoke（灰色建筑）
+
+用 DINO bbox 生成灰色建筑目标（不是橙色球）：
+
+```text
+目标：东 6.5 / 北 22.76
+实际：东 6.35 / 北 22.28
+误差：0.48 m
+abort：0
+landed：true
+```
+
+报告：`logs/tasks/report_20261026-124715-842.md`
+
+说明：建筑目标由 DINO bbox 中心 + depth 生成；右侧蓝色建筑中心距离
+51.7 m，超过本轮 50 m 围栏，未作为本轮飞点。
