@@ -1,3 +1,13 @@
+## [2026-10-26] Cone_5 独立物体导航测试
+
+- AirSim `Cone_5` ENU (-34.4,34.5)，距原点 48.7m；
+- DINO `cone` score 0.491、depth 47.31m，目标误差约 1.42m；
+- 直飞 bbox 中心：clearance_blocked、两次 detour、abort（距 cone≈2.2m）；
+- 3m standoff：成功完成，final 距 cone≈4.8m，无 abort；
+- 结论：可导航到物体附近，不能把目标点放在物体本体上。
+
+---
+
 ## [2026-10-26] 更正：灰色墙面 goto 不是物体导航
 
 - DINO 灰框落在建筑/墙面立面，不是独立物体；

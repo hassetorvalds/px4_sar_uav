@@ -425,3 +425,25 @@ landed：true
 说明：这只证明“DINO 选中的图像区域 → ENU → goto”可行，**不能**证明
 换独立物体导航成功；右侧蓝色建筑中心距离 51.7 m，超过 50 m 围栏，未飞。
 要验证独立物体，需要场景里另加一个非人员目标物（如蓝色方块/锥桶）。
+
+
+## 独立物体导航：Cone_5
+
+场景对象 `Cone_5`，ENU 约 (-34.4, 34.5)，距原点 48.7 m。
+
+```text
+DINO prompt=cone, threshold=0.4
+bbox score 0.491，depth 47.31 m
+目标误差约 1.42 m
+```
+
+结果：
+
+- 直接飞到 bbox 中心（距 cone 约 2.2 m）→ `clearance_blocked`，两次 detour 后 abort；
+- 加 **3 m standoff**（目标距 cone 约 3 m）→ 成功完成，final 距 cone 约 4.8 m，无 abort。
+
+报告：`logs/tasks/report_20261026-125540-224`（abort）、
+`logs/tasks/report_20261026-125824-922`（standoff 成功）。
+
+结论：**DINO 能检测并导航到独立物体附近，但不能把目标点放在物体本体上；
+净空门会在最后几米阻止。**
