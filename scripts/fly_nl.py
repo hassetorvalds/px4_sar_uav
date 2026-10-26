@@ -20,17 +20,27 @@ from mission.hybrid_parser import parse_hybrid_instruction
 
 def visual_target(instruction, target_prompt, backend, out,
                   qwen_url, dino_url, standoff_m, samples=3,
-                  max_spread_m=1.5):
-    script = ('scripts/visual_target_avg.py' if samples > 1
-              else 'scripts/visual_target.py')
-    cmd = [sys.executable, script,
-           '--instruction', instruction, '--target-prompt', target_prompt,
-           '--backend', backend, '--qwen-url', qwen_url,
-           '--dino-url', dino_url, '--standoff-m', str(standoff_m),
-           '--out', out]
-    if samples > 1:
-        cmd.extend(['--samples', str(samples),
-                    '--max-spread-m', str(max_spread_m)])
+                  max_spread_m=1.5, verify='qwen'):
+    if verify and verify != 'none':
+        script = 'scripts/visual_target_verify.py'
+        cmd = [sys.executable, script,
+               '--instruction', instruction, '--target-prompt', target_prompt,
+               '--primary', backend, '--verify', verify,
+               '--qwen-url', qwen_url, '--dino-url', dino_url,
+               '--standoff-m', str(standoff_m),
+               '--samples', str(samples),
+               '--max-spread-m', str(max_spread_m), '--out', out]
+    else:
+        script = ('scripts/visual_target_avg.py' if samples > 1
+                  else 'scripts/visual_target.py')
+        cmd = [sys.executable, script,
+               '--instruction', instruction, '--target-prompt', target_prompt,
+               '--backend', backend, '--qwen-url', qwen_url,
+               '--dino-url', dino_url, '--standoff-m', str(standoff_m),
+               '--out', out]
+        if samples > 1:
+            cmd.extend(['--samples', str(samples),
+                        '--max-spread-m', str(max_spread_m)])
     completed = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip()[-500:] or
@@ -95,6 +105,8 @@ def main():
     parser.add_argument('--standoff-m', type=float, default=3.0)
     parser.add_argument('--samples', type=int, default=3)
     parser.add_argument('--max-spread-m', type=float, default=1.5)
+    parser.add_argument('--verify-backend', choices=['none', 'qwen', 'dino'],
+                        default='qwen')
     parser.add_argument('--target-only', action='store_true')
     parser.add_argument('--qwen-url',
                         default='http://127.0.0.1:18081/v1/chat/completions')
@@ -129,7 +141,8 @@ def main():
         goto, visual_notes = visual_target(
             args.instruction, target_text, args.visual_backend, visual_task,
             args.qwen_url, args.dino_url, args.standoff_m,
-            samples=args.samples, max_spread_m=args.max_spread_m)
+            samples=args.samples, max_spread_m=args.max_spread_m,
+            verify=args.verify_backend)
         index = parsed['visual_index']
         steps[index] = {'type': 'goto', 'params': {
             'east_m': goto['east_m'], 'north_m': goto['north_m'],
@@ -137,6 +150,7 @@ def main():
         notes.append(f'visual_target={args.visual_backend}:{goto["east_m"]},{goto["north_m"]}')
         notes.append(f'visual_prompt={target_text}')
         notes.append(f'visual_samples={args.samples}')
+        notes.append(f'visual_verify={args.verify_backend}')
         notes.extend(visual_notes)
     else:
         notes.append('hybrid_text_only')

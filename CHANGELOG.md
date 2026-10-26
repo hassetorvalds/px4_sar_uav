@@ -1,3 +1,12 @@
+## [2026-10-26] fly_nl 默认 Qwen 第二意见
+
+- `fly_nl` 新增 `--verify-backend`，默认 qwen；
+- primary DINO 失败/分歧时自动采用 Qwen；
+- 红立方体 yaw90 target-only：selected=verify(Qwen)，target(21.21,5.60)；
+- `--verify-backend none` 可关闭；总计 300 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] Qwen 第二意见纠正红立方体误检
 
 - 新增 `scripts/visual_target_verify.py`：主 backend + Qwen 第二意见；
