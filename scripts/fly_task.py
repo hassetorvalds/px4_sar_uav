@@ -104,6 +104,8 @@ def main(argv=None):
                         help='检测到目标时不悬停（只记录）')
     parser.add_argument('--proxy-target', action='store_true',
                         help='标注为代理目标（非人员检测），写入报告')
+    parser.add_argument('--merge-revisits', action='store_true',
+                        help='窗口外同位置更新原 finding，不新建 revisit')
     parser.add_argument('--no-summary', action='store_true',
                         help='不生成 Markdown 证据页')
     parser.add_argument('--order-regions', action='store_true',
@@ -225,6 +227,8 @@ def main(argv=None):
         cmd += ['-p', 'hold_on_target:=false']
     if args.proxy_target:
         cmd += ['-p', 'target_demo_kind:=proxy']
+    if args.merge_revisits:
+        cmd += ['-p', 'findings_merge_revisits:=true']
     timeout = args.timeout or (spec.max_duration_s + 60.0)
     # 子进程不会自动带 ROS 环境：没找到 ros2 时用 `bash -c 'source env.sh && exec ...'`。
     if shutil.which('ros2') is None:

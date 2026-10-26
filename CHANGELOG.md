@@ -1,3 +1,14 @@
+## [2026-10-26] revisit 合并为单 finding
+
+- FindingsBook 增加 `merge_revisits`；窗口外同位置更新原 finding，不新建；
+- `fly_task --merge-revisits`，`fly_nl.py` 默认启用；
+- 真机 DINO 搜索：4 次确认，最终 **1 个 finding**（updates=4，history 保留），
+  无 abort，报告 `report_20261026-123500-449`；
+- 默认 Finding 1.0 行为不变（未开启时仍生成 revisit）。
+- 新增单测；mission 153 passed，总计 289 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 真实 DINO 边缘搜索验证
 
 - DINO backend：搜索 8/8、扫描 20s、3 次确认、0 abort；

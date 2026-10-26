@@ -103,6 +103,7 @@ class TaskExecutor(Node):
         self.declare_parameter('target_demo_kind', '')
         self.declare_parameter('findings_merge_radius_m', 3.0)
         self.declare_parameter('findings_merge_window_s', 30.0)
+        self.declare_parameter('findings_merge_revisits', False)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -152,6 +153,8 @@ class TaskExecutor(Node):
             self.get_parameter('target_demo_kind').value).strip()
         self._findings_window = float(
             self.get_parameter('findings_merge_window_s').value)
+        self._findings_merge_revisits = bool(
+            self.get_parameter('findings_merge_revisits').value)
         try:
             self._findings_radius_by_label = json.loads(
                 str(self.get_parameter('findings_radius_by_label').value or '{}'))
@@ -204,7 +207,8 @@ class TaskExecutor(Node):
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
-            task_id=self._task_id, epoch_id=self._epoch_id)
+            task_id=self._task_id, epoch_id=self._epoch_id,
+            merge_revisits=self._findings_merge_revisits)
         self._land_on_target = bool(self.get_parameter('land_on_target').value)
         self._target_hold_s = float(self.get_parameter('target_hold_s').value)
         self._clearance_stop = float(self.get_parameter('clearance_stop_m').value)
@@ -275,7 +279,8 @@ class TaskExecutor(Node):
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
-            task_id=self._task_id, epoch_id=self._epoch_id)
+            task_id=self._task_id, epoch_id=self._epoch_id,
+            merge_revisits=self._findings_merge_revisits)
         self._manual_override = False
         self._last_target_pose = None
         self._origin_enu = (0.0, 0.0, 0.0)
@@ -588,7 +593,8 @@ class TaskExecutor(Node):
         self._findings = FindingsBook(
             self._findings_radius, merge_window_s=self._findings_window,
             radius_by_label=self._findings_radius_by_label,
-            task_id=self._task_id, epoch_id=self._epoch_id)
+            task_id=self._task_id, epoch_id=self._epoch_id,
+            merge_revisits=self._findings_merge_revisits)
         self._land_command_sent = False
         self._external_land = False
         self._abort_reason = None

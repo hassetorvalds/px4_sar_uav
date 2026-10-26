@@ -91,13 +91,15 @@ class Finding:
 class FindingsBook:
     def __init__(self, merge_radius_m: float = 3.0,
                  merge_window_s: float = 30.0, radius_by_label=None,
-                 task_id: str = '', epoch_id: str = ''):
+                 task_id: str = '', epoch_id: str = '',
+                 merge_revisits: bool = False):
         self._radius = max(float(merge_radius_m), 0.1)
         self._window = max(float(merge_window_s), 0.0)
         self._radius_by_label = {str(k): max(float(v), 0.1)
                                  for k, v in (radius_by_label or {}).items()}
         self._task_id = task_id
         self._epoch_id = epoch_id
+        self._merge_revisits = bool(merge_revisits)
         self._items = []
         self._next_id = 1
 
@@ -135,7 +137,7 @@ class FindingsBook:
         same_place = item is not None and distance <= self._radius_for(label)
         in_window = (same_place
                      and float(t) - item.last_seen <= self._window)
-        if same_place and in_window:
+        if same_place and (in_window or self._merge_revisits):
             count = item.updates
             item.world_enu = tuple(
                 (item.world_enu[i] * count + world[i]) / (count + 1)
@@ -156,7 +158,8 @@ class FindingsBook:
                 item.discard_reason = discard_reason
             item.history.append({
                 't': round(float(t), 2), 'status': item.status,
-                'world_enu': [round(float(v), 2) for v in item.world_enu]})
+                'world_enu': [round(float(v), 2) for v in item.world_enu],
+                'revisit': not in_window})
             return item
 
         revisit_of = item.finding_id if same_place else 0

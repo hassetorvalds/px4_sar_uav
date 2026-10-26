@@ -166,7 +166,8 @@ def main():
         print(f'[nl] 通用检测器已启动，prompt={search_prompt!r}')
     try:
         completed = subprocess.run(
-            [sys.executable, 'scripts/fly_task.py', '--task-json', out, '--execute'],
+            [sys.executable, 'scripts/fly_task.py', '--task-json', out, '--execute',
+             '--merge-revisits'],
             env=env)
         return completed.returncode
     finally:

@@ -127,3 +127,14 @@ def test_entry_status_and_detector_hits():
     book.add_or_update(label='target', world_enu=(0, 0, 0), t=2.0,
                        detector_hits=5)
     assert book.to_dicts()[0]['detector_hits'] == 5
+
+
+def test_merge_revisits_updates_existing_finding():
+    book = FindingsBook(merge_radius_m=3.0, merge_window_s=30.0,
+                        merge_revisits=True)
+    first = book.add_or_update(label='target', world_enu=(10, 20, 0), t=1.0)
+    second = book.add_or_update(label='target', world_enu=(10.2, 20, 0), t=50.0)
+    assert second.finding_id == first.finding_id
+    assert second.updates == 2
+    assert len(book) == 1
+    assert second.history[-1]['revisit'] is True
