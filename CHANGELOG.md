@@ -1,3 +1,11 @@
+## [2026-10-26] fly_nl Qwen 第二意见端到端真机
+
+- 红立方体 yaw90 端到端：DINO 52m 失败 → Qwen selected；
+- target(21.21,5.53)、spread0.07m；final(20.82,5.49)、无abort；
+- 默认 Qwen 第二意见入口验证完成；总计 300 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] fly_nl 默认 Qwen 第二意见
 
 - `fly_nl` 新增 `--verify-backend`，默认 qwen；
