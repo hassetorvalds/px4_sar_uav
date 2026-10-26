@@ -1,3 +1,11 @@
+## [2026-10-26] LightNav 任意物体 grounding 负结果
+
+- 红立方体 yaw90 原始 `/navigate`：`apos_state=rot_left`、`x_norm/y_norm=null`、`opos_state=not_visible`；
+- 延迟约156ms；LightNav 是导航动作/可通行落点，不是物体 bbox/point；
+- 不作为任意物体 fallback；继续 DINO/Qwen；303 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 多物体一致性样本
 
 - orange ball：DINO/Qwen 分歧0.09m；

@@ -197,3 +197,18 @@ dynamic_target 事件：9；stale：0；无 abort；landed
 - `fly_nl` 目标槽：中文“锥桶” → Qwen 翻 `traffic cone` → DINO → 真机到点约 0.4 m；
 - dynamic acquire/stale/围栏 abort；revisit 合并；目标轨迹报告；
 - 仍不是人员检测/视觉伺服/4Hz。
+
+
+## 9. LightNav 作为“任意物体目标”的负结果（2026-10-26）
+
+红立方体 yaw90 帧，POST `/navigate`，instruction=`fly to the red cube`：
+
+```json
+{"pointing":{"x_norm":null,"y_norm":null,
+ "apos_state":"rot_left","opos_state":"not_visible"}}
+```
+
+- 延迟约 156 ms；
+- LightNav 输出的是导航动作/可通行落点，不是物体 bbox/point；
+- 对“任意物体 grounding”不适合做 fallback；任意物体继续用 DINO/Qwen。
+- LightNav 保留给整句导航/4Hz 路径，不混入物体目标 provider。
