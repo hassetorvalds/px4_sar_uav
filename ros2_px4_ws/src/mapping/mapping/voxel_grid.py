@@ -300,14 +300,17 @@ class VoxelGrid:
                                 vertical_tolerance_m: float = 0.6,
                                 vertical_down_tolerance_m: float = 0.25,
                                 min_distance_m: float = 0.0):
-        """返回 (前,左,右,left_valid,right_valid)；无点在锥内即 invalid。"""
+        """返回 (前,前左,前右,left_valid,right_valid)；侧锥 ±45°，落在前视 FOV 内。
+
+        纯 ±90° 侧向在 90° FOV 相机里永远看不到，不能当侧净空用。
+        """
         forward, _ = self.nearest_point_in_cone(
             origin_enu, heading_enu, half_angle_deg, max_distance,
             vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         left, left_delta = self.nearest_point_in_cone(
-            origin_enu, heading_enu + math.pi / 2, half_angle_deg,
+            origin_enu, heading_enu + math.pi / 4, half_angle_deg,
             max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         right, right_delta = self.nearest_point_in_cone(
-            origin_enu, heading_enu - math.pi / 2, half_angle_deg,
+            origin_enu, heading_enu - math.pi / 4, half_angle_deg,
             max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         return forward, left, right, left_delta is not None, right_delta is not None

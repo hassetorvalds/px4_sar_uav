@@ -167,3 +167,17 @@ def test_cluster_centroid_returns_height_range():
     assert z_min == pytest.approx(1.0, abs=0.3)
     assert z_max == pytest.approx(2.0, abs=0.3)
     assert span_h >= 0.5
+
+
+def test_clearance_profile_valid_sees_front_left_point():
+    grid = VoxelGrid(resolution=0.15, extent=8.0, height_min=-2.0, height_max=6.0,
+                     decay_s=5.0)
+    origin = (0.0, 0.0, 1.0)
+    # heading east, point at ~45° left/front (north-east)
+    grid.insert(np.array([[3.0, 3.0, 1.0]]), origin_enu=(0.0, 0.0, 0.0), now=0.0)
+    forward, left, right, left_valid, right_valid = grid.clearance_profile_valid(
+        origin, 0.0, half_angle_deg=30.0, max_distance=6.0,
+        vertical_tolerance_m=0.6, vertical_down_tolerance_m=0.25)
+    assert left_valid is True
+    assert left == pytest.approx(3.0 * math.sqrt(2.0), abs=0.3)
+    assert right_valid is False
