@@ -1,3 +1,12 @@
+## [2026-10-26] fly_nl 默认多帧视觉目标
+
+- `fly_nl.py` 增加 `--samples`（默认3）和 `--max-spread-m`；
+- samples>1 调 `visual_target_avg.py`，samples=1 保留单帧；
+- 锥桶 target-only：3帧 target(-31.43,31.24)，spread 0.00m；
+- 不读 AirSim 物体坐标；总计 300 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 多帧稳定视觉目标
 
 - 新增 `visual_target_avg.py`：多次 visual_target → 目标中位数 + spread 拒绝；

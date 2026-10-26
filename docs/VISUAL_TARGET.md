@@ -118,6 +118,10 @@ final=(27.07,27.92)
 python3 scripts/visual_target_avg.py \
   --target-prompt cone --backend dino --samples 3 --standoff-m 3 \
   --out logs/tasks/cone_avg_task.json
+
+# 自然语言入口默认 3 帧；--samples 1 可回退单帧
+python3 scripts/fly_nl.py "起飞到 2 米，飞到前方锥桶附近，悬停 2 秒，降落" \
+  --visual-backend dino --samples 3 --target-only
 ```
 
 锥桶实测：
