@@ -4,7 +4,7 @@
 > 当前仿真平台：**Windows 11 + UE4.27 + AirSim 1.8.1 + WSL2 Ubuntu 22.04 + ROS 2 Humble + PX4 1.18 + Micro XRCE-DDS Agent 2.4.2**
 >
 > **最近验证（2026-10-26）**：中文“飞到前方锥桶附近” → Qwen 翻译 → DINO bbox/depth/standoff → 真机到点约 0.4 m；
-> 通用搜索 8/8、扫描 20 s、单 finding、轨迹报告；DINO bbox IoU 0.48–0.62；297 passed / 2 skipped。
+> 通用搜索 8/8、扫描 20 s、单 finding、轨迹报告；DINO bbox IoU 0.48–0.62；298 passed / 2 skipped。
 > 历史验证（2026-10-18）：Action goal 提交完整任务（搜索 8/8 → 扫描 → 目标 → 对准 3.5° → 安全落地）；
 > findings `#1 target [36.19, 35.88, 5.73]` 已从 confirmed 升级为 inspected，并写入 Action result / Markdown；
 > 矩形覆盖搜索真机 6/6 航点（24 m²、22 m、预计 54 s）；
@@ -1870,7 +1870,7 @@ VLM
 ✅ 任意物体目标：中文 → Qwen 翻译 → DINO bbox/depth/standoff
 ✅ 通用搜索检测 → /perception/best → 单 finding / 轨迹报告
 ✅ dynamic 目标安全失败语义、revisit 合并、目标轨迹
-✅ 297 passed / 2 skipped（mission 161）
+✅ 298 passed / 2 skipped（mission 161）
 ```
 
 **当前主线（按优先级）**
@@ -1878,9 +1878,9 @@ VLM
 0. **P0：机头/航迹方向净空一致性**（OPEN #11，部分完成）
    - 已实现：`goto` 航向误差 >20° 零前向转向；真机横向 84°→0°、到点 0.43m；
    - 已接 local_map `left/right_m` + `left_valid/right_valid`；unknown 侧向 fail-closed；
-   - 真机：`left_valid=0` → “左侧净空未知” → 小幅 detour 后 abort，不再飞向北9.5m；
-   - 待做：受控侧障碍（有效 left/right）验证；侧/后方覆盖仍未完成；
-   - 验收未完成前，不宣称完整避障。
+   - 侧锥改为前左/前右 ±45°（落进 90° FOV）；mapping 22 tests；
+   - 真机 unknown：`left_valid=0` → abort，不再飞向北9.5m；
+   - 有数据真实侧障碍未验；不宣称完整避障。
 1. **P1：多物体泛化验证**：同一套目标槽测 cone、圆柱、橙色球等；
    失败样本记录，不硬编码类别。
 2. **目标稳定性**：bbox/深度跨帧一致性、standoff、目标不可见过早拒绝；

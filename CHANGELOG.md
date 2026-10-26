@@ -1,3 +1,13 @@
+## [2026-10-26] 侧锥 ±45° / 橙色球侧试未成立
+
+- local_map 的侧锥由 ±90° 改为前左/前右 ±45°，否则 90° FOV 永远无侧数据；
+- mapping 22 tests；总计 298 passed / 2 skipped；
+- 尝试用现有 OrangeBall 做侧障碍：`simSetVehiclePose` 不更新 PX4，local_map 仍在原点，0.53m 是近场杂物；结果不采用；
+- 不修改 UE4 场景；有数据真实侧障碍仍需受控飞行/手动布置；
+- P0 仍 PARTIAL。
+
+---
+
 ## [2026-10-26] 侧向 unknown fail-closed
 
 - local_map 发布 `left_valid/right_valid`，区分“无数据”和“clear”；

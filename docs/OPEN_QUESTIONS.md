@@ -32,7 +32,7 @@
 | 8 | **SAR Demo v0 代理目标检测可靠性** | `OPEN` | 3 轮同一指令：搜索 8/8、无 abort、均落地；代理目标 2/3 命中、finding 2/3（轮3 miss）。目标为橙色物，**非人员检测** | 影响 Demo 可重复性；不影响任务/飞行链路 | 调 scan 时长/检测阈值/点位；先离线评估再跑少量真机；不要用单轮成功掩盖 2/3 |
 | 9 | **VLM grounding provider 选择** | `PARTIAL` | Qwen3-VL-8B 同帧 offline：EN/ZH 15/15、平均误差 0.026/0.030、稳态 ~470 ms；LightNav 0.456、122–164 ms。one-shot 0.27 m；3 样本 0.41 m；动态 `goto` 0.70–0.71 m（provider 0.747 Hz，非 2Hz）；已加 acquire/stale/围栏 abort；**未做视觉伺服/4Hz** | Qwen 可做 one-shot/异步目标 provider，LightNav 保留快速 fallback；目标仍有 1–2 m 不确定性 | 若要真 2Hz，需并发采集/推理；4Hz 仍用 LightNav 或量化 |
 | 10 | **任意物体 VLM 导航泛化** | `OPEN` | 已支持自由文本目标槽：中文→Qwen 翻译→DINO bbox/depth/standoff；cone 真机到点约 0.4m；不读 AirSim 物体坐标。**只验证了 cone/建筑等少量目标；目标必须当前可见；DINO 英文 prompt；低置信度拒绝** | 决定“任意物体”是否真的通用；不能宣称开放世界全覆盖 | 多目标/多视角测试（锥桶/车辆/屋顶/箱子）；失败样本入库；必要时换多语言 open-vocab detector；人员仍后置 |
-| 11 | **固定机头 / 前向净空是否覆盖航迹** | `PARTIAL` | `goto` heading alignment 已真机；left/right 门有单测。local_map 新增 `left_valid/right_valid`；真实固定机头测试：`left_valid=0` → 报告“左侧净空未知” → 小幅 detour 后 abort，不再飞向北9.5m。**真实侧障碍（有数据）仍未验**；侧后方覆盖未证明 | 未知侧向已 fail-closed；真实侧障碍拦截/完整避障仍未证明 | 受控侧障碍验证 left/right 有效值；修 local_map 侧向 FOV/传感器；不宣称完整避障 |
+| 11 | **固定机头 / 前向净空是否覆盖航迹** | `PARTIAL` | `goto` heading alignment 已真机；left/right 门有单测；local_map `left_valid/right_valid` unknown → fail-closed 已真机。侧锥由 ±90° 改为前左/前右 ±45°（落进 90° FOV），mapping 22 tests。橙色球侧试未成立：`simSetVehiclePose` 不更新 PX4，local_map 仍在原点，0.53m 是近场杂物。 | 未知侧向已 fail-closed；有数据真实侧障碍仍未验 | 不再运行时改场景；用受控飞行/手动布置侧障碍；或接受 unknown→禁横向；不宣称完整避障 |
 
 ---
 
