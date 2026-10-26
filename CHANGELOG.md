@@ -1,3 +1,12 @@
+## [2026-10-26] DINO bbox 尺寸校正验证
+
+- 边缘/过包 bbox：超过中位尺寸 30% 时收缩未截断边；
+- 离线：yaw0 中心误差 33.9→9.1 px，yaw90 28.0→5.8 px，中部不变；
+- 在线 teleport：yaw0 边缘 bbox y2 391→352；固定 anchor 正确拒绝跨 yaw 跳变；
+- 未新增真机飞行；DINO 仍是可选 backend。
+
+---
+
 ## [2026-10-26] DINO edge-aware bbox
 
 - DINO bbox：非截断时记录宽高/面积，面积变化 >60% 拒绝；

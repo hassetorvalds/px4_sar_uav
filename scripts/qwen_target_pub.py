@@ -38,6 +38,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('backend', 'qwen')
         self.declare_parameter('dino_url', 'http://127.0.0.1:18082/detect')
         self.declare_parameter('bbox_area_tolerance', 0.6)
+        self.declare_parameter('bbox_size_tolerance', 0.3)
         self.declare_parameter('bbox_edge_margin_px', 5.0)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
@@ -62,6 +63,7 @@ class QwenTargetPub(Node):
         self._backend = str(self.get_parameter('backend').value).strip().lower()
         self._dino_url = str(self.get_parameter('dino_url').value)
         self._bbox_area_tol = float(self.get_parameter('bbox_area_tolerance').value)
+        self._bbox_size_tol = float(self.get_parameter('bbox_size_tolerance').value)
         self._bbox_edge_margin = float(self.get_parameter('bbox_edge_margin_px').value)
         self._bbox_area_history = []
         self._last_bbox = None
@@ -95,10 +97,29 @@ class QwenTargetPub(Node):
         self.get_logger().info(f'DINO endpoint={self._dino_url} backend={self._backend}')
 
     def _bbox_center(self, bbox, width, height, clipped):
-        """Edge-aware bbox 中心：用历史中位宽高补截断边。"""
+        """Edge-aware bbox：超中位尺寸时收缩未截断边，截断边用中位尺寸补。"""
         x1, y1, x2, y2 = [float(v) for v in bbox]
+        mw = mh = None
+        if self._bbox_size_history:
+            mw = statistics.median(w for w, _ in self._bbox_size_history)
+            mh = statistics.median(h for _, h in self._bbox_size_history)
+        if mw is not None:
+            if (x2 - x1) > (1.0 + self._bbox_size_tol) * mw:
+                x2 = min(float(width), x1 + mw)
+            if (y2 - y1) > (1.0 + self._bbox_size_tol) * mh:
+                y2 = min(float(height), y1 + mh)
+        if clipped and mw is not None:
+            margin = self._bbox_edge_margin
+            if x1 <= margin and x2 < width - margin:
+                x1 = max(0.0, x2 - mw)
+            elif x2 >= width - margin and x1 > margin:
+                x2 = min(float(width), x1 + mw)
+            if y1 <= margin and y2 < height - margin:
+                y1 = max(0.0, y2 - mh)
+            elif y2 >= height - margin and y1 > margin:
+                y2 = min(float(height), y1 + mh)
+        w, h = x2 - x1, y2 - y1
         if not clipped:
-            w, h = x2 - x1, y2 - y1
             area = w * h
             if self._bbox_area_history:
                 previous = self._bbox_area_history[-1]
@@ -108,20 +129,6 @@ class QwenTargetPub(Node):
             self._bbox_area_history = self._bbox_area_history[-5:]
             self._bbox_size_history.append((w, h))
             self._bbox_size_history = self._bbox_size_history[-5:]
-            return x1, y1, x2, y2
-        if not self._bbox_size_history:
-            return x1, y1, x2, y2
-        mw = statistics.median(w for w, _ in self._bbox_size_history)
-        mh = statistics.median(h for _, h in self._bbox_size_history)
-        margin = self._bbox_edge_margin
-        if x1 <= margin and x2 < width - margin:
-            x1 = max(0.0, x2 - mw)
-        elif x2 >= width - margin and x1 > margin:
-            x2 = min(float(width), x1 + mw)
-        if y1 <= margin and y2 < height - margin:
-            y1 = max(0.0, y2 - mh)
-        elif y2 >= height - margin and y1 > margin:
-            y2 = min(float(height), y1 + mh)
         return x1, y1, x2, y2
 
     def _dino_detect(self, jpeg, width, height):
