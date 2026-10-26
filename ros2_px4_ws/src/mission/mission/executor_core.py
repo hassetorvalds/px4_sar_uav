@@ -4,7 +4,7 @@ ROS 节点只负责"读状态 → 调这里 → 发指令"，所有会出错的�
 
 - 朝目标点的限速速度；
 - 围栏判定；
-- 前向净空门（低于阈值就把速度归零并标记 blocked）；
+- 前向/左侧/右侧净空门（对应方向速度分量归零并标记 blocked）；
 - 搜索区域展开成弓字形航点；
 - ``forward``（机体前向）在世界系里的目标点。
 """
@@ -37,23 +37,33 @@ def velocity_toward(current_enu, target_enu, *, max_speed_mps: float,
 
 
 def apply_clearance_gate(decision: VelocityDecision, current_enu, heading_enu: float,
-                         nearest_forward_m, *, stop_m: float = 0.6):
-    """前向净空 ≤ ``stop_m`` 时把**朝前**的速度归零。
-
-    只拦"有前向分量"的运动，允许侧向/后退脱离；净空未知（None）时不拦。
-    """
-    if decision.done or nearest_forward_m is None:
+                         nearest_forward_m, *, stop_m: float = 0.6,
+                         nearest_left_m=None, nearest_right_m=None):
+    """按机体系前/左/右净空限制速度分量；未知净空不拦。"""
+    if decision.done:
         return decision
-    if float(nearest_forward_m) > float(stop_m):
-        return decision
-    forward = decision.east * math.cos(heading_enu) + decision.north * math.sin(heading_enu)
-    if forward <= 1e-6:
-        return decision
-    # 去掉前向分量，只保留侧向（世界系里与 heading 垂直的分量）
-    lateral_east = decision.east - forward * math.cos(heading_enu)
-    lateral_north = decision.north - forward * math.sin(heading_enu)
-    return VelocityDecision(lateral_east, lateral_north, done=False, blocked=True,
-                            reason=f'前向净空 {float(nearest_forward_m):.2f} m ≤ {stop_m:.2f} m')
+    cos_h = math.cos(heading_enu)
+    sin_h = math.sin(heading_enu)
+    forward = decision.east * cos_h + decision.north * sin_h
+    left = -decision.east * sin_h + decision.north * cos_h
+    blocked = False
+    reasons = []
+    if nearest_forward_m is not None and float(nearest_forward_m) <= float(stop_m) and forward > 1e-6:
+        forward = 0.0
+        blocked = True
+        reasons.append(f'前向净空 {float(nearest_forward_m):.2f} m ≤ {stop_m:.2f} m')
+    if nearest_left_m is not None and float(nearest_left_m) <= float(stop_m) and left > 1e-6:
+        left = 0.0
+        blocked = True
+        reasons.append(f'左侧净空 {float(nearest_left_m):.2f} m ≤ {stop_m:.2f} m')
+    if nearest_right_m is not None and float(nearest_right_m) <= float(stop_m) and left < -1e-6:
+        left = 0.0
+        blocked = True
+        reasons.append(f'右侧净空 {float(nearest_right_m):.2f} m ≤ {stop_m:.2f} m')
+    east = forward * cos_h - left * sin_h
+    north = forward * sin_h + left * cos_h
+    return VelocityDecision(east, north, done=False, blocked=blocked,
+                            reason='; '.join(reasons))
 
 
 def inside_geofence(current_enu, origin_enu, radius_m: float, *, margin_m: float = 0.0):

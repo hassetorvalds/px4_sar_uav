@@ -1,3 +1,12 @@
+## [2026-10-26] 侧向净空门
+
+- `apply_clearance_gate` 接入 local_map `left_m/right_m`：向某侧移动且该侧净空不足时归零该侧分量；
+- goto/search/forward 调用都传侧向净空；
+- 新增左右单测；mission 160 passed，总计 296 passed / 2 skipped；
+- 真实侧障碍未飞验；不宣称完整避障。
+
+---
+
 ## [2026-10-26] P0 goto 航向对齐
 
 - `goto` 增加 heading alignment：误差 >20° 时零前向、原地转向；search 航点不强制；

@@ -144,3 +144,23 @@ def test_offset_waypoints_to_world_origin():
     from mission.executor_core import offset_waypoints
 
     assert offset_waypoints([(1, 2, 3)], (10, 20)) == [(11, 22, 3)]
+
+
+def test_clearance_gate_blocks_left_when_left_tight():
+    decision = VelocityDecision(east=0.3, north=0.4, done=False)
+    gated = apply_clearance_gate(
+        decision, (0, 0, 2), heading_enu=0.0, nearest_forward_m=2.0,
+        stop_m=0.6, nearest_left_m=0.4, nearest_right_m=2.0)
+    assert gated.blocked is True
+    assert gated.east == pytest.approx(0.3)
+    assert gated.north == pytest.approx(0.0)
+
+
+def test_clearance_gate_blocks_right_when_right_tight():
+    decision = VelocityDecision(east=0.3, north=-0.4, done=False)
+    gated = apply_clearance_gate(
+        decision, (0, 0, 2), heading_enu=0.0, nearest_forward_m=2.0,
+        stop_m=0.6, nearest_left_m=2.0, nearest_right_m=0.4)
+    assert gated.blocked is True
+    assert gated.east == pytest.approx(0.3)
+    assert gated.north == pytest.approx(0.0)

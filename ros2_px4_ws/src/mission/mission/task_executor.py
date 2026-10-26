@@ -302,6 +302,8 @@ class TaskExecutor(Node):
         self._external_land = False
         self._abort_reason = None
         self._clearance_forward = None
+        self._clearance_left = None
+        self._clearance_right = None
         self._heading_enu = None
         self._last_heartbeat = 0.0
         self._last_status = 0.0
@@ -1186,7 +1188,9 @@ class TaskExecutor(Node):
         gate_heading = desired if desired is not None else (self._heading_enu or 0.0)
         decision = apply_clearance_gate(
             decision, position, gate_heading,
-            self._clearance_forward, stop_m=self._clearance_stop)
+            self._clearance_forward, stop_m=self._clearance_stop,
+            nearest_left_m=self._clearance_left,
+            nearest_right_m=self._clearance_right)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
                 return
@@ -1386,7 +1390,9 @@ class TaskExecutor(Node):
                                    tolerance_m=self._arrive_tol)
         decision = apply_clearance_gate(
             decision, position, self._heading_enu or 0.0,
-            self._clearance_forward, stop_m=self._clearance_stop)
+            self._clearance_forward, stop_m=self._clearance_stop,
+            nearest_left_m=self._clearance_left,
+            nearest_right_m=self._clearance_right)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
                 return
