@@ -72,6 +72,7 @@
 | Qwen 通用搜索检测 | ✅ 真机 | 文本 prompt 发布 `/perception/best`；搜索 8/8、扫描 20s、目标 3 次确认；固定 anchor 后偏离 1.39m，finding #2 为 revisit |
 | Revisit 合并 | ✅ 真机 | DINO 搜索 4 次确认只生成 1 个 finding（updates=4，history 保留），不再 #1/#2 两条 |
 | 目标轨迹报告 | ✅ 离线 | finding.history → Markdown 轨迹表（updates/时间/位置/revisit） |
+| 完整 Demo 回归 | ✅ 真机 | 搜索 8/8、扫描 20s、3 次确认、单 finding（updates=3）、无 abort、landed；报告含轨迹 |
 | Grounding DINO bbox | ✅ 可选真机 | 5 帧 IoU 0.48–0.62；尺寸校正边缘误差 33.9→9.1/28.0→5.8 px；真实 DINO 搜索 3 次确认、无 abort，findings #2 revisit |
 | NL 驱动通用搜索 | ✅ 真机 | 自动 Qwen detector（点+ROI）；搜索 8/8、扫描 20s、3 次确认、无 abort；bbox 为可选，IoU 0.50–0.64，边缘需回退点 |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |

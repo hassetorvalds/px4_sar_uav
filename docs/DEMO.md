@@ -235,6 +235,20 @@ python3 scripts/fly_nl.py \
 
 ---
 
+## 完整 Demo 回归（2026-10-26）
+
+```bash
+python3 scripts/fly_nl.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，寻找橙色球，扫描 20 秒，降落" \
+  --detector dino --execute
+```
+
+结果：搜索 8/8、扫描 20 s、目标 3 次确认、单 finding（updates=3）、
+无 abort、landed；报告 `report_20261026-124242-037` 含目标轨迹。
+覆盖 0/144 是 legacy 单相机无下视，不是搜索失败。
+
+---
+
 ## Qwen 自然语言导航（one-shot / dynamic）
 
 前提：Qwen 18081 隧道、PX4/ROS 栈已启动；目标仍为橙色代理物。

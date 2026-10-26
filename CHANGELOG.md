@@ -1,3 +1,12 @@
+## [2026-10-26] 完整 Demo 回归
+
+- `fly_nl --detector dino` 全链路：起飞→搜索 8/8→扫描 20s→通用检测→单 finding→降落；
+- 目标 3 次确认、finding updates=3、无 abort、landed；
+- 报告 `report_20261026-124242-037` 含 `## 目标轨迹`；
+- 覆盖 0/144（legacy 无下视，不作覆盖结论）。
+
+---
+
 ## [2026-10-26] 目标轨迹写入报告
 
 - `report.py` 新增 `## 目标轨迹`：每个 finding 的 history 表（t/status/world/revisit）；
