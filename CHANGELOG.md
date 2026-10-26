@@ -1,3 +1,11 @@
+## [2026-10-26] 橙色球多视角漂移
+
+- yaw0/45/90 target=(26.72,29.59)/(27.33,28.22)/(29.78,27.55)；
+- 单视角 DINO/Qwen 差0.04–0.12m；跨视角最大3.68m；
+- 多视角一致性不成立；303 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] LightNav 任意物体 grounding 负结果
 
 - 红立方体 yaw90 原始 `/navigate`：`apos_state=rot_left`、`x_norm/y_norm=null`、`opos_state=not_visible`；
