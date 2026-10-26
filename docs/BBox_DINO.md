@@ -1,7 +1,8 @@
 # Grounding DINO tiny bbox 基线（18082）
 
-> **状态：离线评测（2026-10-25），未接飞控、未替换 Qwen。**
+> **状态（2026-10-26）：DINO 已作为可选 backend 接飞控；Qwen 仍是自动默认。**
 > 服务：`grounding-dino-tiny`，GPU1，pixel bbox；prompt 英文。
+> 真机 DINO 搜索/cone 见第 6–8 节；DINO 不是默认路径，需 `--detector dino`。
 
 ## 1. 接口
 

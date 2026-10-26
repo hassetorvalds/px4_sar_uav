@@ -36,6 +36,7 @@
 |---|---|
 | [REFERENCES.md](REFERENCES.md) | 参考项目/论文；文中旧测试数（196）是历史快照 |
 | [HISTORY_README_PLAN_20261024.md](HISTORY_README_PLAN_20261024.md) | 2026-10-24 README 规划原文保留 |
+| [HISTORY_README_CURRENT_20261018.md](HISTORY_README_CURRENT_20261018.md) | 旧 README 4.4/4.5/22 原文保留 |
 | [roadmap.md](roadmap.md) | 早期路线图；当前优先级见 README 0 |
 | [next-session-handoff.md](next-session-handoff.md) | 早期交接记录 |
 | [migration-2026-09-14.md](migration-2026-09-14.md) | 旧迁移记录 |
