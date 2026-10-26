@@ -28,6 +28,7 @@ def run_target(script, target_prompt, backend, out, args):
            '--geofence-m', str(args.geofence_m),
            '--samples', str(args.samples),
            '--max-spread-m', str(args.max_spread_m),
+           '--edge-margin-px', str(args.edge_margin_px),
            '--out', out]
     if script.endswith('visual_target.py'):
         cmd = [part for i, part in enumerate(cmd)
@@ -56,6 +57,7 @@ def main():
     parser.add_argument('--geofence-m', type=float, default=50.0)
     parser.add_argument('--samples', type=int, default=3)
     parser.add_argument('--max-spread-m', type=float, default=1.5)
+    parser.add_argument('--edge-margin-px', type=float, default=5.0)
     parser.add_argument('--max-diff-m', type=float, default=3.0)
     parser.add_argument('--out', default='')
     args = parser.parse_args()

@@ -28,6 +28,7 @@ def main():
     parser.add_argument('--geofence-m', type=float, default=50.0)
     parser.add_argument('--samples', type=int, default=3)
     parser.add_argument('--max-spread-m', type=float, default=1.5)
+    parser.add_argument('--edge-margin-px', type=float, default=5.0)
     parser.add_argument('--out', default='')
     args = parser.parse_args()
     if args.samples < 1:
@@ -48,6 +49,7 @@ def main():
                    '--standoff-m', str(args.standoff_m),
                    '--altitude-m', str(args.altitude_m),
                    '--geofence-m', str(args.geofence_m),
+                   '--edge-margin-px', str(args.edge_margin_px),
                    '--out', path]
             completed = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
             if completed.returncode != 0:

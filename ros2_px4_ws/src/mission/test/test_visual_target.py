@@ -2,8 +2,8 @@
 
 import pytest
 
-from mission.visual_target import (apply_standoff, median_enu_target,
-                                      select_verified_target)
+from mission.visual_target import (apply_standoff, bbox_touches_edge,
+                                      median_enu_target, select_verified_target)
 
 
 def test_standoff_reduces_along_line():
@@ -47,3 +47,9 @@ def test_select_falls_back_to_verify():
     east, north, diff, source = select_verified_target(None, (21.2, 5.5), 3.0)
     assert (east, north) == (21.2, 5.5)
     assert diff is None and source == 'verify'
+
+
+def test_bbox_touches_edge_detects_edges():
+    assert bbox_touches_edge([0, 100, 200, 300], 1280, 720, 5)
+    assert bbox_touches_edge([1200, 100, 1280, 300], 1280, 720, 5)
+    assert not bbox_touches_edge([600, 290, 670, 360], 1280, 720, 5)

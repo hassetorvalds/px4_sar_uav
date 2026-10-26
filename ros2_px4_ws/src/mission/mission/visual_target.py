@@ -50,3 +50,11 @@ def select_verified_target(primary, verify, max_diff_m: float = 3.0):
     if verify_ok:
         return float(verify[0]), float(verify[1]), None, 'verify'
     raise ValueError('both primary and verify failed')
+
+
+def bbox_touches_edge(bbox, width: int, height: int, margin_px: float = 5.0) -> bool:
+    """bbox 是否贴图像边缘；贴边目标不生成 goto。"""
+    x1, y1, x2, y2 = (float(v) for v in bbox)
+    m = max(float(margin_px), 0.0)
+    return (x1 <= m or y1 <= m
+            or x2 >= float(width) - m or y2 >= float(height) - m)

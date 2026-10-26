@@ -1,3 +1,11 @@
+## [2026-10-26] bbox 触边目标拒绝
+
+- `bbox_touches_edge` 纯函数：bbox 距边 ≤5px 拒绝；
+- 橙色球 yaw0 bbox 触边 → `refuse partial object`；yaw45 正常；
+- 不再把半截目标算多视角；mission 167，总计304 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 橙色球多视角漂移
 
 - yaw0/45/90 target=(26.72,29.59)/(27.33,28.22)/(29.78,27.55)；

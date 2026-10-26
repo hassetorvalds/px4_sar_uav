@@ -216,4 +216,7 @@ cone 两 backend 差0.52m → selected=primary。
 | 45 | (27.33, 28.22) |
 | 90 | (29.78, 27.55) |
 
-单视角 DINO/Qwen 差 0.04–0.12m；但跨视角最大差 **3.68m**，多视角一致性未成立。
+单视角 DINO/Qwen 差 0.04–0.12m；但 yaw0/yaw90 的 bbox 触图像边缘，已由 `bbox_touches_edge`
+拒绝（`refuse partial object`），不再把半截目标算多视角。
+
+边缘门：bbox 距边 ≤ `--edge-margin-px`（默认5px）直接拒绝；yaw45 正常。

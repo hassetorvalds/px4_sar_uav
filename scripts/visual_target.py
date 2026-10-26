@@ -18,7 +18,7 @@ import airsim
 import numpy as np
 from PIL import Image
 
-from mission.visual_target import apply_standoff
+from mission.visual_target import apply_standoff, bbox_touches_edge
 from perception.geometry import (CameraIntrinsics, depth_patch_median,
                                  pixel_to_world_enu)
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
@@ -68,6 +68,7 @@ def main():
     parser.add_argument('--standoff-m', type=float, default=3.0)
     parser.add_argument('--altitude-m', type=float, default=2.0)
     parser.add_argument('--geofence-m', type=float, default=50.0)
+    parser.add_argument('--edge-margin-px', type=float, default=5.0)
     parser.add_argument('--out', default='')
     args = parser.parse_args()
 
@@ -97,6 +98,8 @@ def main():
     else:
         bbox, confidence, latency = qwen_detect(
             args.qwen_url, jpeg, args.target_prompt, (width, height))
+    if bbox_touches_edge(bbox, width, height, args.edge_margin_px):
+        raise SystemExit('target bbox touches image edge; refuse partial object')
     u = (bbox[0] + bbox[2]) / 2.0
     v = (bbox[1] + bbox[3]) / 2.0
     dw, dh = int(depth_response.width), int(depth_response.height)
