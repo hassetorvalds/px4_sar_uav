@@ -166,3 +166,20 @@ yaw90: DINO 框住蓝色建筑（bbox≈350×334px），52m > 50m 围栏，拒�
 
 结论：yaw45 到点有效；**多视角一致性不成立**，DINO 会把大建筑误当 red cube。
 
+
+
+## 10. 主 backend + Qwen 第二意见
+
+`visual_target_verify.py`：主 backend（默认 DINO）与 Qwen 各自生成目标；
+主结果失败或两目标差 > `--max-diff-m` 时采用 Qwen。
+
+红立方体 yaw90：
+
+```text
+DINO：bbox 350×334，52m > 围栏 → 失败
+Qwen：bbox 399–550，depth24.11m，3帧 target(21.20,5.47)，spread0.06m
+→ selected=verify(Qwen)
+真机 final(20.83,5.39)，abort=0
+```
+
+说明：Qwen 可作为 DINO 大框/误检的第二意见，但仍只使用图像/深度。

@@ -1,3 +1,12 @@
+## [2026-10-26] Qwen 第二意见纠正红立方体误检
+
+- 新增 `scripts/visual_target_verify.py`：主 backend + Qwen 第二意见；
+- yaw90 DINO 误检蓝色建筑（52m）失败；Qwen bbox/depth 3帧 target(21.20,5.47)、spread0.06m；
+- 真机 final(20.83,5.39)，无 abort；
+- 仍是 image/depth/standoff，不读物体坐标；总计 300 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 红立方体多视角限制
 
 - yaw45 bbox 紧贴红立方体，target(21.32,4.96) 真机到点有效；

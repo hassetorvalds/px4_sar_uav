@@ -31,7 +31,7 @@
 | 7 | **VLM `source=vlm` 的 JSON 路径** | `BLOCKED` | 模型可给点/bbox/短 JSON，但不产可靠 TaskSpec JSON；`source=vlm` 的 `area_cover` 仍 `OPERATOR_REQUIRED`；当前任务由规则/SemanticIntent 生成 | 模型自动生成任务的能力；不影响任务层/Action | 等模型侧约束解码；不要把 mock/手写当 VLM |
 | 8 | **SAR Demo v0 代理目标检测可靠性** | `OPEN` | 3 轮同一指令：搜索 8/8、无 abort、均落地；代理目标 2/3 命中、finding 2/3（轮3 miss）。目标为橙色物，**非人员检测** | 影响 Demo 可重复性；不影响任务/飞行链路 | 调 scan 时长/检测阈值/点位；先离线评估再跑少量真机；不要用单轮成功掩盖 2/3 |
 | 9 | **VLM grounding provider 选择** | `PARTIAL` | Qwen3-VL-8B 同帧 offline：EN/ZH 15/15、平均误差 0.026/0.030、稳态 ~470 ms；LightNav 0.456、122–164 ms。one-shot 0.27 m；3 样本 0.41 m；动态 `goto` 0.70–0.71 m（provider 0.747 Hz，非 2Hz）；已加 acquire/stale/围栏 abort；**未做视觉伺服/4Hz** | Qwen 可做 one-shot/异步目标 provider，LightNav 保留快速 fallback；目标仍有 1–2 m 不确定性 | 若要真 2Hz，需并发采集/推理；4Hz 仍用 LightNav 或量化 |
-| 10 | **任意物体 VLM 导航泛化** | `OPEN` | 自由文本目标槽已支持；cone 真机约0.4m；橙色球 DINO conf0.88、到点0.3m；红色立方体 yaw45 conf0.634、3帧spread0.0、到点；yaw90 DINO 误检蓝色建筑（大bbox、52m），多视角不成立；场景物体 pose 不能当 truth。**只验证少量目标；目标必须可见；DINO 英文 prompt；低置信度拒绝** | 任意物体泛化/深度一致性未证明 | 多目标/多视角测试；DINO 深度误差分析；必要时 Qwen/多语言 detector；人员后置 |
+| 10 | **任意物体 VLM 导航泛化** | `OPEN` | 自由文本目标槽已支持；cone 真机约0.4m；橙色球 DINO conf0.88、到点0.3m；红色立方体 yaw45 DINO到点；yaw90 DINO误检建筑，Qwen第二意见 target(21.20,5.47)、真机到点；多后端交叉验证可用；场景物体 pose 不能当 truth。**只验证少量目标；目标必须可见；DINO 英文 prompt；低置信度拒绝** | 任意物体泛化/深度一致性未证明 | 多目标/多视角测试；DINO 深度误差分析；必要时 Qwen/多语言 detector；人员后置 |
 | 11 | **固定机头 / 前向净空是否覆盖航迹** | `PARTIAL` | `goto` heading alignment 已真机；left/right 门有单测；local_map `left_valid/right_valid` unknown → fail-closed 已真机。侧锥由 ±90° 改为前左/前右 ±45°（落进 90° FOV），mapping 22 tests。橙色球侧试未成立：`simSetVehiclePose` 不更新 PX4，local_map 仍在原点，0.53m 是近场杂物。 | 未知侧向已 fail-closed；有数据真实侧障碍仍未验 | 不再运行时改场景；用受控飞行/手动布置侧障碍；或接受 unknown→禁横向；不宣称完整避障 |
 
 ---
