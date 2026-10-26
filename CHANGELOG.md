@@ -1,3 +1,14 @@
+## [2026-10-26] DINO backend 可选用
+
+- `fly_nl.py --detector dino`：中文目标映射英文 prompt，启动 DINO backend；
+- `qwen_target_pub backend=dino`：DINO bbox 中心 + depth/anchor；
+- 边缘 bbox 仍用中心并记录 clipped（Qwen 点回退实测偏 3m，弃用）；
+- 真机 DINO：搜索 8/8、扫描 20s、3 次确认、无 abort；
+  findings 28.73/31.61、29.74/30.27（revisit）；报告 `report_20261026-121844-556`；
+- 自动默认仍 Qwen 点+ROI，DINO 需显式选择。
+
+---
+
 ## [2026-10-25] Grounding DINO bbox 离线基线
 
 - 服务 18082：grounding-dino-tiny，GPU1，像素 bbox，英文 prompt；

@@ -54,3 +54,18 @@ orange ball   → 1 框，score 0.890
 2. 做 **edge-aware bbox**：贴边时不用 bbox 中心，或对 bbox 做深度/图像边界裁剪；
 3. 用 DINO 的 bbox 宽高/深度跨帧一致性替代单点 anchor；
 4. 人员检测仍后置。
+
+
+## 6. WSL 接入（可选 backend）
+
+```bash
+python3 scripts/fly_nl.py "起飞到 2 米，搜索...寻找橙色球，扫描 20 秒，降落" \
+  --detector dino --execute
+```
+
+- `fly_nl` 把“橙色球”映射成 `orange ball`；
+- `qwen_target_pub` 走 DINO `/detect`，bbox 中心 + depth + anchor；
+- 边缘 bbox 仍用中心并记 `clipped`（点回退实测偏 3 m，已弃用）；
+- 真机（DINO backend）：搜索 8/8、扫描 20s、目标 3 次确认、无 abort；
+  findings 28.73/31.61、29.74/30.27（#2 revisit）；报告 `report_20261026-121844-556`。
+- 自动默认仍是 Qwen 点+ROI；DINO 需显式 `--detector dino`。

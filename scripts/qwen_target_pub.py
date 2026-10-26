@@ -5,10 +5,14 @@
 不是 4 Hz 视觉伺服；过期/跳变由执行器回退到初始目标。
 """
 
+import base64
 import io
+import json
 import math
 import statistics
+import subprocess
 import time
+import urllib.request
 
 import airsim
 import numpy as np
@@ -31,7 +35,10 @@ class QwenTargetPub(Node):
         self.declare_parameter('require_orange', True)
         self.declare_parameter('verify_roi', False)
         self.declare_parameter('use_bbox', False)
+        self.declare_parameter('backend', 'qwen')
+        self.declare_parameter('dino_url', 'http://127.0.0.1:18082/detect')
         self.declare_parameter('bbox_area_tolerance', 0.6)
+        self.declare_parameter('bbox_edge_margin_px', 5.0)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
@@ -52,7 +59,10 @@ class QwenTargetPub(Node):
         self._require_orange = bool(self.get_parameter('require_orange').value)
         self._verify_roi = bool(self.get_parameter('verify_roi').value)
         self._use_bbox = bool(self.get_parameter('use_bbox').value)
+        self._backend = str(self.get_parameter('backend').value).strip().lower()
+        self._dino_url = str(self.get_parameter('dino_url').value)
         self._bbox_area_tol = float(self.get_parameter('bbox_area_tolerance').value)
+        self._bbox_edge_margin = float(self.get_parameter('bbox_edge_margin_px').value)
         self._bbox_area_history = []
         self._last_bbox = None
         self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
@@ -81,6 +91,36 @@ class QwenTargetPub(Node):
         rate = max(float(self.get_parameter('rate_hz').value), 0.5)
         self.create_timer(1.0 / rate, self._tick)
         self.get_logger().info(f'Qwen target publisher：{rate:.1f} Hz（实际受推理限制）')
+        self.get_logger().info(f'DINO endpoint={self._dino_url} backend={self._backend}')
+
+    def _dino_detect(self, jpeg, width, height):
+        payload = json.dumps({
+            'image_b64': base64.b64encode(jpeg).decode('ascii'),
+            'prompt': self._target_prompt,
+            'box_threshold': 0.5,
+            'text_threshold': 0.25,
+            'meta': {'frame_seq': 0},
+        }).encode('utf-8')
+        started = time.monotonic()
+        # 本机 rclpy 进程里 urllib 对 18082 会间歇性 Connection refused，
+        # curl 子进程稳定；仅 DINO 调用使用 curl。
+        completed = subprocess.run(
+            ['curl', '-sS', '-m', '20', '-X', 'POST', self._dino_url,
+             '-H', 'Content-Type: application/json', '--data-binary', '@-'],
+            input=payload, capture_output=True, timeout=25)
+        if completed.returncode != 0:
+            raise ValueError(completed.stderr.decode('utf-8', errors='replace')[:200])
+        data = json.loads(completed.stdout.decode('utf-8'))
+        latency = (time.monotonic() - started) * 1000.0
+        boxes = data.get('boxes') or []
+        if not boxes:
+            raise ValueError('DINO returned no boxes')
+        best = max(boxes, key=lambda box: float(box.get('score', 0.0)))
+        bbox = [float(best['x1']), float(best['y1']),
+                float(best['x2']), float(best['y2'])]
+        if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+            raise ValueError('DINO invalid bbox')
+        return bbox, float(best.get('score', 0.0)), latency
 
     def _capture(self):
         state = self._client.getMultirotorState()
@@ -107,7 +147,21 @@ class QwenTargetPub(Node):
             prompt = ('请定位图像中的“%s”，只输出 JSON：x、y 为 [0,1000] '
                       '归一化坐标（左上原点），以及 confidence（0-1）。'
                       '不要 markdown。' % self._target_prompt)
-        if self._use_bbox:
+        if self._backend == 'dino':
+            bbox, confidence, latency = self._dino_detect(
+                jpeg.getvalue(), width, height)
+            clipped = (bbox[0] <= self._bbox_edge_margin
+                       or bbox[1] <= self._bbox_edge_margin
+                       or bbox[2] >= width - self._bbox_edge_margin
+                       or bbox[3] >= height - self._bbox_edge_margin)
+            if clipped:
+                # 边缘框仍用 bbox 中心；Qwen 点回退实测更差（会偏 3 m）。
+                self.get_logger().warn('DINO bbox clipped; use center with caution',
+                                       throttle_duration_sec=2.0)
+            self._last_bbox = [round(float(v), 1) for v in bbox]
+            u = (bbox[0] + bbox[2]) / 2.0
+            v = (bbox[1] + bbox[3]) / 2.0
+        elif self._use_bbox:
             try:
                 bbox_prompt = None
                 if self._target_prompt:

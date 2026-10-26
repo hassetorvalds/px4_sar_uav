@@ -30,6 +30,15 @@ def qwen_target(instruction, out, qwen_url):
     return goto, (task.get('notes') or [])
 
 
+def _dino_ready(url):
+    health = url.rsplit('/detect', 1)[0] + '/health'
+    try:
+        with urllib.request.urlopen(health, timeout=5) as response:
+            return response.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _qwen_ready(url):
     health = url.rsplit('/v1/', 1)[0] + '/v1/models'
     try:
@@ -39,13 +48,23 @@ def _qwen_ready(url):
         return False
 
 
+_PROMPT_EN = {
+    '橙色球': 'orange ball', '橙色目标': 'orange target',
+    '红色屋顶': 'red roof', '灰色建筑': 'grey building',
+    '建筑': 'building', '车辆': 'vehicle', '车': 'vehicle',
+    '人': 'person', '人员': 'person',
+}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('instruction')
     parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--detector', choices=['qwen', 'dino'], default='qwen')
     parser.add_argument('--target-only', action='store_true')
     parser.add_argument('--qwen-url',
                         default='http://127.0.0.1:18081/v1/chat/completions')
+    parser.add_argument('--dino-url', default='http://127.0.0.1:18082/detect')
     parser.add_argument('--out', default='')
     args = parser.parse_args()
 
@@ -103,7 +122,12 @@ def main():
     detector = None
     detector_log = None
     if search_prompt:
-        if not _qwen_ready(args.qwen_url):
+        if args.detector == 'dino':
+            search_prompt = _PROMPT_EN.get(search_prompt, search_prompt)
+            if not _dino_ready(args.dino_url):
+                print('[nl] DINO 18082 不可达；拒绝执行', file=sys.stderr)
+                return 4
+        elif not _qwen_ready(args.qwen_url):
             print('[nl] 搜索目标 prompt 存在，但 Qwen 18081 不可达；拒绝执行', file=sys.stderr)
             return 4
         detector_log = open(f'logs/tasks/nl_detector_{time.strftime("%Y%m%d-%H%M%S")}.log',
@@ -113,6 +137,8 @@ def main():
              '-p', 'topic:=/perception/best',
              '-p', f'target_prompt:={search_prompt}',
              '-p', 'require_orange:=false',
+             '-p', f'backend:={args.detector}',
+             '-p', f'dino_url:={args.dino_url}',
              '-p', 'verify_roi:=true',
              '-p', 'use_bbox:=false',
              '-p', 'lock_radius_m:=2.0',
