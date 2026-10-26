@@ -1,8 +1,8 @@
 # 自然语言导航：LightNav-0 vs Qwen3-VL-8B 离线 grounding 基线
 
-> **状态：离线基线（2026-10-24），未接飞控、未跑 `go_to`。**
-> 目的：按 README 现行规划，先回答“VLM 作为 grounding provider 能不能用”，
-> 而不是直接换模型/上真机。
+> **状态：离线基线（2026-10-24）；后续已接飞控（one-shot/stable/dynamic）。**
+> 本文保留基础对比数据；当前通用 VLM 目标见 [VISUAL_TARGET](VISUAL_TARGET.md)、
+> bbox/edge-aware 见 [BBox_DINO](BBox_DINO.md)。
 
 ## 0. 边界
 
@@ -168,7 +168,7 @@ dynamic_target 事件：9；stale：0；无 abort；landed
 说明 Qwen + 深度目标在 yaw 变化下**基本一致**，但仍有约 1–2 m 的 3D 不确定性；
 `go_to` 到点误差 0.27 m 是单次结果，不应解释成目标精度。
 
-## 6. 决策与下一步
+## 6. 决策与下一步（2026-10-24 原始记录；后续已推进）
 
 1. Qwen 列为 **grounding 候选 provider**，LightNav 保留为快速 baseline/fallback；
 2. one-shot `go_to` 已通过；下一步可做异步 2 Hz 目标更新，但不要假装 4 Hz；
@@ -187,3 +187,13 @@ dynamic_target 事件：9；stale：0；无 abort；landed
 
 **结论：Qwen 适合做 grounding 目标 provider；LightNav 继续做快速 baseline/fallback；
 下一步是 Qwen 目标适配器 + 1 轮 `go_to`，不是直接替换。**
+
+
+## 8. 后续进展（2026-10-26）
+
+- Qwen bbox 可用：5 帧 IoU 0.50–0.64；
+- DINO bbox：IoU 0.48–0.62、~170 ms、edge-aware/尺寸校正；
+- `visual_target.py`：任意 prompt → bbox/point + depth + standoff，不读 AirSim 物体坐标；
+- `fly_nl` 目标槽：中文“锥桶” → Qwen 翻 `traffic cone` → DINO → 真机到点约 0.4 m；
+- dynamic acquire/stale/围栏 abort；revisit 合并；目标轨迹报告；
+- 仍不是人员检测/视觉伺服/4Hz。

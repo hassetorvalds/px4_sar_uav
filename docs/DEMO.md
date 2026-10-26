@@ -1,7 +1,30 @@
 # Demo：用自然语言指挥飞行
 
 > 目标：证明**"一句话 → 经过校验的任务 → 安全执行"**这条链路成立。
-> 当前 demo 不依赖 VLM 服务；VLM 只是"语言解析器"的一个可选实现，后面替换即可。
+> **当前状态（2026-10-26）**：VLM 已接入 grounding；当前推荐入口见下；
+> 文档索引 [INDEX](INDEX.md)。早期“不依赖 VLM”的基础 demo 仍保留为第 0–4 节。
+
+## 当前推荐入口（2026-10-26）
+
+```bash
+# 任意物体：中文目标 → Qwen 翻英文 → DINO bbox/depth → standoff
+python3 scripts/fly_nl.py "起飞到 2 米，飞到前方锥桶附近，悬停 2 秒，降落" \
+  --visual-backend dino --execute
+
+# 搜索 + 通用检测 + 单 finding + 轨迹报告
+python3 scripts/fly_nl.py \
+  "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，寻找橙色球，扫描 20 秒，降落" \
+  --detector dino --execute
+
+# 只生成对象目标：不读 AirSim 物体坐标
+python3 scripts/visual_target.py --target-prompt cone --backend dino --standoff-m 3
+```
+
+边界：目标必须当前可见；DINO 英文 prompt；中文由 Qwen 翻译；检测/深度失败拒绝；
+不是人员检测；不是 VLM 直接输出飞控速度。
+
+---
+
 
 ## 0. 这个 demo 的边界（先说清楚）
 
@@ -14,7 +37,7 @@
 
 **还不能证明**
 
-- 真正的语义理解（当前是规则解析，不是 VLM）；
+- **任务级**语义仍是规则解析；视觉 grounding 已由 VLM 承担（当前状态见顶部）；
 - 人员检测（场景里没有人；当前用橙色目标物验证检测/定位链路）；
 - 真降落（EKF 高度漂移仍在，收尾用 `land_fast` 时间兜底）。
 
@@ -395,7 +418,7 @@ pkill -f flight_supervisor || true
 报告里的关键事件：`task_accepted` / `step` / `takeoff_complete` / `clearance_blocked` /
 `manual_override` / `target_confirmed` / `abort` / `land_fast` / `done`。
 
-## 6. 当前已知问题（会直接影响 demo）
+## 6. 已知问题（2026-10-18 历史快照；部分已后续验证）
 
 | 问题 | 影响 | 处理 |
 |---|---|---|
@@ -405,7 +428,7 @@ pkill -f flight_supervisor || true
 | 规则解析覆盖面有限 | 复杂/歧义指令会被拒绝 | 拒绝是**预期行为**；后续换 VLM parser，接口不变；`--remote-intent` 已定义合并契约 |
 | 首条 arm 依赖 0.5 s 静置 | `arm_settle_s` 已默认开启；否则首条 ACK 可能丢 | 若首条命令无 ACK，先看 `command_timeout` 与 DDS 订阅匹配 |
 | 实机电池检查 | SITL 无电池读数时按 unknown/warn | 实机设 `require_battery:=true` + `min_battery_ratio` |
-| 搜索步骤未飞验 | 起飞/悬停/降落、向前/返航已飞通；搜索航点尚未实飞 | 先小半径（r=3 m）验证，再放大 |
+| 搜索步骤未飞验（历史） | 该条为 2026-10-18 状态；后续搜索 8/8、扫描、检测已飞验 | 以 RESULTS 当前状态为准 |
 
 
 ## 结构面 goto smoke（灰色墙面，**不是独立物体**）
@@ -430,6 +453,7 @@ landed：true
 ## 独立物体导航：Cone_5
 
 场景对象 `Cone_5`，ENU 约 (-34.4, 34.5)，距原点 48.7 m。
+（此坐标仅用于测试后验/描述；生产 `visual_target.py` 不读取它。）
 
 ```text
 DINO prompt=cone, threshold=0.4

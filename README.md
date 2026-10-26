@@ -3,46 +3,61 @@
 > 面向灾害搜救场景的语言驱动、人机协同、安全自主四旋翼无人机系统规划文档  
 > 当前仿真平台：**Windows 11 + UE4.27 + AirSim 1.8.1 + WSL2 Ubuntu 22.04 + ROS 2 Humble + PX4 1.18 + Micro XRCE-DDS Agent 2.4.2**
 >
-> 最近验证（2026-10-18）：Action goal 提交完整任务（搜索 8/8 → 扫描 → 目标 → 对准 3.5° → 安全落地）；
+> **最近验证（2026-10-26）**：中文“飞到前方锥桶附近” → Qwen 翻译 → DINO bbox/depth/standoff → 真机到点约 0.4 m；
+> 通用搜索 8/8、扫描 20 s、单 finding、轨迹报告；DINO bbox IoU 0.48–0.62；294 passed / 2 skipped。
+> 历史验证（2026-10-18）：Action goal 提交完整任务（搜索 8/8 → 扫描 → 目标 → 对准 3.5° → 安全落地）；
 > findings `#1 target [36.19, 35.88, 5.73]` 已从 confirmed 升级为 inspected，并写入 Action result / Markdown；
 > 矩形覆盖搜索真机 6/6 航点（24 m²、22 m、预计 54 s）；
 > **观测覆盖：前视 0/24 → 下视 24/24（100%）**；L 形 20/20；双区域 36 m²、144/144；**SemanticIntent → TaskSpec → Action 真机 144/144**。见 [COVERAGE](docs/COVERAGE.md)、[SEMANTIC_INTENT](docs/SEMANTIC_INTENT.md)。
-> 进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · **Action 接口：[docs/ACTION.md](docs/ACTION.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · **未决/决策：[docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)** · 开发排期：[docs/roadmap.md](docs/roadmap.md)
+> **文档索引：[docs/INDEX.md](docs/INDEX.md)**；进度速览：第 4 节「已实现 / 未实现」· **结果与证据：[docs/RESULTS.md](docs/RESULTS.md)** · **Demo 脚本：[docs/DEMO.md](docs/DEMO.md)** · **参考对照：[docs/REFERENCES.md](docs/REFERENCES.md)** · **Action 接口：[docs/ACTION.md](docs/ACTION.md)** · 变更记录：[CHANGELOG.md](CHANGELOG.md) · **未决/决策：[docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)** · 开发排期：[docs/roadmap.md](docs/roadmap.md)
 
 ---
 
-## 0. 现行规划（2026-10-24）
+## 0. 现行规划（2026-10-26）
 
-> 当前阶段：从“能飞、能避障”的原型，进入“自然语言导航 + SAR Demo”的集成阶段。
-> 详细未决项/证据等级见 [OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)；C 的 real 级计划见 [REPLAY_PLAN.md](docs/REPLAY_PLAN.md)。
+> 当前阶段：**自然语言导航主链路已打通**，正在补通用物体/搜索检测与结果可解释性。
+> 文档状态索引：[docs/INDEX.md](docs/INDEX.md)。未决项：[OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)。
 
-**优先级**
+**当前优先级**
 
-1. **自然语言导航（当前主线）**
-   - 任务层：规则解析 / 未来 SemanticIntent → TaskSpec，WSL 做几何与安全校验；
-   - 视觉层：VLM 只做 grounding（目标/方位/bbox），不直接产 TaskSpec；
-   - 区域覆盖：继续由现有确定性几何规划负责，不交给 VLM；
-   - provider 策略：LightNav-0 作为现有 baseline；Qwen3-VL-8B 作为候选挑战者；
-     Cosmos-Reason2-8B 官方最低 32GB/Hopper-Blackwell，**不满足当前 24GB 约束**；
-     Openfly 只作为路径先验/研究参考，不承担覆盖保证；Molmo 作为 pointing 备选；
-   - 已完成 LightNav + Qwen3-VL-8B 同帧 grounding 对比（[GROUNDING_BASELINE](docs/GROUNDING_BASELINE.md)）：Qwen EN/ZH 平均误差 0.026/0.030，稳态约 470 ms；LightNav 0.456、约 133 ms。Qwen 列为 grounding 候选，LightNav 保留 fallback；Qwen one-shot `go_to` 真机已到点（误差约 0.27 m）；5 个 yaw 的目标 3D 一致性 σ≈1.35/0.73 m；3 样本中位数 spread 0.25 m、稳定化 go_to 到点 0.41 m；异步 dynamic go_to 到点 0.70–0.71 m（实测约 0.75Hz，非 2Hz；含 acquire/stale/围栏 abort）；Markdown 报告已含视觉目标来源/状态/失败分类/误差；真实 dynamic 失败路径已验证；入口 `scripts/run_qwen_nav.sh`（one-shot/dynamic）；Hybrid NL `scripts/fly_nl.py`；通用视觉目标 `scripts/visual_target.py`；`fly_nl` 目标槽（任意中文物体 → Qwen 翻译 → DINO bbox/depth/standoff，不读 AirSim 物体坐标）；Qwen 通用检测可由 `fly_nl.py` 从“寻找…”自动启动并发 `/perception/best`；
-2. **SAR Demo v0 可靠性**：代理目标 3 轮搜索均 8/8、无 abort，但检测命中 2/3；
-   先做离线检测评测/参数调整，不把 2/3 说成可靠；
-3. **人员检测（后置）**：需要真实人员素材/模型与误报评估，等导航闭环稳定后再做；
-4. **后续增强**：VLM 任务级 JSON（等模型侧约束解码）、行为树、LiDAR/时间同步、
-   全局/局部规划升级；不在当前 Demo 中混跑。
+1. **自然语言导航（主线）**
+   - 文本动作 + 视觉目标槽：`fly_nl.py`；
+   - 任意物体目标：自由文本 → Qwen 翻译（中文）→ DINO bbox/depth → standoff；
+   - 不使用 AirSim 物体坐标；只用相机/深度/位姿；
+   - 视觉目标必须当前可见；检测/深度/围栏失败则 fail-closed；
+   - 通用搜索：文本 prompt 检测 → `/perception/best` → 单 finding/轨迹。
+2. **结果可靠性**
+   - 代理目标检测 2/3；不称人员检测；
+   - DINO bbox IoU 0.48–0.62，edge-aware 已验证；
+   - revisit 合并、目标轨迹报告、dynamic 失败语义已落地。
+3. **人员检测（后置）**：需要人员素材/模型/误报评估。
+4. **后续增强**：视觉伺服/更高频率、VLM 任务级 JSON、行为树、LiDAR/时间同步。
+   不在当前 demo 中混跑。
 
-**边界**
+**边界（保留）**
 
 - 不追求“单一 VLM 直接输出 TaskSpec”；文本任务与视觉 grounding 分层；
+- 区域覆盖由确定性几何规划负责，不交给 VLM；
 - `source=vlm` 的 `area_cover` 按服务器契约拒绝；
-- 当前 C 仍只声明 `model + injection`，real 级未验证；detour 仅 `goto` 段；
-- `epoch_id` 为会话级，与 `task_id` 解耦；C 的 anchor/transform 仍是 stage1 占位符。
+- C 仍只声明 `model + injection`，real 级未验证；detour 仅 `goto` 段；
+- `epoch_id` 为会话级；C 的 anchor/transform 仍是 stage1 占位；
+- Cosmos-Reason2-8B 官方最低 32GB/Hopper-Blackwell，不满足 24GB 约束；
+- DINO prompt 英文；中文目标用 Qwen 翻译；目标不可见/低置信度必须拒绝。
 
-参考项目的使用边界：`aerial-autonomy-stack`（后续行为树）、
-`px4-ros2-interface-lib`（后续 MissionExecutor 架构）、
-`AhmedHisham1/UAV-Search`（后续人员检测/地理定位）、
-PX4 Obstacle Avoidance/VFH+（局部规划升级）；当前不直接引入其重型框架。
+**近期入口**
+
+```bash
+# 任意物体视觉导航（例：锥桶）
+python3 scripts/fly_nl.py "起飞到 2 米，飞到前方锥桶附近，悬停 2 秒，降落"   --visual-backend dino --execute
+
+# 中文搜索 + 通用检测 + 单 finding + 轨迹报告
+python3 scripts/fly_nl.py   "起飞到 2 米，搜索东侧 5 米、南侧 6 米、半径 3 米的区域，寻找橙色球，扫描 20 秒，降落"   --detector dino --execute
+
+# 只生成目标/任务，不飞
+python3 scripts/visual_target.py --target-prompt cone --backend dino --standoff-m 3
+```
+
+历史规划（2026-10-24）的详细内容保留在 CHANGELOG 与各文档正文；当前以本节为准。
 
 ---
 

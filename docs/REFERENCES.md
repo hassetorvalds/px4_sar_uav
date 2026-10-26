@@ -1,3 +1,5 @@
+> **历史/参考快照**：文中旧测试数（196 passed）不代表当前状态；当前 294 passed / 2 skipped，见 [RESULTS](RESULTS.md) 与 [INDEX](INDEX.md)。
+
 # 参考仓库对照与"语言→飞行"设计结论
 
 > 日期：2026-10-18

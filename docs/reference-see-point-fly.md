@@ -1,3 +1,5 @@
+> **早期参考记录**：保留原文；当前通用 VLM 目标实现见 [VISUAL_TARGET](VISUAL_TARGET.md)。
+
 # 参考实现：See, Point, Fly（SPF）
 
 本地位置：`~/SeePointFly/see-point-fly`（CoRL 2025，论文 arXiv:2509.22653）

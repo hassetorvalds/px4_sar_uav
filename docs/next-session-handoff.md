@@ -1,3 +1,5 @@
+> **历史交接记录**：保留原文；当前能力/未决项见 [INDEX](INDEX.md)、[RESULTS](RESULTS.md)、[OPEN_QUESTIONS](OPEN_QUESTIONS.md)。
+
 # 下一轮从这里开始（最近更新：暂停于 2026-10-14）
 
 ## 最新（2026-10-15 深夜）：链路已全停；下一步走 **C**

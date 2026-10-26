@@ -28,9 +28,10 @@
 | 4 | **`area.polygon` 编译期 map/keepout 检查** | `PARTIAL` | 编译器 `SemanticIntent.validate` 在 polygon 形状/面积/自交之后、产出 TaskSpec 前检查：`map_boundary` inclusion + `keepout_polygons` exclusion；错误码独立为 `ERROR_TARGET_OUTSIDE_MAP` / `ERROR_TARGET_IN_KEEPOUT`。**地图边界权威来源当前为 config 占位**；`map_boundary` 缺失时跳过（保持旧行为），`keepout_polygons` 缺失时回退 `keepout`。**空列表语义：显式 `[]` = 无 exclusion，不回退。** **顶点级检查，边相交不拒绝（已知边界）。** | 已消除“非法区域到执行期才失败”；但边界来源仍未接权威地图 | 接真实地图边界/keepout 来源；当前先由调用方显式配置 |
 | 5 | **覆盖默认 overlap 的统一**（本轮需求称 #7；当前表内 #5） | `DEFERRED` | 1.1 area 无 spacing/overlap 时默认 overlap=0.25（spacing=1.5×alt）；旧文本解析默认 spacing=2（2 m 高时约 50% 重叠）。**已预留 `area.overlap_override` 配置入口**：缺失/null=默认，显式数值仅记录、不参与计算，非法值 `SCHEMA_INVALID`；本轮不实现覆盖逻辑 | 影响航迹密度和覆盖率可比性 | 切换 global/密集障碍场景/planner 时启用 `overlap_override` 并实现覆盖算法 |
 | 6 | **起飞前机体周围净空检查** | `OPEN` | 曾从贴 TemplateCube 的落点起飞即碰撞；当前 arm 前只查状态/位置/preflight/failsafe/电池，不查机体周围净空 | 真实作业起飞安全 | 需要可用的近场障碍判据（地面点会干扰），否则不做假检查 |
-| 7 | **VLM `source=vlm` 的 JSON 路径** | `BLOCKED` | 模型仍是点预测器，不产可靠 JSON；`source=vlm` 的 `area_cover` 已按服务器要求 `OPERATOR_REQUIRED` 拒绝；当前 `--remote-intent` 用手写 operator SemanticIntent | 模型自动生成任务的能力；不影响任务层/Action | 等模型侧 JSON 约束解码；不要把 mock/手写当 VLM |
+| 7 | **VLM `source=vlm` 的 JSON 路径** | `BLOCKED` | 模型可给点/bbox/短 JSON，但不产可靠 TaskSpec JSON；`source=vlm` 的 `area_cover` 仍 `OPERATOR_REQUIRED`；当前任务由规则/SemanticIntent 生成 | 模型自动生成任务的能力；不影响任务层/Action | 等模型侧约束解码；不要把 mock/手写当 VLM |
 | 8 | **SAR Demo v0 代理目标检测可靠性** | `OPEN` | 3 轮同一指令：搜索 8/8、无 abort、均落地；代理目标 2/3 命中、finding 2/3（轮3 miss）。目标为橙色物，**非人员检测** | 影响 Demo 可重复性；不影响任务/飞行链路 | 调 scan 时长/检测阈值/点位；先离线评估再跑少量真机；不要用单轮成功掩盖 2/3 |
 | 9 | **VLM grounding provider 选择** | `PARTIAL` | Qwen3-VL-8B 同帧 offline：EN/ZH 15/15、平均误差 0.026/0.030、稳态 ~470 ms；LightNav 0.456、122–164 ms。one-shot 0.27 m；3 样本 0.41 m；动态 `goto` 0.70–0.71 m（provider 0.747 Hz，非 2Hz）；已加 acquire/stale/围栏 abort；**未做视觉伺服/4Hz** | Qwen 可做 one-shot/异步目标 provider，LightNav 保留快速 fallback；目标仍有 1–2 m 不确定性 | 若要真 2Hz，需并发采集/推理；4Hz 仍用 LightNav 或量化 |
+| 10 | **任意物体 VLM 导航泛化** | `OPEN` | 已支持自由文本目标槽：中文→Qwen 翻译→DINO bbox/depth/standoff；cone 真机到点约 0.4m；不读 AirSim 物体坐标。**只验证了 cone/建筑等少量目标；目标必须当前可见；DINO 英文 prompt；低置信度拒绝** | 决定“任意物体”是否真的通用；不能宣称开放世界全覆盖 | 多目标/多视角测试（锥桶/车辆/屋顶/箱子）；失败样本入库；必要时换多语言 open-vocab detector；人员仍后置 |
 
 ---
 

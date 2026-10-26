@@ -91,7 +91,8 @@ first_seen_ros_ns/last_seen_ros_ns/clock_source/pose_at_first_seen/
 revisit_of/discarded/discard_reason/history`。
 
 - 时间：`first_seen/last_seen` 为任务相对 monotonic 秒；ROS 时间另存；
-- 合并：`label + 半径（按 label 可配）+ 30 s 窗口`；窗口外同位置新建并记 `revisit_of`；
+- 合并：`label + 半径（按 label 可配）+ 30 s 窗口`；窗口外同位置默认新建并记 `revisit_of`；
+  `merge_revisits=true` 时窗口外同位置更新原 finding（history.revisit=true），`fly_nl` 默认启用；
 - 状态只升级；`discarded` 是独立终态标记，不改变 status；
 - `entry_status=confirmed`、`detector_hits` 来自 detector best_meta（hits≥3 才发 best）；
 - `frame_seq/frame_size` 来自 detector 的 `/perception/best_meta` 与

@@ -1,3 +1,16 @@
+## [2026-10-26] 文档按当前进展整理
+
+- 新增 `docs/INDEX.md`：当前权威文档 vs 历史快照；
+- README 第 0 节重写为 2026-10-26 当前规划，旧规划原文保留在
+  `docs/HISTORY_README_PLAN_20261024.md`；
+- RESULTS 顶部新增当前状态，旧“一句话状态/271 tests”标注历史快照；
+- DEMO 顶部新增当前推荐入口，旧基础 demo 保留；GROUNDING 状态更新为已接飞控；
+- OPEN_QUESTIONS #7/#9 更新，新增 #10 任意物体 VLM 导航泛化；
+- roadmap/handoff/migration/reference-see-point-fly/REFERENCES 加历史标注；
+- 测试数当前 294 passed / 2 skipped（mission 158）。
+
+---
+
 ## [2026-10-26] NL 目标槽接入通用 VLM
 
 - `hybrid_parser` 提取任意视觉目标文本（锥桶/车辆/屋顶/建筑等），不硬编码类别；

@@ -1,8 +1,21 @@
-# 结果与证据（截至 2026-10-17）
+# 结果与证据（当前状态 2026-10-26；历史记录保留）
 
 > 这份文档只回答一个问题：**哪些能力是真的跑过的，证据在哪里，哪些还没有。**
 > 规划与架构见 [README.md](../README.md)，逐条变更见 [CHANGELOG.md](../CHANGELOG.md)，
 > 与服务器侧（LightNav-0）的往来定案见 [docs/agent_comm/](agent_comm/README.md)。
+
+## 当前状态（2026-10-26）
+
+> 本节是当前结论；下方 2026-10-17 的“一句话状态/工程数据”保留为历史快照，
+> 其中“尚未具备任务级语言/搜索/检测”等描述已被后续工作覆盖。
+
+- **自然语言**：Hybrid NL（起飞/搜索/扫描/悬停/降落）+ 自由文本视觉目标槽；
+- **任意物体**：中文目标 → Qwen 翻译 → DINO bbox/depth → standoff；不读 AirSim 物体坐标；
+  真机 cone 到点约 0.4 m；直接目标放在物体本体会被净空门 abort；
+- **通用搜索检测**：文本 prompt → `/perception/best`；单 finding、revisit 合并、目标轨迹报告；
+- **DINO bbox**：5 帧 IoU 0.48–0.62，~170 ms；edge-aware 已验证；
+- **测试**：294 passed / 2 skipped（mission 158）；px4_offboard flake8 受沙箱 semaphore 限制；
+- **仍未做**：人员检测、视觉伺服/4Hz、VLM 任务级 JSON；C real 仅计划。
 
 ## 0. 证据口径（先读）
 
@@ -11,7 +24,7 @@
 - 样本量小的地方都标了原始计数；n 小的时候百分比没有统计意义（Wilson CI 会很宽）。
 - 原始数据不入库（`.gitignore` 排除 `logs/`、`archive/`），本地保留约 **100 轮试验 CSV**。
 
-## 1. 一句话状态
+## 1. 历史一句话状态（2026-10-17，保留；已被当前状态覆盖）
 
 已经打通 **"深度寻障 → 转场 → 二次复验 → 对准 → 逼近 → 交权 VLM → 保持/绕行 → 恢复"** 的
 完整闭环，并配有四层安全兜底与 fail-closed 起飞门禁；**尚未具备**人员检测、任务级语言解析、
@@ -136,13 +149,13 @@
 | 误交权 / 误触发围栏 | 多批次记录 0 次误交权、0 次误围栏（逐轮 CSV 可查） |
 | 落地后进程不退出 | 修两处真 bug（驱动"曾解锁→上锁即收工"、SCAN 计时不重置）+ 脚本 `timeout 900` |
 
-## 5. 工程数据
+## 5. 工程数据（历史快照，2026-10-17）
 
 ```text
 提交          dev 分支 116 commits（main 待同步，见 README 顶部说明）
 ROS 2 包      px4_interface / mission / sensor_bridge / mapping / planner / perception / vlm / bringup
 自研源码      ~8800 行 Python（不含 px4_msgs 与第三方）
-单元测试      ~4100 行，271 passed / 2 skipped（检测器入口下 272 passed）
+单元测试      ~4100 行，271 passed / 2 skipped（历史快照；当前 294 passed / 2 skipped）
 试验数据      ~100 轮 detour CSV + 1245 张 VLM 决策帧（本地 archive/，不入库）
 主驱动        scripts/vlm_closed_loop.py（1530 行；阶段机 SEEK/TRANSIT/DESCEND/ALIGN/
               APPROACH/SCAN/ROTVERIFY/VERIFY/RUN/CLIMB）
