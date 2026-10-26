@@ -85,3 +85,24 @@ python3 scripts/fly_nl.py \
 
 其他描述可直接替换 target slot（如“红色屋顶”“那辆车”“右侧灰色建筑”）；
 中文目标由 Qwen 翻译，英文目标直接给 DINO。
+
+
+## 7. 橙色球（P1，2026-10-26）
+
+```bash
+python3 scripts/fly_nl.py \
+  "起飞到 2 米，飞到前方橙色球附近，悬停 2 秒，降落" \
+  --visual-backend dino --visual-prompt "orange ball" --execute
+```
+
+结果：
+
+```text
+DINO conf=0.88, depth=42.28m
+target=(27.35,28.20)
+final=(27.07,27.92)
+到点误差=0.30m，abort=0
+```
+
+但要保留的偏差：场景 `OrangeBall` 约 47.6m，DINO 深度 42.28m，
+水平差约 5m；因此“到 DINO 目标”成立，**不能称精确到达球**。
