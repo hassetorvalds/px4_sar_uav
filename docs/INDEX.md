@@ -23,7 +23,7 @@
 ## 当前最优先风险
 
 - **OPEN #11：固定机头 / 前向净空不覆盖航迹（PARTIAL）**。goto 航向对齐已真机；
-  left/right 门有单测，但真实侧向测试中 local_map left/right=inf、未触发；侧向覆盖仍缺失。
+  侧向 unknown 已 fail-closed；真实有数据侧障碍仍未验，侧向覆盖仍缺失。
 
 ## 当前已验证（摘要）
 
@@ -33,7 +33,7 @@
 - **通用搜索检测**：文本 prompt → `/perception/best`；单 finding、revisit 合并、目标轨迹报告。
 - **DINO**：5 帧 IoU 0.48–0.62，~170 ms；edge-aware bbox 已验证。
 - **安全**：dynamic target acquire/stale/围栏 abort；standoff 避免贴近物体。
-- **测试**：294 passed / 2 skipped（mission 158）；px4_offboard flake8 受沙箱 semaphore 限制。
+- **测试**：297 passed / 2 skipped（mission 161）；px4_offboard flake8 受沙箱 semaphore 限制。
 
 ## 历史/背景文档（保留，不作为当前结论）
 

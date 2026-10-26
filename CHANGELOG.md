@@ -1,3 +1,12 @@
+## [2026-10-26] 侧向 unknown fail-closed
+
+- local_map 发布 `left_valid/right_valid`，区分“无数据”和“clear”；
+- 任务层侧向未知时禁止横向移动；
+- 真机固定机头测试：left_valid=0 → “左侧净空未知” → 小幅 detour 后 abort，不再飞向北9.5m；
+- 真实有数据侧障碍仍未验；mission 161，总计 297 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 侧向测试补充：显式 yaw 仍未触发
 
 - 任务内先 `yaw -90°`（heading≈-3.8°），再固定机头向北目标；

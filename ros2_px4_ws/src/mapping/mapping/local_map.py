@@ -147,11 +147,12 @@ class LocalMap(Node):
         position_ned = state.position_ned
         if position_ned is None:
             forward = left = right = float('inf')
+            left_valid = right_valid = False
             nearest_text = 'nearest_fwd=inf'      # 还没收到 PX4 位置时也要有值（否则报错）
             wide_text = 'nearest_wide=inf'
             centroid_text = 'nearest_centroid=inf'
         else:
-            forward, left, right = self._grid.clearance_profile(
+            forward, left, right, left_valid, right_valid = self._grid.clearance_profile_valid(
                 ned_to_enu(*position_ned), ned_yaw_to_enu_yaw(state.heading),
                 half_angle_deg=self._cone_deg, max_distance=self._cone_max,
                 vertical_tolerance_m=self._cone_vertical,
@@ -201,6 +202,7 @@ class LocalMap(Node):
         status.data = (f'voxels={self._grid.voxel_count} frames={self._frames} '
                        f'nearest_forward_m={forward:.2f} '
                        f'left_m={left:.2f} right_m={right:.2f} '
+                       f'left_valid={int(left_valid)} right_valid={int(right_valid)} '
                        f'{nearest_text} {wide_text} {centroid_text} '
                        # 净空读数的**地板值**：上报值等于它时表示"触底（≤该值，未知）"，
                        # 不是"还有这么多余量"（服务器侧 2026-10-15 要求落盘区分）

@@ -164,3 +164,13 @@ def test_clearance_gate_blocks_right_when_right_tight():
     assert gated.blocked is True
     assert gated.east == pytest.approx(0.3)
     assert gated.north == pytest.approx(0.0)
+
+
+def test_clearance_gate_blocks_unknown_left_side():
+    decision = VelocityDecision(east=0.3, north=0.4, done=False)
+    gated = apply_clearance_gate(
+        decision, (0, 0, 2), heading_enu=0.0, nearest_forward_m=2.0,
+        stop_m=0.6, nearest_left_m=float('inf'),
+        left_known=False, right_known=True)
+    assert gated.blocked is True
+    assert gated.north == pytest.approx(0.0)

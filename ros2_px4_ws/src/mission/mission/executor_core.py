@@ -38,7 +38,8 @@ def velocity_toward(current_enu, target_enu, *, max_speed_mps: float,
 
 def apply_clearance_gate(decision: VelocityDecision, current_enu, heading_enu: float,
                          nearest_forward_m, *, stop_m: float = 0.6,
-                         nearest_left_m=None, nearest_right_m=None):
+                         nearest_left_m=None, nearest_right_m=None,
+                         left_known: bool = True, right_known: bool = True):
     """按机体系前/左/右净空限制速度分量；未知净空不拦。"""
     if decision.done:
         return decision
@@ -52,11 +53,19 @@ def apply_clearance_gate(decision: VelocityDecision, current_enu, heading_enu: f
         forward = 0.0
         blocked = True
         reasons.append(f'前向净空 {float(nearest_forward_m):.2f} m ≤ {stop_m:.2f} m')
-    if nearest_left_m is not None and float(nearest_left_m) <= float(stop_m) and left > 1e-6:
+    if not left_known and left > 1e-6:
+        left = 0.0
+        blocked = True
+        reasons.append('左侧净空未知')
+    elif nearest_left_m is not None and float(nearest_left_m) <= float(stop_m) and left > 1e-6:
         left = 0.0
         blocked = True
         reasons.append(f'左侧净空 {float(nearest_left_m):.2f} m ≤ {stop_m:.2f} m')
-    if nearest_right_m is not None and float(nearest_right_m) <= float(stop_m) and left < -1e-6:
+    if not right_known and left < -1e-6:
+        left = 0.0
+        blocked = True
+        reasons.append('右侧净空未知')
+    elif nearest_right_m is not None and float(nearest_right_m) <= float(stop_m) and left < -1e-6:
         left = 0.0
         blocked = True
         reasons.append(f'右侧净空 {float(nearest_right_m):.2f} m ≤ {stop_m:.2f} m')

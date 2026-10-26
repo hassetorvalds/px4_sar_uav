@@ -51,6 +51,7 @@ from .task_spec import TaskError, TaskSpec
 _CLEARANCE_RE = re.compile(r'nearest_forward_m=([0-9.]+|inf)')
 _SIDE_RE = re.compile(
     r'left_m=([0-9.]+|inf)\s+right_m=([0-9.]+|inf)')
+_SIDE_VALID_RE = re.compile(r'left_valid=([01])\s+right_valid=([01])')
 
 #: 命令名 → (PX4 vehicle_command, 是否期望 ACK)
 #: ``land_fast`` 由 bridge 用速度指令实现，没有单条 MAVLink ACK，靠"是否上锁"判完成。
@@ -197,6 +198,8 @@ class TaskExecutor(Node):
         self._detour_cooldown_until = 0.0
         self._clearance_left = None
         self._clearance_right = None
+        self._clearance_left_valid = False
+        self._clearance_right_valid = False
         self._frame_size = (0, 0)
         self._best_meta = {}
         self._dynamic_target = None
@@ -304,6 +307,8 @@ class TaskExecutor(Node):
         self._clearance_forward = None
         self._clearance_left = None
         self._clearance_right = None
+        self._clearance_left_valid = False
+        self._clearance_right_valid = False
         self._heading_enu = None
         self._last_heartbeat = 0.0
         self._last_status = 0.0
@@ -654,6 +659,10 @@ class TaskExecutor(Node):
                                     else float(side.group(1)))
             self._clearance_right = (float('inf') if side.group(2) == 'inf'
                                      else float(side.group(2)))
+        valid = _SIDE_VALID_RE.search(msg.data)
+        if valid:
+            self._clearance_left_valid = valid.group(1) == '1'
+            self._clearance_right_valid = valid.group(2) == '1'
 
     def _on_best(self, msg: PoseStamped) -> None:
         if not self._hold_on_target or self._phase != PHASE_RUN:
@@ -1190,7 +1199,9 @@ class TaskExecutor(Node):
             decision, position, gate_heading,
             self._clearance_forward, stop_m=self._clearance_stop,
             nearest_left_m=self._clearance_left,
-            nearest_right_m=self._clearance_right)
+            nearest_right_m=self._clearance_right,
+            left_known=self._clearance_left_valid,
+            right_known=self._clearance_right_valid)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
                 return
@@ -1394,7 +1405,9 @@ class TaskExecutor(Node):
             decision, position, self._heading_enu or 0.0,
             self._clearance_forward, stop_m=self._clearance_stop,
             nearest_left_m=self._clearance_left,
-            nearest_right_m=self._clearance_right)
+            nearest_right_m=self._clearance_right,
+            left_known=self._clearance_left_valid,
+            right_known=self._clearance_right_valid)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
                 return

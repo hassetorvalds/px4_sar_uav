@@ -283,13 +283,31 @@ class VoxelGrid:
 
         用于决定绕障往哪一侧：更宽的一侧更安全。
         """
-        forward = self.nearest_in_cone(
+        forward, _ = self.nearest_point_in_cone(
             origin_enu, heading_enu, half_angle_deg, max_distance,
             vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
-        left = self.nearest_in_cone(
+        left, _ = self.nearest_point_in_cone(
             origin_enu, heading_enu + math.pi / 2, half_angle_deg,
             max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
-        right = self.nearest_in_cone(
+        right, _ = self.nearest_point_in_cone(
             origin_enu, heading_enu - math.pi / 2, half_angle_deg,
             max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
         return forward, left, right
+
+    def clearance_profile_valid(self, origin_enu, heading_enu: float,
+                                half_angle_deg: float = 30.0,
+                                max_distance: float = 6.0,
+                                vertical_tolerance_m: float = 0.6,
+                                vertical_down_tolerance_m: float = 0.25,
+                                min_distance_m: float = 0.0):
+        """返回 (前,左,右,left_valid,right_valid)；无点在锥内即 invalid。"""
+        forward, _ = self.nearest_point_in_cone(
+            origin_enu, heading_enu, half_angle_deg, max_distance,
+            vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
+        left, left_delta = self.nearest_point_in_cone(
+            origin_enu, heading_enu + math.pi / 2, half_angle_deg,
+            max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
+        right, right_delta = self.nearest_point_in_cone(
+            origin_enu, heading_enu - math.pi / 2, half_angle_deg,
+            max_distance, vertical_tolerance_m, vertical_down_tolerance_m, min_distance_m)
+        return forward, left, right, left_delta is not None, right_delta is not None
