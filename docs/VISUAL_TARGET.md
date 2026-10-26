@@ -198,3 +198,12 @@ cone 两 backend 差0.52m → selected=primary。
 红立方体真机 final(20.82,5.49)、无abort。
 新一致性门端到端回归：spread0.13m、final(21.09,5.55)、无abort。
 `--verify-backend none` 可关闭一致性门。
+
+一致性样本（target-only，DINO vs Qwen）：
+
+| 目标 | 分歧 |
+|---|---|
+| 锥桶 | 0.52 m |
+| 橙色球 | 0.09 m |
+| 红立方体 yaw45 | 0.04 m |
+| 红立方体 yaw90 | DINO 52m 失败 → Qwen fallback |

@@ -1,3 +1,12 @@
+## [2026-10-26] 多物体一致性样本
+
+- orange ball：DINO/Qwen 分歧0.09m；
+- red cube yaw45：分歧0.04m；
+- cone：0.52m；red yaw90 DINO失败→Qwen；
+- 303 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 一致性门端到端回归
 
 - red cube yaw90：DINO失败→Qwen selected；
