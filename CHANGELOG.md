@@ -1,3 +1,11 @@
+## [2026-10-26] 多帧目标飞行回归
+
+- `fly_nl --samples 3` 飞锥桶：3帧 spread0.06m，target(-31.43,31.25)；
+- final(-31.15,30.95)，到点约0.4m，abort=0；
+- 多帧目标入口未破坏执行链路；总计 300 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] fly_nl 默认多帧视觉目标
 
 - `fly_nl.py` 增加 `--samples`（默认3）和 `--max-spread-m`；

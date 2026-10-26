@@ -89,7 +89,7 @@
 | 目标轨迹报告 | ✅ 离线 | finding.history → Markdown 轨迹表（updates/时间/位置/revisit） |
 | 完整 Demo 回归 | ✅ 真机 | 搜索 8/8、扫描 20s、3 次确认、单 finding（updates=3）、无 abort、landed；报告含轨迹 |
 | DINO 独立物体（Cone_5） | ⚠️ 有限成功 | `cone` score 0.491、深度 47.3m；直飞本体因 clearance abort；3m standoff 成功，final 距 cone≈4.8m |
-| 通用 VLM 视觉目标 | ✅ 真机 | 图像 bbox/depth + standoff，不读 AirSim 物体坐标；cone 到点 0.43 m；3 帧目标 spread 0.01 m |
+| 通用 VLM 视觉目标 | ✅ 真机 | 图像 bbox/depth + standoff，不读 AirSim 物体坐标；cone 到点 0.43 m；3帧 targets spread 0.01/0.06m，飞行无 abort |
 | 橙色球目标（P1） | ✅ 到点（测试物） | DINO conf0.88、depth42.28m、target(27.35,28.20)，到点0.3m、无 abort；**场景 OrangeBall pose 与渲染/深度投影不一致，不能当 truth**；DINO/深度在投影处约42.16m，一致 |
 | Heading alignment | ⚠️ 部分 | goto 误差>20°零前向转向；侧向 unknown fail-closed；侧锥改±45°；有数据真实侧障碍未验 |
 | NL 目标槽 → VLM | ✅ 真机 | “飞到前方锥桶附近” → Qwen 翻 traffic cone → DINO bbox/depth + standoff → 到点约 0.4 m、无 abort |

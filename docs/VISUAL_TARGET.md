@@ -133,3 +133,12 @@ spread  = 0.01 m
 ```
 
 仍是 image/depth/standoff，不读取 AirSim 物体坐标。
+
+飞行回归（2026-10-26）：
+
+```text
+fly_nl --samples 3
+target=(-31.43,31.25), spread=0.06m
+final=(-31.15,30.95), abort=0
+报告 report_20261026-205839-503
+```
