@@ -1,3 +1,13 @@
+## [2026-10-26] 目标轨迹写入报告
+
+- `report.py` 新增 `## 目标轨迹`：每个 finding 的 history 表（t/status/world/revisit）；
+- 保留 `## 发现物` 表；单 finding 也能看到 updates 过程；
+- 新增 report 单测；mission 154 passed，总计 290 passed / 2 skipped；
+- 功能验证：服务健康、Qwen target-only、DINO detect、LightNav navigate 均通过；
+  px4_offboard 只有 flake8 受沙箱 semaphore 限制，业务测试 1 passed/1 skipped。
+
+---
+
 ## [2026-10-26] revisit 合并为单 finding
 
 - FindingsBook 增加 `merge_revisits`；窗口外同位置更新原 finding，不新建；

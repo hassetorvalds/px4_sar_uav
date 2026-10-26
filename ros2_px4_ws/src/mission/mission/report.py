@@ -57,6 +57,34 @@ def _note(notes, key):
     return None
 
 
+def _trajectory_section(findings):
+    """把 finding.history 写成可读轨迹；无 history 时返回空。"""
+    tracked = [item for item in findings if item.get('history')]
+    if not tracked:
+        return []
+    lines = ['', '## 目标轨迹', '']
+    for finding in tracked:
+        lines.append(f"### Finding #{finding.get('finding_id')} "
+                     f"({finding.get('label')}, {finding.get('status')})")
+        lines.append('')
+        lines.append(f"- 位置：{_world(finding.get('world_enu'))}；"
+                     f"updates={finding.get('updates', 1)}；"
+                     f"first/last={_fmt(finding.get('first_seen'), 1)}/"
+                     f"{_fmt(finding.get('last_seen'), 1)} s")
+        if finding.get('revisit_of'):
+            lines.append(f"- revisit_of=#{finding.get('revisit_of')}")
+        history = finding.get('history') or []
+        lines.append('')
+        lines.append('| t (s) | 状态 | 位置 ENU | 重访 |')
+        lines.append('|---|---|---|---|')
+        for entry in history[-30:]:
+            lines.append(f"| {_fmt(entry.get('t'), 1)} | "
+                         f"{entry.get('status', '?')} | "
+                         f"{_world(entry.get('world_enu'))} | "
+                         f"{'是' if entry.get('revisit') else ''} |")
+        lines.append('')
+    return lines
+
 def _visual_target_section(events, spec, done, aborts):
     """Qwen/动态目标的可解释结果；没有视觉目标时返回空。"""
     notes = spec.get('notes') or []
@@ -310,6 +338,7 @@ def summarize(report_path: str, intent_path: str = '', output_path: str = '') ->
                 f'{_fmt(finding.get("last_seen"), 1)} |')
     else:
         lines.append('未记录发现物。')
+    lines.extend(_trajectory_section(findings))
     if commands:
         lines.append('')
         lines.append('## 命令生命周期')

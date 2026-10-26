@@ -146,3 +146,30 @@ def test_summarize_visual_abort_unavailable(tmp_path):
     assert '目标状态：未获得动态目标' in text
     assert '失败分类：dynamic_target_unavailable' in text
     assert '到点误差' not in text
+
+
+def test_summarize_finding_trajectory(tmp_path):
+    report = tmp_path / 'report.jsonl'
+    events = [
+        {'t': 0.0, 'event': 'task_accepted', 'summary': 'trajectory',
+         'spec': {'steps': []}},
+        {'t': 5.0, 'event': 'done', 'commands': [], 'findings': [
+            {'finding_id': 1, 'label': 'target', 'world_enu': [1, 2, 0],
+             'confidence': 1.0, 'priority': 'unknown', 'status': 'inspected',
+             'first_seen': 1.0, 'last_seen': 5.0, 'updates': 2,
+             'history': [
+                 {'t': 1.0, 'status': 'confirmed', 'world_enu': [1, 2, 0]},
+                 {'t': 5.0, 'status': 'inspected', 'world_enu': [1.1, 2, 0],
+                  'revisit': False},
+             ]},
+        ]},
+    ]
+    with open(report, 'w', encoding='utf-8') as handle:
+        for event in events:
+            handle.write(json.dumps(event) + '\n')
+    output = summarize(str(report))
+    text = open(output, encoding='utf-8').read()
+    assert '## 目标轨迹' in text
+    assert '### Finding #1' in text
+    assert 'updates=2' in text
+    assert '| 5.0 | inspected | (1.10, 2.00, 0.00) |' in text

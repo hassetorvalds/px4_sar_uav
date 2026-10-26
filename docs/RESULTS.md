@@ -32,7 +32,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **289 passed / 2 skipped**（vlm 45 / mission 153 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip） |
+| 单元测试 | ✅ | **290 passed / 2 skipped**（vlm 45 / mission 154 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -71,6 +71,7 @@
 | Hybrid 搜索/扫描+目标 | ✅ 真机 | 搜索 8/8、扫描 10s、Qwen goto 到点 0.37 m、无 abort；legacy 无下视，覆盖 0/144 |
 | Qwen 通用搜索检测 | ✅ 真机 | 文本 prompt 发布 `/perception/best`；搜索 8/8、扫描 20s、目标 3 次确认；固定 anchor 后偏离 1.39m，finding #2 为 revisit |
 | Revisit 合并 | ✅ 真机 | DINO 搜索 4 次确认只生成 1 个 finding（updates=4，history 保留），不再 #1/#2 两条 |
+| 目标轨迹报告 | ✅ 离线 | finding.history → Markdown 轨迹表（updates/时间/位置/revisit） |
 | Grounding DINO bbox | ✅ 可选真机 | 5 帧 IoU 0.48–0.62；尺寸校正边缘误差 33.9→9.1/28.0→5.8 px；真实 DINO 搜索 3 次确认、无 abort，findings #2 revisit |
 | NL 驱动通用搜索 | ✅ 真机 | 自动 Qwen detector（点+ROI）；搜索 8/8、扫描 20s、3 次确认、无 abort；bbox 为可选，IoU 0.50–0.64，边缘需回退点 |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
