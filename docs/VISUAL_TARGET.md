@@ -151,7 +151,7 @@ final=(-31.15,30.95), abort=0
 ```text
 DINO prompt=red cube, conf=0.634
 bbox=[940,201,1137,363], depth=21.12m
-3帧 target=(-31.43? 不，21.32,4.96)，spread=0.00m
+3帧 target=(21.32,4.96)，spread=0.00m
 final=(20.94,4.87), abort=0
 ```
 
