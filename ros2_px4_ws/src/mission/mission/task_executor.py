@@ -1196,7 +1196,9 @@ class TaskExecutor(Node):
                 return
             if self._blocked_since is None:
                 self._blocked_since = time.monotonic()
-                self._report('clearance_blocked', distance=self._clearance_forward)
+                self._report('clearance_blocked', distance=self._clearance_forward,
+                             left=self._clearance_left, right=self._clearance_right,
+                             reason=decision.reason)
             elif time.monotonic() - self._blocked_since > self._blocked_abort:
                 self.get_logger().warn('持续被净空挡住 → 收工降落')
                 self._report('abort', reason='clearance_blocked')

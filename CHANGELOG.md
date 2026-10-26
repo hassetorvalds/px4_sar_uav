@@ -1,3 +1,13 @@
+## [2026-10-26] 真实侧向净空测试未触发
+
+- 侧向门已接 local_map left/right 并有单测；
+- 真机 heading east、target north、align_heading=false：飞到 north9.6m，无 clearance_blocked；
+- local_map `left_m=inf/right_m=inf`，侧向数据缺失；
+- 结论：不能把“未触发”当侧向安全；P0 仍 PARTIAL，下一步修侧向覆盖/FOV；
+- 296 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 侧向净空门
 
 - `apply_clearance_gate` 接入 local_map `left_m/right_m`：向某侧移动且该侧净空不足时归零该侧分量；
