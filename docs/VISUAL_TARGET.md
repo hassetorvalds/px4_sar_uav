@@ -57,3 +57,31 @@ abort 0，landed
 - [VLM-Nav](https://paperity.org/p/371048647/vlm-nav-mapless-uav-navigation-using-monocular-vision-driven-by-vision-language-models)：
   单目 + VLM 的无地图导航；
 - 只借鉴“视觉 grounding → 度量航点”的分层，不直接复制代码。
+
+
+## 6. 自然语言目标槽（2026-10-26）
+
+`fly_nl.py` 现在把“飞到前方锥桶附近”的自由文本目标传给 visual_target：
+
+```bash
+python3 scripts/fly_nl.py \
+  "起飞到 2 米，飞到前方锥桶附近，悬停 2 秒，降落" \
+  --visual-backend dino --execute
+```
+
+链路：
+
+```text
+中文 target slot=锥桶
+→ Qwen 翻译 traffic cone
+→ DINO bbox + depth
+→ standoff 3m
+→ target (-31.42,31.25)
+→ 真机 final (-31.11,30.96)，误差约 0.4m
+→ abort 0，landed
+```
+
+未读取 AirSim 物体坐标。报告：`logs/tasks/report_20261026-131328-088.md`。
+
+其他描述可直接替换 target slot（如“红色屋顶”“那辆车”“右侧灰色建筑”）；
+中文目标由 Qwen 翻译，英文目标直接给 DINO。

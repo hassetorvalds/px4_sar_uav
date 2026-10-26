@@ -45,3 +45,22 @@ def test_search_target_prompt():
         '寻找橙色球，扫描 20 秒，降落')
     search = next(step for step in parsed['steps'] if step['type'] == 'search')
     assert search['params']['target']['prompt'] == '橙色球'
+
+
+def test_visual_target_slot_arbitrary_objects():
+    cases = {
+        '飞到前方锥桶附近': '锥桶',
+        '靠近那辆车': '那辆车',
+        '飞到红色屋顶旁边': '红色屋顶',
+        '接近右侧灰色建筑': '右侧灰色建筑',
+    }
+    for text, expected in cases.items():
+        parsed = parse_hybrid_instruction(text)
+        assert parsed['visual_target_text'] == expected
+
+
+def test_direction_without_object_stays_goto():
+    parsed = parse_hybrid_instruction('起飞到 2 米，去东边 15 米，降落')
+    assert parsed['visual_index'] is None
+    assert parsed['visual_target_text'] is None
+    assert any(step['type'] == 'goto' for step in parsed['steps'])

@@ -12,7 +12,11 @@ from .task_parser import (_DIRECTIONS, _RE_DIR_DIST, _RE_FORWARD, _RE_HOVER,
 from .task_spec import TaskError
 
 _RE_VISUAL = re.compile(
-    r'(?:飞到|飞向|前往|接近|靠近|去)\s*.*?(?:目标|物体|建筑|橙色|红色|画面|前方|那里|它)',
+    r'(?:飞到|飞向|前往|接近|靠近|去)\s*(?P<target>[^，,。；;]+)',
+    re.IGNORECASE)
+_RE_VISUAL_WORDS = re.compile(
+    r'目标|物体|建筑|橙色|红色|屋顶|锥|车|门|窗|桥|树|人|标志|标记|'
+    r'附近|旁边|前面|后面|那里|它|cone|building|roof|vehicle|person|marker',
     re.IGNORECASE)
 _RE_TARGET_PROMPT = re.compile(
     r'(?:寻找|查找|找一下|搜寻|find|look\s+for|search\s+for)\s*'
@@ -39,6 +43,7 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
     steps = []
     notes = []
     visual_index = None
+    visual_target_text = None
     pending_prompt = None
     for clause in _clauses(text):
         takeoff = _RE_TAKEOFF_ALT.search(clause)
@@ -96,10 +101,22 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
                     params['target'] = target
                 steps.append({'type': step.type, 'params': params})
             continue
-        if _RE_VISUAL.search(clause):
+        visual_match = _RE_VISUAL.search(clause)
+        if visual_match:
+            # 有方向+距离、又没有物体/附近语义的，仍按方向 goto 处理。
+            if (_RE_DIR_DIST.search(clause)
+                    and not _RE_VISUAL_WORDS.search(clause)):
+                visual_match = None
+        if visual_match:
             if visual_index is not None:
                 raise TaskError('只支持一个视觉目标')
+            target_text = visual_match.group('target').strip(' ，,。；;')
+            target_text = re.sub(r'(附近|旁边|前面|后面|处|那里)$', '', target_text).strip()
+            target_text = re.sub(r'^(前方|前面|画面中|一个|的)', '', target_text).strip()
+            if not target_text:
+                raise TaskError('视觉目标描述为空')
             visual_index = len(steps)
+            visual_target_text = target_text
             steps.append({'type': 'visual_goto', 'params': {}})
             continue
         forward = _RE_FORWARD.search(clause)
@@ -144,4 +161,5 @@ def parse_hybrid_instruction(text: str, default_altitude: float = 2.0) -> dict:
     # 视觉目标可以在搜索/扫描后；Qwen 目标在起飞前从原点拍摄，
     # 因此 TaskSpec 仍按相对起飞原点解释，不做“移动后重拍”。
     return {'steps': steps, 'visual_index': visual_index,
+            'visual_target_text': visual_target_text,
             'altitude_m': altitude, 'notes': notes, 'source_text': text}

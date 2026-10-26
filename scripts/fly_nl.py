@@ -18,16 +18,39 @@ import urllib.request
 from mission.hybrid_parser import parse_hybrid_instruction
 
 
-def qwen_target(instruction, out, qwen_url):
-    cmd = [sys.executable, 'scripts/qwen_target.py',
-           '--instruction', instruction, '--qwen-url', qwen_url, '--out', out]
-    completed = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+def visual_target(instruction, target_prompt, backend, out,
+                  qwen_url, dino_url, standoff_m):
+    cmd = [sys.executable, 'scripts/visual_target.py',
+           '--instruction', instruction, '--target-prompt', target_prompt,
+           '--backend', backend, '--qwen-url', qwen_url,
+           '--dino-url', dino_url, '--standoff-m', str(standoff_m),
+           '--out', out]
+    completed = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip()[-500:] or
-                           f'qwen_target 退出码 {completed.returncode}')
+                           f'visual_target 退出码 {completed.returncode}')
     task = json.load(open(out, encoding='utf-8'))
     goto = next(step['params'] for step in task['steps'] if step['type'] == 'goto')
     return goto, (task.get('notes') or [])
+
+
+def _translate_target(text, qwen_url):
+    payload = json.dumps({
+        'model': 'Qwen3-VL-8B-Instruct',
+        'messages': [{'role': 'user', 'content': (
+            'Translate this object description to one short English noun phrase. '
+            'Reply with the phrase only, no punctuation: ' + text)}],
+        'temperature': 0.0, 'max_tokens': 32,
+    }).encode('utf-8')
+    request = urllib.request.Request(
+        qwen_url, data=payload, method='POST',
+        headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = json.loads(response.read().decode('utf-8'))
+    phrase = data['choices'][0]['message']['content'].strip().strip('"').strip("'。.")
+    if not phrase:
+        raise RuntimeError('target translation returned empty')
+    return phrase
 
 
 def _dino_ready(url):
@@ -61,6 +84,9 @@ def main():
     parser.add_argument('instruction')
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--detector', choices=['qwen', 'dino'], default='qwen')
+    parser.add_argument('--visual-backend', choices=['qwen', 'dino'], default='dino')
+    parser.add_argument('--visual-prompt', default='')
+    parser.add_argument('--standoff-m', type=float, default=3.0)
     parser.add_argument('--target-only', action='store_true')
     parser.add_argument('--qwen-url',
                         default='http://127.0.0.1:18081/v1/chat/completions')
@@ -79,16 +105,29 @@ def main():
             if prompt:
                 search_prompt = prompt
     if parsed['visual_index'] is not None:
+        target_text = args.visual_prompt or parsed.get('visual_target_text')
+        if not target_text:
+            print('[nl] 视觉目标描述为空', file=sys.stderr)
+            return 2
+        if args.visual_backend == 'dino' and not target_text.isascii():
+            if not _qwen_ready(args.qwen_url):
+                print('[nl] 中文目标需要 Qwen 翻译，但 18081 不可达', file=sys.stderr)
+                return 4
+            target_text = _translate_target(target_text, args.qwen_url)
+            print(f'[nl] target prompt translated: {target_text}')
         stamp = time.strftime('%Y%m%d-%H%M%S')
-        qwen_task = f'logs/tasks/nl_qwen_{stamp}.json'
+        visual_task = f'logs/tasks/nl_visual_{stamp}.json'
         os.makedirs('logs/tasks', exist_ok=True)
-        goto, qwen_notes = qwen_target(args.instruction, qwen_task, args.qwen_url)
+        goto, visual_notes = visual_target(
+            args.instruction, target_text, args.visual_backend, visual_task,
+            args.qwen_url, args.dino_url, args.standoff_m)
         index = parsed['visual_index']
         steps[index] = {'type': 'goto', 'params': {
             'east_m': goto['east_m'], 'north_m': goto['north_m'],
             'altitude_m': parsed['altitude_m']}}
-        notes.append(f'visual_target=qwen:{goto["east_m"]},{goto["north_m"]}')
-        notes.extend(qwen_notes)
+        notes.append(f'visual_target={args.visual_backend}:{goto["east_m"]},{goto["north_m"]}')
+        notes.append(f'visual_prompt={target_text}')
+        notes.extend(visual_notes)
     else:
         notes.append('hybrid_text_only')
 
@@ -101,7 +140,7 @@ def main():
         'max_duration_s': 180.0,
         'geofence_radius_m': 50.0,
         'coordinate_frame': 'relative',
-        'intent_source': ('qwen_grounding' if parsed['visual_index'] is not None
+        'intent_source': ('visual_target' if parsed['visual_index'] is not None
                           else 'hybrid_text'),
         'steps': steps,
         'notes': notes,

@@ -1,3 +1,13 @@
+## [2026-10-26] NL 目标槽接入通用 VLM
+
+- `hybrid_parser` 提取任意视觉目标文本（锥桶/车辆/屋顶/建筑等），不硬编码类别；
+- `fly_nl` 把 target slot 传给 `visual_target.py`；中文用 Qwen 翻译，英文直接给 DINO；
+- 不使用 AirSim `simGetObjectPose`；
+- 真机：“飞到前方锥桶附近” → traffic cone → bbox/depth + 3m standoff → 到点约 0.4m、无 abort；
+- 新增 parser 测试；mission 158 passed，总计 294 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 通用 VLM 视觉目标 + standoff
 
 - 新增 `scripts/visual_target.py`：图像 bbox/point + depth + standoff → TaskSpec；
