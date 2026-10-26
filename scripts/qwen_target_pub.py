@@ -84,6 +84,7 @@ class QwenTargetPub(Node):
         self._history = []
         self._depth_history = []
         self._bbox_area_history = []
+        self._bbox_size_history = []
         self._last_published = None
         self._locked_target = None
         self._busy = False
@@ -92,6 +93,36 @@ class QwenTargetPub(Node):
         self.create_timer(1.0 / rate, self._tick)
         self.get_logger().info(f'Qwen target publisher：{rate:.1f} Hz（实际受推理限制）')
         self.get_logger().info(f'DINO endpoint={self._dino_url} backend={self._backend}')
+
+    def _bbox_center(self, bbox, width, height, clipped):
+        """Edge-aware bbox 中心：用历史中位宽高补截断边。"""
+        x1, y1, x2, y2 = [float(v) for v in bbox]
+        if not clipped:
+            w, h = x2 - x1, y2 - y1
+            area = w * h
+            if self._bbox_area_history:
+                previous = self._bbox_area_history[-1]
+                if abs(area - previous) / max(previous, 1.0) > self._bbox_area_tol:
+                    raise ValueError('bbox area changed too much')
+            self._bbox_area_history.append(area)
+            self._bbox_area_history = self._bbox_area_history[-5:]
+            self._bbox_size_history.append((w, h))
+            self._bbox_size_history = self._bbox_size_history[-5:]
+            return x1, y1, x2, y2
+        if not self._bbox_size_history:
+            return x1, y1, x2, y2
+        mw = statistics.median(w for w, _ in self._bbox_size_history)
+        mh = statistics.median(h for _, h in self._bbox_size_history)
+        margin = self._bbox_edge_margin
+        if x1 <= margin and x2 < width - margin:
+            x1 = max(0.0, x2 - mw)
+        elif x2 >= width - margin and x1 > margin:
+            x2 = min(float(width), x1 + mw)
+        if y1 <= margin and y2 < height - margin:
+            y1 = max(0.0, y2 - mh)
+        elif y2 >= height - margin and y1 > margin:
+            y2 = min(float(height), y1 + mh)
+        return x1, y1, x2, y2
 
     def _dino_detect(self, jpeg, width, height):
         payload = json.dumps({
@@ -154,13 +185,14 @@ class QwenTargetPub(Node):
                        or bbox[1] <= self._bbox_edge_margin
                        or bbox[2] >= width - self._bbox_edge_margin
                        or bbox[3] >= height - self._bbox_edge_margin)
+            adjusted = self._bbox_center(bbox, width, height, clipped)
             if clipped:
-                # 边缘框仍用 bbox 中心；Qwen 点回退实测更差（会偏 3 m）。
-                self.get_logger().warn('DINO bbox clipped; use center with caution',
-                                       throttle_duration_sec=2.0)
-            self._last_bbox = [round(float(v), 1) for v in bbox]
-            u = (bbox[0] + bbox[2]) / 2.0
-            v = (bbox[1] + bbox[3]) / 2.0
+                self.get_logger().info(
+                    f'DINO bbox clipped; edge-aware {adjusted}',
+                    throttle_duration_sec=2.0)
+            self._last_bbox = [round(float(v), 1) for v in adjusted]
+            u = (adjusted[0] + adjusted[2]) / 2.0
+            v = (adjusted[1] + adjusted[3]) / 2.0
         elif self._use_bbox:
             try:
                 bbox_prompt = None

@@ -1,3 +1,12 @@
+## [2026-10-26] DINO edge-aware bbox
+
+- DINO bbox：非截断时记录宽高/面积，面积变化 >60% 拒绝；
+- 截断时用历史中位宽高补未截断边，再取中心；
+- 无历史时仍用 bbox 中心；Qwen 点回退不再用于 DINO 边缘；
+- 未新增真机飞行；DINO 仍需 `--detector dino`。
+
+---
+
 ## [2026-10-26] DINO backend 可选用
 
 - `fly_nl.py --detector dino`：中文目标映射英文 prompt，启动 DINO backend；

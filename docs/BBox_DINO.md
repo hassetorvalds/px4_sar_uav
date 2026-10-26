@@ -65,7 +65,8 @@ python3 scripts/fly_nl.py "起飞到 2 米，搜索...寻找橙色球，扫描 2
 
 - `fly_nl` 把“橙色球”映射成 `orange ball`；
 - `qwen_target_pub` 走 DINO `/detect`，bbox 中心 + depth + anchor；
-- 边缘 bbox 仍用中心并记 `clipped`（点回退实测偏 3 m，已弃用）；
+- 边缘 bbox 用历史中位宽高补未截断边（edge-aware）；无历史时仍用 bbox 中心；
+- 非截断 bbox 面积跨帧变化 >60% 拒绝；
 - 真机（DINO backend）：搜索 8/8、扫描 20s、目标 3 次确认、无 abort；
   findings 28.73/31.61、29.74/30.27（#2 revisit）；报告 `report_20261026-121844-556`。
 - 自动默认仍是 Qwen 点+ROI；DINO 需显式 `--detector dino`。
