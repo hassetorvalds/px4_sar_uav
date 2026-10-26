@@ -13,6 +13,8 @@ import sys
 import tempfile
 import time
 
+from mission.visual_target import select_verified_target
+
 
 def run_target(script, target_prompt, backend, out, args):
     cmd = [sys.executable, script,
@@ -75,22 +77,23 @@ def main():
         notes.append(f'primary_failed={primary_err}')
     if verify is None:
         notes.append(f'verify_failed={verify_err}')
-    if primary and verify:
-        diff = math.hypot(primary['east'] - verify['east'],
-                          primary['north'] - verify['north'])
+    primary_pair = ((primary['east'], primary['north']) if primary else None)
+    verify_pair = ((verify['east'], verify['north']) if verify else None)
+    try:
+        _, _, diff, source = select_verified_target(
+            primary_pair, verify_pair, args.max_diff_m)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if primary:
         notes.append(f'primary_target={primary["east"]:.2f},{primary["north"]:.2f}')
+    if verify:
         notes.append(f'verify_target={verify["east"]:.2f},{verify["north"]:.2f}')
+    if diff is not None:
         notes.append(f'disagreement_m={diff:.2f}')
-        chosen = verify if diff > args.max_diff_m else primary
-        notes.append(f'selected={"verify" if diff > args.max_diff_m else "primary"}')
-    elif primary:
-        chosen = primary
-        notes.append('selected=primary')
-    elif verify:
-        chosen = verify
-        notes.append('selected=verify')
-    else:
-        raise SystemExit('both primary and verify failed')
+    notes.append(f'selected={source}')
+    chosen = primary if source == 'primary' else verify
+    if chosen is None:
+        raise SystemExit('selected backend has no target')
     task = chosen['task']
     task['source_text'] = (f'visual target verify: {args.target_prompt} '
                            f'(primary {args.primary}, verify {args.verify})')
@@ -99,7 +102,7 @@ def main():
     with open(out, 'w', encoding='utf-8') as handle:
         json.dump(task, handle, ensure_ascii=False, indent=2)
     print(json.dumps({'target_prompt': args.target_prompt,
-                      'selected': chosen is verify and args.verify != 'none',
+                      'selected': source,
                       'task': out, 'notes': notes}, ensure_ascii=False, indent=2))
 
 

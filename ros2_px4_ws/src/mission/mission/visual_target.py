@@ -27,3 +27,26 @@ def median_enu_target(samples, max_spread_m: float = 1.5):
     if spread > float(max_spread_m):
         raise ValueError(f'target spread {spread:.2f} m > {max_spread_m:.2f} m')
     return east, north, spread
+
+
+def select_verified_target(primary, verify, max_diff_m: float = 3.0):
+    """主/第二意见一致性门。
+
+    - 两者都有：分歧 ≤ max_diff 才接受 primary；否则拒绝；
+    - 仅一个成功：采用成功的那个；
+    - 都失败：拒绝。
+    返回 (east, north, diff, source)。
+    """
+    primary_ok = primary is not None
+    verify_ok = verify is not None
+    if primary_ok and verify_ok:
+        diff = math.hypot(float(primary[0]) - float(verify[0]),
+                          float(primary[1]) - float(verify[1]))
+        if diff > float(max_diff_m):
+            raise ValueError(f'primary/verify disagreement {diff:.2f} m > {max_diff_m:.2f} m')
+        return float(primary[0]), float(primary[1]), diff, 'primary'
+    if primary_ok:
+        return float(primary[0]), float(primary[1]), None, 'primary'
+    if verify_ok:
+        return float(verify[0]), float(verify[1]), None, 'verify'
+    raise ValueError('both primary and verify failed')

@@ -2,7 +2,8 @@
 
 import pytest
 
-from mission.visual_target import apply_standoff, median_enu_target
+from mission.visual_target import (apply_standoff, median_enu_target,
+                                      select_verified_target)
 
 
 def test_standoff_reduces_along_line():
@@ -28,3 +29,21 @@ def test_median_target_accepts_small_spread():
 def test_median_target_rejects_bad_spread():
     with pytest.raises(ValueError):
         median_enu_target([(10.0, 20.0), (20.0, 20.0)], max_spread_m=1.5)
+
+
+def test_select_consistent_primary():
+    east, north, diff, source = select_verified_target((10, 5), (10.5, 5.2), 3.0)
+    assert (east, north) == (10.0, 5.0)
+    assert diff == pytest.approx(0.5385, abs=1e-3)
+    assert source == 'primary'
+
+
+def test_select_rejects_disagreement():
+    with pytest.raises(ValueError):
+        select_verified_target((10, 5), (20, 5), 3.0)
+
+
+def test_select_falls_back_to_verify():
+    east, north, diff, source = select_verified_target(None, (21.2, 5.5), 3.0)
+    assert (east, north) == (21.2, 5.5)
+    assert diff is None and source == 'verify'

@@ -1,3 +1,12 @@
+## [2026-10-26] 双 backend 一致性门
+
+- `select_verified_target`：两 backend 都成功且分歧 >3m → 拒绝；单边成功用另一边；
+- cone：DINO/Qwen 差0.52m → primary；
+- 红立方体 yaw90：DINO失败 → verify(Qwen)；
+- 3 个选择逻辑单测；mission 166，总计 303 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] fly_nl Qwen 第二意见端到端真机
 
 - 红立方体 yaw90 端到端：DINO 52m 失败 → Qwen selected；

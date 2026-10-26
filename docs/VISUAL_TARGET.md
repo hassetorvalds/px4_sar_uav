@@ -184,6 +184,8 @@ Qwen：bbox 399–550，depth24.11m，3帧 target(21.20,5.47)，spread0.06m
 
 说明：Qwen 可作为 DINO 大框/误检的第二意见，但仍只使用图像/深度。
 
+`fly_nl` 默认走一致性门：两 backend 都成功且分歧 >3m 则拒绝，而不是盲目选 Qwen。
+
 `fly_nl` 默认：
 
 ```bash
@@ -191,6 +193,6 @@ python3 scripts/fly_nl.py "...红色立方体..." \
   --visual-backend dino --visual-prompt "red cube" --verify-backend qwen
 ```
 
-红立方体 yaw90 端到端：primary DINO 52m 失败 → selected=verify(Qwen)，
-target(21.21,5.53)、spread0.07m；真机 final(20.82,5.49)、无abort。
-`--verify-backend none` 可关闭第二意见。
+红立方体 yaw90 端到端：primary DINO 52m 失败 → selected=verify(Qwen)；
+cone 两 backend 差0.52m → selected=primary。
+红立方体真机 final(20.82,5.49)、无abort。`--verify-backend none` 可关闭一致性门。
