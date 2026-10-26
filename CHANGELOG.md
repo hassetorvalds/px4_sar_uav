@@ -1,3 +1,14 @@
+## [2026-10-26] 通用 VLM 视觉目标 + standoff
+
+- 新增 `scripts/visual_target.py`：图像 bbox/point + depth + standoff → TaskSpec；
+- 不读取 AirSim 物体坐标，只用相机/位姿；
+- DINO cone：bbox score 0.491、depth 47.31m，standoff 3m；
+- 真机 final (-31.12,30.95)，误差 0.43 m，无 abort；
+- 新增 standoff 单测；文档 `docs/VISUAL_TARGET.md`；
+- mission 156 passed，总计 292 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] Cone_5 独立物体导航测试
 
 - AirSim `Cone_5` ENU (-34.4,34.5)，距原点 48.7m；

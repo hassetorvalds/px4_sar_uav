@@ -32,7 +32,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **290 passed / 2 skipped**（vlm 45 / mission 154 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
+| 单元测试 | ✅ | **292 passed / 2 skipped**（vlm 45 / mission 156 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 21 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -74,6 +74,7 @@
 | 目标轨迹报告 | ✅ 离线 | finding.history → Markdown 轨迹表（updates/时间/位置/revisit） |
 | 完整 Demo 回归 | ✅ 真机 | 搜索 8/8、扫描 20s、3 次确认、单 finding（updates=3）、无 abort、landed；报告含轨迹 |
 | DINO 独立物体（Cone_5） | ⚠️ 有限成功 | `cone` score 0.491、深度 47.3m；直飞本体因 clearance abort；3m standoff 成功，final 距 cone≈4.8m |
+| 通用 VLM 视觉目标 | ✅ 真机 | 图像 bbox/depth + standoff，不读 AirSim 物体坐标；cone 到点 0.43 m、无 abort |
 | Grounding DINO bbox | ✅ 可选真机 | 5 帧 IoU 0.48–0.62；尺寸校正边缘误差 33.9→9.1/28.0→5.8 px；真实 DINO 搜索 3 次确认、无 abort，findings #2 revisit |
 | NL 驱动通用搜索 | ✅ 真机 | 自动 Qwen detector（点+ROI）；搜索 8/8、扫描 20s、3 次确认、无 abort；bbox 为可选，IoU 0.50–0.64，边缘需回退点 |
 | 旧驱动高度门帧标签 | ⚠️ 已加标签，未复飞 | CSV `px4_frame/truth_frame/gate_frame`；TRUTH 仅诊断；数据源仍 px4/airsim 二选一 |
