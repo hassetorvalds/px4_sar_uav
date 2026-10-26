@@ -195,4 +195,6 @@ python3 scripts/fly_nl.py "...红色立方体..." \
 
 红立方体 yaw90 端到端：primary DINO 52m 失败 → selected=verify(Qwen)；
 cone 两 backend 差0.52m → selected=primary。
-红立方体真机 final(20.82,5.49)、无abort。`--verify-backend none` 可关闭一致性门。
+红立方体真机 final(20.82,5.49)、无abort。
+新一致性门端到端回归：spread0.13m、final(21.09,5.55)、无abort。
+`--verify-backend none` 可关闭一致性门。

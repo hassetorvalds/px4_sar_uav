@@ -1,3 +1,11 @@
+## [2026-10-26] 一致性门端到端回归
+
+- red cube yaw90：DINO失败→Qwen selected；
+- 新一致性门端到端：spread0.13m、target(21.21,5.60)、final(21.09,5.55)，无abort；
+- 303 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 双 backend 一致性门
 
 - `select_verified_target`：两 backend 都成功且分歧 >3m → 拒绝；单边成功用另一边；
