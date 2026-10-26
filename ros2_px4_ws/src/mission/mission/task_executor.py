@@ -104,6 +104,9 @@ class TaskExecutor(Node):
         self.declare_parameter('findings_merge_radius_m', 3.0)
         self.declare_parameter('findings_merge_window_s', 30.0)
         self.declare_parameter('findings_merge_revisits', False)
+        self.declare_parameter('goto_align_heading', True)
+        self.declare_parameter('goto_align_tolerance_deg', 20.0)
+        self.declare_parameter('goto_align_rate_deg_s', 20.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -155,6 +158,12 @@ class TaskExecutor(Node):
             self.get_parameter('findings_merge_window_s').value)
         self._findings_merge_revisits = bool(
             self.get_parameter('findings_merge_revisits').value)
+        self._goto_align_heading = bool(
+            self.get_parameter('goto_align_heading').value)
+        self._goto_align_tol = math.radians(float(
+            self.get_parameter('goto_align_tolerance_deg').value))
+        self._goto_align_rate = math.radians(float(
+            self.get_parameter('goto_align_rate_deg_s').value))
         try:
             self._findings_radius_by_label = json.loads(
                 str(self.get_parameter('findings_radius_by_label').value or '{}'))
@@ -194,6 +203,8 @@ class TaskExecutor(Node):
         self._dynamic_target_at = 0.0
         self._dynamic_target_seen = False
         self._last_dynamic_report = None
+        self._heading_align_step = -1
+        self._heading_align_active = False
         self._dynamic_target_acquire_timeout = float(
             self.get_parameter('dynamic_target_acquire_timeout_s').value)
         self._dynamic_target_stale_timeout = float(
@@ -267,6 +278,8 @@ class TaskExecutor(Node):
         self._dynamic_target_at = 0.0
         self._dynamic_target_seen = False
         self._last_dynamic_report = None
+        self._heading_align_step = -1
+        self._heading_align_active = False
         self._dynamic_target_acquire_timeout = float(
             self.get_parameter('dynamic_target_acquire_timeout_s').value)
         self._dynamic_target_stale_timeout = float(
@@ -581,6 +594,8 @@ class TaskExecutor(Node):
         self._dynamic_target_at = 0.0
         self._dynamic_target_seen = False
         self._last_dynamic_report = None
+        self._heading_align_step = -1
+        self._heading_align_active = False
         self._dynamic_target_acquire_timeout = float(
             self.get_parameter('dynamic_target_acquire_timeout_s').value)
         self._dynamic_target_stale_timeout = float(
@@ -1130,11 +1145,47 @@ class TaskExecutor(Node):
     def _run_goto(self, position, target) -> None:
         if self._run_detour(position, time.monotonic()):
             return
+        step = self._current_step()
+        step_index = self._step_index
+        if step_index != self._heading_align_step:
+            self._heading_align_step = step_index
+            self._heading_align_active = False
+        align = (self._goto_align_heading and step is not None
+                 and step.type == 'goto'
+                 and bool(step.params.get('align_heading', True)))
+        desired = None
+        if align and self._heading_enu is not None:
+            dx = float(target[0]) - float(position[0])
+            dy = float(target[1]) - float(position[1])
+            if math.hypot(dx, dy) > self._arrive_tol:
+                desired = math.atan2(dy, dx)
+                error = math.remainder(desired - self._heading_enu, 2.0 * math.pi)
+                if abs(error) > self._goto_align_tol:
+                    if not self._heading_align_active:
+                        self._heading_align_active = True
+                        self._report('heading_align_start',
+                                     heading_enu_deg=round(math.degrees(self._heading_enu), 1),
+                                     target_bearing_deg=round(math.degrees(desired), 1),
+                                     error_deg=round(math.degrees(error), 1))
+                    rate, _ = yaw_rate_to_target(
+                        self._heading_enu, desired,
+                        max_rate_rad_s=self._goto_align_rate,
+                        tolerance_rad=math.radians(3.0))
+                    self._publish_velocity(0.0, 0.0,
+                                           self._altitude_hold_vz(position),
+                                           yaw_rate=rate)
+                    return
+                if self._heading_align_active:
+                    self._heading_align_active = False
+                    self._report('heading_align_complete',
+                                 heading_enu_deg=round(math.degrees(self._heading_enu), 1),
+                                 target_bearing_deg=round(math.degrees(desired), 1))
         decision = velocity_toward(position, target,
                                    max_speed_mps=self._spec.max_speed_mps,
                                    tolerance_m=self._arrive_tol)
+        gate_heading = desired if desired is not None else (self._heading_enu or 0.0)
         decision = apply_clearance_gate(
-            decision, position, self._heading_enu or 0.0,
+            decision, position, gate_heading,
             self._clearance_forward, stop_m=self._clearance_stop)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
