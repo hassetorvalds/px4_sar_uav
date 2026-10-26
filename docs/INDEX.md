@@ -29,11 +29,12 @@
 
 - **SAR Demo v0**：代理橙色目标 3 轮搜索 8/8、无 abort；检测命中 2/3（不是人员检测）。
 - **自然语言**：Hybrid NL（起飞/搜索/扫描/悬停/降落 + 视觉目标槽）。
-- **任意物体目标槽**：中文 → Qwen 翻译 → DINO bbox/depth → standoff；真机 cone 到点约 0.4 m。
+- **任意物体目标槽**：中文 → Qwen 翻译 → DINO bbox/depth → standoff；真机 cone 到点约 0.4 m；
+  3 帧中位数 spread 0.01 m。
 - **通用搜索检测**：文本 prompt → `/perception/best`；单 finding、revisit 合并、目标轨迹报告。
 - **DINO**：5 帧 IoU 0.48–0.62，~170 ms；edge-aware bbox 已验证。
 - **安全**：dynamic target acquire/stale/围栏 abort；standoff 避免贴近物体。
-- **测试**：298 passed / 2 skipped（mission 161 / mapping 22）；px4_offboard flake8 受沙箱 semaphore 限制。
+- **测试**：300 passed / 2 skipped（mission 163 / mapping 22）；px4_offboard flake8 受沙箱 semaphore 限制。
 
 ## 历史/背景文档（保留，不作为当前结论）
 

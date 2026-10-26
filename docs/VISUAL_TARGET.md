@@ -107,3 +107,25 @@ final=(27.07,27.92)
 诊断：球投影处深度约42.16m，与DINO 42.28m一致；场景 `OrangeBall` pose（约47.6m）
 与渲染/深度投影不一致，**不能把物体 pose 当 truth**。
 “到 DINO 目标”成立；精度只能用感知/深度闭环评估，不用 AirSim 物体坐标验真。
+
+
+## 8. 多帧稳定目标（2026-10-26）
+
+单帧 bbox/depth 易受遮挡；`visual_target_avg.py` 连续采样多次，目标取中位数，
+偏离中位数超过 `--max-spread-m`（默认1.5m）则拒绝。
+
+```bash
+python3 scripts/visual_target_avg.py \
+  --target-prompt cone --backend dino --samples 3 --standoff-m 3 \
+  --out logs/tasks/cone_avg_task.json
+```
+
+锥桶实测：
+
+```text
+samples = (-31.42,31.24), (-31.43,31.24), (-31.43,31.24)
+median  = (-31.43,31.24)
+spread  = 0.01 m
+```
+
+仍是 image/depth/standoff，不读取 AirSim 物体坐标。

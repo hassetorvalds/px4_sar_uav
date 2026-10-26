@@ -4,7 +4,7 @@
 > 当前仿真平台：**Windows 11 + UE4.27 + AirSim 1.8.1 + WSL2 Ubuntu 22.04 + ROS 2 Humble + PX4 1.18 + Micro XRCE-DDS Agent 2.4.2**
 >
 > **最近验证（2026-10-26）**：中文“飞到前方锥桶附近” → Qwen 翻译 → DINO bbox/depth/standoff → 真机到点约 0.4 m；
-> 通用搜索 8/8、扫描 20 s、单 finding、轨迹报告；DINO bbox IoU 0.48–0.62；298 passed / 2 skipped。
+> 通用搜索 8/8、扫描 20 s、单 finding、轨迹报告；DINO bbox IoU 0.48–0.62；300 passed / 2 skipped。
 > 历史验证（2026-10-18）：Action goal 提交完整任务（搜索 8/8 → 扫描 → 目标 → 对准 3.5° → 安全落地）；
 > findings `#1 target [36.19, 35.88, 5.73]` 已从 confirmed 升级为 inspected，并写入 Action result / Markdown；
 > 矩形覆盖搜索真机 6/6 航点（24 m²、22 m、预计 54 s）；
@@ -1870,7 +1870,7 @@ VLM
 ✅ 任意物体目标：中文 → Qwen 翻译 → DINO bbox/depth/standoff
 ✅ 通用搜索检测 → /perception/best → 单 finding / 轨迹报告
 ✅ dynamic 目标安全失败语义、revisit 合并、目标轨迹
-✅ 298 passed / 2 skipped（mission 161）
+✅ 300 passed / 2 skipped（mission 163）
 ```
 
 **当前主线（按优先级）**

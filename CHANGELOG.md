@@ -1,3 +1,12 @@
+## [2026-10-26] 多帧稳定视觉目标
+
+- 新增 `visual_target_avg.py`：多次 visual_target → 目标中位数 + spread 拒绝；
+- `mission.visual_target.median_enu_target` + 2 单测；
+- 锥桶 3 帧 samples (-31.42/-31.43,31.24)，spread 0.01m；
+- 不读 AirSim 物体坐标；mission 163，总计 300 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] 橙色球真值修正
 
 - 上一轮“DINO 深度 42.28 vs 真值 47.6、差5m”结论撤回：球投影处深度≈42.16m，与 DINO 一致；
