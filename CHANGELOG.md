@@ -1,3 +1,12 @@
+## [2026-10-26] UE4 重启后场景回归
+
+- 红立方体已随 UE4 重启移除，仅保留历史测试证据；
+- 当前场景确认 Cone_5 / OrangeBall；
+- target-only 回归：cone DINO/Qwen 差0.36m，orange 0.08m；
+- 304 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] bbox 触边目标拒绝
 
 - `bbox_touches_edge` 纯函数：bbox 距边 ≤5px 拒绝；
