@@ -108,6 +108,7 @@ class TaskExecutor(Node):
         self.declare_parameter('goto_align_heading', True)
         self.declare_parameter('goto_align_tolerance_deg', 20.0)
         self.declare_parameter('goto_align_rate_deg_s', 20.0)
+        self.declare_parameter('side_clearance_ttl_s', 2.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -165,6 +166,12 @@ class TaskExecutor(Node):
             self.get_parameter('goto_align_tolerance_deg').value))
         self._goto_align_rate = math.radians(float(
             self.get_parameter('goto_align_rate_deg_s').value))
+        self._side_clearance_ttl = float(
+            self.get_parameter('side_clearance_ttl_s').value)
+        self._last_valid_left = None
+        self._last_valid_right = None
+        self._last_valid_left_at = 0.0
+        self._last_valid_right_at = 0.0
         try:
             self._findings_radius_by_label = json.loads(
                 str(self.get_parameter('findings_radius_by_label').value or '{}'))
@@ -200,6 +207,10 @@ class TaskExecutor(Node):
         self._clearance_right = None
         self._clearance_left_valid = False
         self._clearance_right_valid = False
+        self._last_valid_left = None
+        self._last_valid_right = None
+        self._last_valid_left_at = 0.0
+        self._last_valid_right_at = 0.0
         self._frame_size = (0, 0)
         self._best_meta = {}
         self._dynamic_target = None
@@ -309,6 +320,10 @@ class TaskExecutor(Node):
         self._clearance_right = None
         self._clearance_left_valid = False
         self._clearance_right_valid = False
+        self._last_valid_left = None
+        self._last_valid_right = None
+        self._last_valid_left_at = 0.0
+        self._last_valid_right_at = 0.0
         self._heading_enu = None
         self._last_heartbeat = 0.0
         self._last_status = 0.0
@@ -661,8 +676,15 @@ class TaskExecutor(Node):
                                      else float(side.group(2)))
         valid = _SIDE_VALID_RE.search(msg.data)
         if valid:
+            now = time.monotonic()
             self._clearance_left_valid = valid.group(1) == '1'
             self._clearance_right_valid = valid.group(2) == '1'
+            if side and self._clearance_left_valid:
+                self._last_valid_left = self._clearance_left
+                self._last_valid_left_at = now
+            if side and self._clearance_right_valid:
+                self._last_valid_right = self._clearance_right
+                self._last_valid_right_at = now
 
     def _on_best(self, msg: PoseStamped) -> None:
         if not self._hold_on_target or self._phase != PHASE_RUN:
@@ -1153,6 +1175,23 @@ class TaskExecutor(Node):
                      left_m=self._clearance_left, right_m=self._clearance_right)
         return True
 
+    def _side_clearance_for_gate(self):
+        """当前侧净空无效时，短期复用 last-valid，避免一帧 inf 丢掉已知侧墙。"""
+        now = time.monotonic()
+        left = self._clearance_left
+        right = self._clearance_right
+        left_known = self._clearance_left_valid
+        right_known = self._clearance_right_valid
+        if (not left_known and self._last_valid_left is not None
+                and now - self._last_valid_left_at <= self._side_clearance_ttl):
+            left = self._last_valid_left
+            left_known = True
+        if (not right_known and self._last_valid_right is not None
+                and now - self._last_valid_right_at <= self._side_clearance_ttl):
+            right = self._last_valid_right
+            right_known = True
+        return left, right, left_known, right_known
+
     def _run_goto(self, position, target) -> None:
         if self._run_detour(position, time.monotonic()):
             return
@@ -1195,13 +1234,13 @@ class TaskExecutor(Node):
                                    max_speed_mps=self._spec.max_speed_mps,
                                    tolerance_m=self._arrive_tol)
         gate_heading = desired if desired is not None else (self._heading_enu or 0.0)
+        gate_left, gate_right, gate_left_known, gate_right_known = (
+            self._side_clearance_for_gate())
         decision = apply_clearance_gate(
             decision, position, gate_heading,
             self._clearance_forward, stop_m=self._clearance_stop,
-            nearest_left_m=self._clearance_left,
-            nearest_right_m=self._clearance_right,
-            left_known=self._clearance_left_valid,
-            right_known=self._clearance_right_valid)
+            nearest_left_m=gate_left, nearest_right_m=gate_right,
+            left_known=gate_left_known, right_known=gate_right_known)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
                 return
@@ -1401,13 +1440,13 @@ class TaskExecutor(Node):
         decision = velocity_toward(position, target,
                                    max_speed_mps=self._spec.max_speed_mps,
                                    tolerance_m=self._arrive_tol)
+        gate_left, gate_right, gate_left_known, gate_right_known = (
+            self._side_clearance_for_gate())
         decision = apply_clearance_gate(
             decision, position, self._heading_enu or 0.0,
             self._clearance_forward, stop_m=self._clearance_stop,
-            nearest_left_m=self._clearance_left,
-            nearest_right_m=self._clearance_right,
-            left_known=self._clearance_left_valid,
-            right_known=self._clearance_right_valid)
+            nearest_left_m=gate_left, nearest_right_m=gate_right,
+            left_known=gate_left_known, right_known=gate_right_known)
         if decision.blocked:
             if self._start_detour(time.monotonic()):
                 return

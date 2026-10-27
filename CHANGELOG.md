@@ -1,3 +1,11 @@
+## [2026-10-27] 侧净空 last-valid TTL（未验证）
+
+- 新增 `side_clearance_ttl_s`（默认2s）复用最近有效 left/right；
+- 灰墙组合任务本轮仍全程 inf，无可复用 valid 值；TTL 未验证；
+- P0 仍 PARTIAL；305 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] 灰墙侧数据尝试
 
 - hover10s 灰墙观测：left=2.39m、left_valid=1；
