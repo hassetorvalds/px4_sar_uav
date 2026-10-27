@@ -1,3 +1,11 @@
+## [2026-10-27] 显式 geofence 覆盖 + SAR 仍 clearance
+
+- `fly_task --geofence-m` + `parse_task/parse_intent` 可选覆盖；仍受 2–50m schema 校验；
+- 当前 orange 区域用 geofence50 成功解析并飞行，但 search 开始 clearance_blocked（t=17）；
+- 不计入 SAR 2/3；mission 169，总计306 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] 当前场景 SAR 尝试失败
 
 - 现有 orange 搜索 6×6 区域，探测到目标后 search 开始 clearance_blocked（t=17），任务未完成；

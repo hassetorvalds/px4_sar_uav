@@ -95,6 +95,8 @@ def main(argv=None):
                         help='VLM 语义入口：SemanticIntent 1.0，或旧 IntentFrame（配自然语言合并）')
     parser.add_argument('--via-arbiter', action='store_true',
                         help='速度经 /velocity_arbiter/vlm_cmd（栈开着仲裁时用）')
+    parser.add_argument('--geofence-m', type=float, default=None,
+                        help='显式覆盖任务围栏（2–50m，仍走 schema 校验）')
     parser.add_argument('--speed', type=float, default=None,
                         help='覆盖最大速度（0.1–1.0 m/s）')
     parser.add_argument('--timeout', type=float, default=None,
@@ -152,7 +154,7 @@ def main(argv=None):
                         print('旧 IntentFrame 需要配自然语言指令（本地事实优先合并）',
                               file=sys.stderr)
                         return 2
-                    frame = parse_intent(text)
+                    frame = parse_intent(text, geofence_radius_m=args.geofence_m)
                     frame = merge_intent(frame, IntentFrame.from_dict(data))
                     spec = frame.task if frame is not None else None
                     if spec is None:
@@ -167,7 +169,7 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
         try:
-            frame = parse_intent(text)
+            frame = parse_intent(text, geofence_radius_m=args.geofence_m)
         except (TaskError, ValueError, OSError, json.JSONDecodeError) as exc:
             print(f'解析失败：{exc}', file=sys.stderr)
             return 2

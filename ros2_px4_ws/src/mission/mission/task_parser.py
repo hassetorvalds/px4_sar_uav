@@ -181,8 +181,11 @@ def _intent(clause: str):
     return None
 
 
-def parse_task(text: str) -> TaskSpec:
-    """把一句（或几句）中文/英文指令解析成经过校验的 TaskSpec。"""
+def parse_task(text: str, geofence_radius_m: float = None) -> TaskSpec:
+    """把一句（或几句）中文/英文指令解析成经过校验的 TaskSpec。
+
+    geofence_radius_m 是显式操作员覆盖；仍走 TaskSpec 的 2–50m 校验。
+    """
     normalized = _normalize(text)
     if not normalized:
         raise TaskError('指令为空')
@@ -338,6 +341,9 @@ def parse_task(text: str) -> TaskSpec:
 
     spec = TaskSpec(steps=steps, altitude_m=altitude, max_duration_s=max_duration,
                     source_text=text, notes=notes)
+    if geofence_radius_m is not None:
+        spec.geofence_radius_m = float(geofence_radius_m)
+        notes.append(f'geofence override: {spec.geofence_radius_m:.1f} m')
     return spec.validate()
 
 

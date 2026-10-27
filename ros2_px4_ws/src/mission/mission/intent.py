@@ -138,9 +138,10 @@ def _confidence(missing, task: TaskSpec):
     return max(0.40, min(1.0, round(score, 3)))
 
 
-def parse_intent(text: str, source: str = 'rules') -> IntentFrame:
+def parse_intent(text: str, source: str = 'rules',
+                 geofence_radius_m: float = None) -> IntentFrame:
     """规则解析 → IntentFrame（本地事实全部标 ``source=local``）。"""
-    task = parse_task(text)
+    task = parse_task(text, geofence_radius_m=geofence_radius_m)
     missing = _infer_missing(text, task)
     warnings = list(task.notes)
     return IntentFrame(

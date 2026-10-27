@@ -206,3 +206,10 @@ def test_search_metrics_polygon_and_footprint():
     assert metrics['area_m2'] == pytest.approx(20.0)
     assert metrics['footprint_width_m'] == pytest.approx(4.0)
     assert metrics['lane_overlap_ratio'] == pytest.approx(0.5)
+
+
+def test_geofence_override_allows_search_with_explicit_fence():
+    from mission.task_parser import parse_task
+    spec = parse_task('起飞到 2 米，搜索东侧 33 米、北侧 31.5 米、半径 3 米，降落',
+                      geofence_radius_m=50.0)
+    assert spec.geofence_radius_m == 50.0
