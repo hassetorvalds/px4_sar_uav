@@ -1153,7 +1153,7 @@ class TaskExecutor(Node):
         return True
 
     def _start_detour(self, now) -> bool:
-        if self._current_step_type() != 'goto':
+        if self._current_step_type() not in ('goto', 'search'):
             return False
         if (not self._detour_enabled
                 or self._detour_attempts >= self._detour_max_attempts

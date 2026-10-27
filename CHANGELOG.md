@@ -1,3 +1,11 @@
+## [2026-10-27] search 允许 detour
+
+- `_start_detour` 从仅 goto 扩到 search；本轮触发 left/right 两次 detour；
+- 当前 orange SAR 仍在北墙用尽尝试后 clearance_blocked；
+- 不强制穿墙；306 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] search 航向对齐
 
 - search 航点先转向目标再前进（`search_align_heading`）；
