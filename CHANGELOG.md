@@ -1,3 +1,11 @@
+## [2026-10-27] 灰墙侧数据尝试
+
+- hover10s 灰墙观测：left=2.39m、left_valid=1；
+- 同一任务进入固定机头 goto 后 left 又变 inf，门仍 fail-closed；
+- 有数据侧向拦截未稳定复现；P0 仍 PARTIAL；不修改场景。
+
+---
+
 ## [2026-10-26] 报告识别 visual_target/verify
 
 - `report.py` 识别 visual_target/visual_target_verify，显示来源、prompt、backend、一致性选择、目标、到点误差；

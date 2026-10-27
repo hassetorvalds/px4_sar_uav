@@ -94,7 +94,7 @@
 | 红色立方体（P1，历史） | ✅ 已测，物体已移除 | yaw45 DINO到点；yaw90 DINO误检→Qwen；**UE4 重启后场景已无红立方体，不再作为当前资产** |
 | VLM 一致性门（Qwen verify） | ✅ 端到端真机 | cone 差0.52m；orange单视角0.04–0.12m；red yaw45 0.04m；red yaw90 DINO失败→Qwen；边缘目标拒绝 |
 | 橙色球多视角 | ⚠️ 边缘目标被拒 | yaw0/yaw90 bbox 触边 → 拒绝；yaw45 正常；UE4 重启后回归 DINO/Qwen 差0.08m |
-| Heading alignment | ⚠️ 部分 | goto 误差>20°零前向转向；侧向 unknown fail-closed；侧锥改±45°；有数据真实侧障碍未验 |
+| Heading alignment | ⚠️ 部分 | goto 航向对齐；unknown侧向fail-closed；灰墙观测left=2.39/valid1，但进入goto后又inf；有数据拦截未稳定复现 |
 | NL 目标槽 → VLM | ✅ 真机 | “飞到前方锥桶附近” → Qwen 翻 traffic cone → DINO bbox/depth + standoff → 到点约 0.4 m、无 abort |
 | Grounding DINO bbox | ✅ 可选真机 | 5 帧 IoU 0.48–0.62；尺寸校正边缘误差 33.9→9.1/28.0→5.8 px；真实 DINO 搜索 3 次确认、无 abort，findings #2 revisit |
 | NL 驱动通用搜索 | ✅ 真机 | 自动 Qwen detector（点+ROI）；搜索 8/8、扫描 20s、3 次确认、无 abort；bbox 为可选，IoU 0.50–0.64，边缘需回退点 |
