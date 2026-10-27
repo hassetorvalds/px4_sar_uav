@@ -32,7 +32,7 @@
 | 8 | **SAR Demo v0 代理目标检测可靠性** | `OPEN` | 历史3轮：搜索8/8、无abort；代理目标2/3、finding2/3（非人员）。2026-10-27 当前场景尝试：geofence50 + search航向对齐 + search detour两次后仍被北墙 clearance_blocked，不构成有效命中，未计入2/3 | 影响 Demo 可重复性；不影响任务/飞行链路 | 调 scan/检测阈值/点位；先离线评估再跑少量真机；不要用单轮成功掩盖2/3 |
 | 9 | **VLM grounding provider 选择** | `PARTIAL` | Qwen3-VL-8B 同帧 offline：EN/ZH 15/15、平均误差 0.026/0.030、稳态 ~470 ms；LightNav 0.456、122–164 ms。one-shot 0.27 m；3 样本 0.41 m；动态 `goto` 0.70–0.71 m（provider 0.747 Hz，非 2Hz）；已加 acquire/stale/围栏 abort；**未做视觉伺服/4Hz** | Qwen 可做 one-shot/异步目标 provider，LightNav 保留快速 fallback；目标仍有 1–2 m 不确定性 | 若要真 2Hz，需并发采集/推理；4Hz 仍用 LightNav 或量化 |
 | 10 | **任意物体 VLM 导航泛化** | `OPEN` | LightNav `/navigate` 对红立方体返回 `rot_left/not_visible`、无坐标，不能做任意物体 grounding； 自由文本目标槽已支持；cone 真机约0.4m；橙色球 DINO conf0.88、到点0.3m；红色立方体 yaw45 DINO到点；yaw90 DINO误检建筑，Qwen第二意见 target(21.20,5.47)、真机到点；多后端交叉验证可用；场景物体 pose 不能当 truth。**只验证少量目标；目标必须可见；DINO 英文 prompt；低置信度拒绝** | 任意物体泛化/深度一致性未证明 | 多目标/多视角测试；DINO 深度误差分析；必要时 Qwen/多语言 detector；人员后置 |
-| 11 | **固定机头 / 前向净空是否覆盖航迹** | `PARTIAL` | `goto` heading alignment 已真机；left/right 门有单测；侧锥±45°。灰墙观测曾 `left=2.39,valid=1`，但组合任务中始终 inf；新增 `side_clearance_ttl_s` last-valid 2s 缓存，因本轮回放没有有效值，未验证到拦截。 | 有数据侧向门在任务中未稳定复现；完整避障未证明 | 需要受控静态侧障碍+稳定侧数据；先不宣称完整避障；TTL 仅作待验缓存 |
+| 11 | **固定机头 / 前向净空是否覆盖航迹** | `PARTIAL` | `goto` heading alignment 已真机；left/right 门有单测；侧锥±45°。灰墙观测曾 `left=2.39,valid=1`，但组合任务中始终 inf；`side_clearance_ttl_s` 未验证。360° scan 预扫描（90°×驻留，原点）后 left/right 仍 inf、valid=0；预扫描未建立侧向覆盖。 | 有数据侧向门在任务中未稳定复现；完整避障未证明 | 需要受控静态侧障碍+稳定侧数据；先不宣称完整避障；TTL 仅作待验缓存 |
 
 ---
 

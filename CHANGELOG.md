@@ -1,3 +1,10 @@
+## [2026-10-27] 360° 预扫描未建立侧向覆盖
+
+- 原点 scan 90°×驻留、35s；查询 local_map left/right 仍 inf、valid=0；
+- 预扫描负结果；P0 仍 PARTIAL；306 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] search 允许 detour
 
 - `_start_detour` 从仅 goto 扩到 search；本轮触发 left/right 两次 detour；
