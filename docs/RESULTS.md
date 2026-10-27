@@ -47,7 +47,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **304 passed / 2 skipped**（vlm 45 / mission 167 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 22 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
+| 单元测试 | ✅ | **305 passed / 2 skipped**（vlm 45 / mission 168 / perception 28+1skip / px4_interface 23 / planner 18 / mapping 22 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -55,7 +55,7 @@
 | 原地转向 / 扫描（yaw/scan） | ✅ 真机飞通 | `yaw`（±1–360°）+ `scan`（1–120 s）；真机 40 s 扫描，`yaw_complete/scan_complete` 正常 |
 | 搜索→检测→悬停→上报 | ✅ 组合闭环 | 搜索 8/8 + 步进扫描 30 s；`target_confirmed world=[27.41, 30.66, 4.95]`（t=76.1），scan 完成、安全落地；无 abort |
 | 目标自动对准 | ✅ 真机验证 | 确认后 yaw 到世界点，`target_centered error=-3.4°`；search hold 不偏航 |
-| Markdown 证据页 | ✅ | `mission/report.py` 生成 `report_*.md`：健康检查/目标/命令/时间线 |
+| Markdown 证据页 | ✅ | `mission/report.py`：健康/目标/命令/时间线；新增 visual_target/verify 来源、prompt、backend、一致性选择、到点误差 |
 | ROS 2 Action 接口 | ✅ 假 PX4 + 真机 | `ExecuteTask`：TaskSpec goal、阶段/进度 feedback、report result、cancel 落地上锁；真机完整搜索+检测 `success=True` |
 | Action 完整任务 | ✅ 真机 | 搜索 8/8 → 扫描 60 s → 目标 `[29.19,30.78,4.87]` → 对准 3.5° → 落地；result `success=True` |
 | 结构化发现物（findings） | ✅ 真机 | Finding 1.0：字段/ROS 时间/30s 窗口/按 label 半径/`discarded`/history；`frame_seq=10`、`frame_size=1280×720` |

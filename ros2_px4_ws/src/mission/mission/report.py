@@ -94,27 +94,40 @@ def _visual_target_section(events, spec, done, aborts):
                  if step.get('type') == 'goto'), {})
     dynamic_requested = bool(goto.get('dynamic_target'))
     abort_reason = aborts[-1].get('reason') if aborts else None
+    visual_notes = any(str(note).startswith((
+        'target_prompt=', 'median_target=', 'target_rel_enu=', 'backend='))
+        for note in notes)
+    source = spec.get('intent_source') or (
+        'visual_target' if visual_notes else
+        'qwen_dynamic' if (dynamic or dynamic_requested) else 'qwen_grounding')
+    is_visual = (str(source).startswith('visual_target') or visual_notes)
     if (not dynamic and not dynamic_requested
             and not str(abort_reason or '').startswith('dynamic_target')
-            and not any(str(note).startswith('qwen_') for note in notes)):
+            and not any(str(note).startswith('qwen_') for note in notes)
+            and not is_visual):
         return []
     lines = ['', '## 视觉目标', '']
-    source = spec.get('intent_source') or (
-        'qwen_dynamic' if (dynamic or dynamic_requested) else 'qwen_grounding')
     lines.append(f'- 来源：{source}')
     if str(source).startswith('qwen'):
         lines.append('- VLM：Qwen3-VL-8B，只做图像 grounding，不直接输出飞控速度')
+    elif is_visual:
+        lines.append('- VLM：DINO/Qwen 视觉 grounding + 一致性门，不直接输出飞控速度')
     lines.append('- 控制方式：VLM 目标 → ENU 目标 → TaskSpec goto → PX4 offboard')
     if goto:
         lines.append(f'- 初始 goto：东 {_fmt(goto.get("east_m"))} m，'
                      f'北 {_fmt(goto.get("north_m"))} m')
     for key, label in (('qwen_samples', 'Qwen 采样'), ('qwen_spread_m', '目标 spread'),
                        ('qwen_latency_ms', 'Qwen 延迟'), ('pixel', '目标像素'),
-                       ('depth_m', '目标深度'), ('proxy_error_norm', 'bbox 偏差')):
+                       ('depth_m', '目标深度'), ('proxy_error_norm', 'bbox 偏差'),
+                       ('target_prompt', '目标 prompt'), ('backend', '主 backend'),
+                       ('selected', '一致性选择'), ('disagreement_m', 'backend 分歧'),
+                       ('target_spread_m', '目标 spread'), ('median_target', '中位数目标'),
+                       ('confidence', '置信度')):
         value = _note(notes, key)
         if value is not None:
             suffix = {'qwen_spread_m': ' m', 'qwen_latency_ms': ' ms',
-                      'depth_m': ' m'}.get(key, '')
+                      'depth_m': ' m', 'disagreement_m': ' m',
+                      'target_spread_m': ' m'}.get(key, '')
             lines.append(f'- {label}：{value}{suffix}')
 
     target = None
@@ -125,15 +138,23 @@ def _visual_target_section(events, spec, done, aborts):
         lines.append(f'- 动态更新：{len(dynamic)} 次；最后目标 {_world(target)}'
                      + (f'，age {_fmt(min(ages), 2)} s' if ages else ''))
     else:
-        median = _note(notes, 'qwen_median_enu')
+        median = (_note(notes, 'median_target')
+                  or _note(notes, 'target_rel_enu')
+                  or _note(notes, 'qwen_median_enu'))
         if median:
             try:
                 east, north = (float(item) for item in median.split(','))
+                if spec.get('coordinate_frame') == 'relative':
+                    takeoff = next((event for event in events
+                                    if event.get('event') == 'takeoff_complete'), None)
+                    origin = (takeoff or {}).get('position_enu') or [0.0, 0.0]
+                    east += float(origin[0])
+                    north += float(origin[1])
                 target = (east, north)
             except (TypeError, ValueError):
                 target = None
         if target:
-            lines.append(f'- Qwen 目标：{_world(target)}')
+            lines.append(f'- 视觉目标：{_world(target)}')
         elif (not dynamic_requested and goto
               and goto.get('east_m') is not None and goto.get('north_m') is not None):
             east = float(goto.get('east_m'))

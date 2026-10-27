@@ -164,8 +164,10 @@ def main():
         'max_duration_s': 180.0,
         'geofence_radius_m': 50.0,
         'coordinate_frame': 'relative',
-        'intent_source': ('visual_target' if parsed['visual_index'] is not None
-                          else 'hybrid_text'),
+        'intent_source': (('visual_target_verify'
+                           if args.verify_backend and args.verify_backend != 'none'
+                           else 'visual_target')
+                          if parsed['visual_index'] is not None else 'hybrid_text'),
         'steps': steps,
         'notes': notes,
     }

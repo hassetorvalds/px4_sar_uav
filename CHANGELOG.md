@@ -1,3 +1,11 @@
+## [2026-10-26] 报告识别 visual_target/verify
+
+- `report.py` 识别 visual_target/visual_target_verify，显示来源、prompt、backend、一致性选择、目标、到点误差；
+- `fly_nl` verify 时 `intent_source=visual_target_verify`；
+- 真实报告验证；新增报告单测；mission 168，总计305 passed / 2 skipped。
+
+---
+
 ## [2026-10-26] UE4 重启后场景回归
 
 - 红立方体已随 UE4 重启移除，仅保留历史测试证据；

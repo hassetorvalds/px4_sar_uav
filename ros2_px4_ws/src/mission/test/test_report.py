@@ -173,3 +173,39 @@ def test_summarize_finding_trajectory(tmp_path):
     assert '### Finding #1' in text
     assert 'updates=2' in text
     assert '| 5.0 | inspected | (1.10, 2.00, 0.00) |' in text
+
+
+def test_summarize_visual_target_verify_notes(tmp_path):
+    report = tmp_path / 'report.jsonl'
+    events = [
+        {'t': 0.0, 'event': 'task_accepted',
+         'summary': 'visual target verify',
+         'spec': {'altitude_m': 2.0, 'altitude_frame': 'REL',
+                  'coordinate_frame': 'relative',
+                  'intent_source': 'visual_target_verify',
+                  'notes': ['backend=dino', 'target_prompt=cone',
+                            'selected=primary', 'disagreement_m=0.52',
+                            'median_target=21.32,4.96',
+                            'target_spread_m=0.06', 'depth_m=21.12'],
+                  'steps': [
+                      {'type': 'takeoff', 'params': {'altitude_m': 2.0}},
+                      {'type': 'goto', 'params': {'east_m': 21.32,
+                                                  'north_m': 4.96,
+                                                  'altitude_m': 2.0}},
+                      {'type': 'land', 'params': {}},
+                  ]}},
+        {'t': 1.0, 'event': 'takeoff_complete',
+         'position_enu': [10.0, 20.0, 2.0]},
+        {'t': 2.0, 'event': 'done', 'position_enu': [31.0, 25.0, -0.2],
+         'commands': []},
+    ]
+    with open(report, 'w', encoding='utf-8') as handle:
+        for event in events:
+            handle.write(json.dumps(event) + '\n')
+    text = open(summarize(str(report)), encoding='utf-8').read()
+    assert '## 视觉目标' in text
+    assert '来源：visual_target_verify' in text
+    assert '目标 prompt：cone' in text
+    assert '一致性选择：primary' in text
+    assert '视觉目标：(31.32, 24.96)' in text
+    assert '到点误差（水平）：0.32 m' in text
