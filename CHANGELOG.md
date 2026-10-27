@@ -1,3 +1,11 @@
+## [2026-10-27] 当前场景 SAR 尝试失败
+
+- 现有 orange 搜索 6×6 区域，探测到目标后 search 开始 clearance_blocked（t=17），任务未完成；
+- 不构成有效 SAR 命中，不计入 2/3；
+- 不修改场景；305 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] 侧净空 last-valid TTL（未验证）
 
 - 新增 `side_clearance_ttl_s`（默认2s）复用最近有效 left/right；

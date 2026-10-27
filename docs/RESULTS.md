@@ -73,7 +73,7 @@
 | Cancel 三态 / external_land | ✅ 假 PX4 | active 0/1、terminal 3/0、unknown 2/0；外部 disarm → `LANDED_ELSEWHERE`，不再发落地 |
 | 覆盖热力图 / 位姿 | ✅ 真机 | 144/144；PNG 144×144；pose_age 0.017 s、eph/epv 0.08 m |
 | area 编译期边界 | ⚠️ 部分完成（编译器侧已落地；权威地图来源待定、顶点级检查、边相交不拒绝） | `map_boundary` inclusion / `keepout_polygons` exclusion；`ERROR_TARGET_OUTSIDE_MAP` / `ERROR_TARGET_IN_KEEPOUT`；缺失边界跳过 |
-| SAR Demo v0（代理目标） | ⚠️ 2/3 命中 | 3 轮搜索均 8/8、无 abort、均落地；代理目标 2/3、finding 2/3；**非人员检测** |
+| SAR Demo v0（代理目标） | ⚠️ 2/3 命中 | 历史3轮 2/3；2026-10-27 当前场景尝试 search 开始 clearance_blocked，未计入；**非人员检测** |
 | LightNav grounding 基线 | ⚠️ 基线 | 5 帧×3 次：122–164 ms；平均指向误差 0.456、范围 0.195–0.794；不是目标级 grounding |
 | Qwen3-VL-8B grounding | ✅ 离线 | 同 5 帧：EN/ZH 15/15 可解析；平均误差 0.026/0.030；稳态约 470 ms；未接飞控 |
 | Qwen one-shot go_to | ✅ 真机 | 目标 (28.43,32.53)，实际 (28.65,32.39)，误差≈0.27 m；一次 detour、无 abort、landed；**非视觉伺服** |
