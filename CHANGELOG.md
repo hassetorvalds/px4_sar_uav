@@ -1,3 +1,11 @@
+## [2026-10-27] search 航向对齐
+
+- search 航点先转向目标再前进（`search_align_heading`）；
+- 当前 orange SAR：84.5°→61.5° 对齐成功，但首个东北航点仍撞北墙 clearance_blocked；
+- 不强制穿过；306 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] 显式 geofence 覆盖 + SAR 仍 clearance
 
 - `fly_task --geofence-m` + `parse_task/parse_intent` 可选覆盖；仍受 2–50m schema 校验；

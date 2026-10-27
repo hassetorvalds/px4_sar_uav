@@ -109,6 +109,7 @@ class TaskExecutor(Node):
         self.declare_parameter('goto_align_tolerance_deg', 20.0)
         self.declare_parameter('goto_align_rate_deg_s', 20.0)
         self.declare_parameter('side_clearance_ttl_s', 2.0)
+        self.declare_parameter('search_align_heading', True)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -168,6 +169,8 @@ class TaskExecutor(Node):
             self.get_parameter('goto_align_rate_deg_s').value))
         self._side_clearance_ttl = float(
             self.get_parameter('side_clearance_ttl_s').value)
+        self._search_align_heading = bool(
+            self.get_parameter('search_align_heading').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -1437,6 +1440,36 @@ class TaskExecutor(Node):
             self._advance_step()
             return
         target = self._search_wps[self._search_index]
+        step_index = self._step_index
+        if step_index != self._heading_align_step:
+            self._heading_align_step = step_index
+            self._heading_align_active = False
+        if self._search_align_heading and self._heading_enu is not None:
+            dx = float(target[0]) - float(position[0])
+            dy = float(target[1]) - float(position[1])
+            if math.hypot(dx, dy) > self._arrive_tol:
+                desired = math.atan2(dy, dx)
+                error = math.remainder(desired - self._heading_enu, 2.0 * math.pi)
+                if abs(error) > self._goto_align_tol:
+                    if not self._heading_align_active:
+                        self._heading_align_active = True
+                        self._report('search_heading_align_start',
+                                     heading_enu_deg=round(math.degrees(self._heading_enu), 1),
+                                     target_bearing_deg=round(math.degrees(desired), 1),
+                                     error_deg=round(math.degrees(error), 1))
+                    rate, _ = yaw_rate_to_target(
+                        self._heading_enu, desired,
+                        max_rate_rad_s=self._goto_align_rate,
+                        tolerance_rad=math.radians(3.0))
+                    self._publish_velocity(0.0, 0.0,
+                                           self._altitude_hold_vz(position),
+                                           yaw_rate=rate)
+                    return
+                if self._heading_align_active:
+                    self._heading_align_active = False
+                    self._report('search_heading_align_complete',
+                                 heading_enu_deg=round(math.degrees(self._heading_enu), 1),
+                                 target_bearing_deg=round(math.degrees(desired), 1))
         decision = velocity_toward(position, target,
                                    max_speed_mps=self._spec.max_speed_mps,
                                    tolerance_m=self._arrive_tol)
