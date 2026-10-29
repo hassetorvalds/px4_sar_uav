@@ -22,6 +22,7 @@ setup(
             'local_planner = planner.local_planner:main',
             'frontier_explorer = planner.frontier_explorer:main',
             'astar_planner = planner.astar_planner:main',
+            'astar_follower = planner.astar_follower:main',
         ],
     },
 )

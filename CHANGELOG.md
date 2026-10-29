@@ -1,3 +1,11 @@
+## [2026-10-29] A* follower 默认关闭
+
+- `astar_follower`：Path→velocity_candidate，不写 offboard；
+- enabled=false 时只发 disabled；实测无候选；
+- 315 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* Path 跟随纯逻辑
 
 - `path_follow.py`：跳过到达点、lookahead、限速 P 速度、终点 done；
