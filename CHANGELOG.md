@@ -1,3 +1,12 @@
+## [2026-10-29] A* ROS Path 节点
+
+- 新增 `astar_planner`：occupied + goal → nav_msgs/Path，1Hz；
+- 只发布 Path/status，不发布速度；
+- 真实图：goal(5,0) → Path 2点/5m，occupied=0（当前层）；
+- 312 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* 真实 occupied 预览
 
 - `scripts/astar_preview.py`：订阅 /local_map/occupied + PX4，真实图→A* 路径；
