@@ -1,3 +1,11 @@
+## [2026-10-29] 绿色立方体视角限制
+
+- yaw±10°：DINO/Qwen 分歧15.99m，一致性门拒绝；
+- 仅 yaw0 真机飞通；不强行采用单边结果；
+- 308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 报告补 standoff
 
 - 报告显示 `standoff_m` 与 `standoff_requested_m`，区分实际/请求距离；
