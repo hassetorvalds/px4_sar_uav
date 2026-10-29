@@ -1,3 +1,11 @@
+## [2026-10-29] 悬停2m A* 仍无占据
+
+- hover 2m 时 astar_preview：occupied=0，path 5m 直线；
+- 飞行高度层未建立墙体占据；不能当避障验证；
+- 321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 目标层回归
 
 - 绿立方体移除后，cone/orange target-only 正常；
