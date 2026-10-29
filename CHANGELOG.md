@@ -1,3 +1,11 @@
+## [2026-10-29] astar_planner Nx3 解包修复
+
+- 节点将 Nx3 occupied 投影为 (x,y) 再传 A*；
+- 修复 ValueError: too many values to unpack；
+- 重测 hover 触发围栏，未形成新 Path/candidate 证据；321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* 真实远墙绕行路径
 
 - launch 暴露 sensor_max_depth/map_extent/map_cone_max（double，传30.0/25.0/25.0）；

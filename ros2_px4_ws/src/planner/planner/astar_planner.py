@@ -85,7 +85,8 @@ class AstarPlanner(Node):
         if state.position_ned is None:
             return
         position = ned_to_enu(*state.position_ned)
-        obstacles = height_layer(self._points, position[2], self._hmin, self._hmax)
+        layer = height_layer(self._points, position[2], self._hmin, self._hmax)
+        obstacles = [(float(p[0]), float(p[1])) for p in layer]
         path = plan_path(obstacles, position[:2], self._goal,
                          resolution=self._resolution, inflate_m=self._inflate,
                          max_radius_m=self._max_radius)
