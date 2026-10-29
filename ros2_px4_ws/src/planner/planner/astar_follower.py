@@ -13,11 +13,14 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Path
-from px4_interface.frames import ned_to_enu
+import re
+
+from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
 from px4_interface.state import Px4StateMonitor
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from .candidate_safety import gate_candidate
 from .path_follow import follow_velocity
 
 
@@ -33,15 +36,25 @@ class AstarFollower(Node):
         self.declare_parameter('tolerance_m', 0.4)
         self.declare_parameter('lookahead_m', 0.5)
         self.declare_parameter('path_timeout_s', 2.0)
+        self.declare_parameter('map_status_topic', '/local_map/status')
+        self.declare_parameter('stop_m', 0.6)
         self._enabled = bool(self.get_parameter('enabled').value)
         self._max_speed = float(self.get_parameter('max_speed_mps').value)
         self._gain = float(self.get_parameter('gain').value)
         self._tolerance = float(self.get_parameter('tolerance_m').value)
         self._lookahead = float(self.get_parameter('lookahead_m').value)
         self._timeout = float(self.get_parameter('path_timeout_s').value)
+        self._stop = float(self.get_parameter('stop_m').value)
+        self._forward = None
+        self._left = None
+        self._right = None
+        self._left_known = False
+        self._right_known = False
         self._path = []
         self._path_at = 0.0
         self._monitor = Px4StateMonitor(self)
+        self.create_subscription(String, str(self.get_parameter('map_status_topic').value),
+                                 self._on_map, 5)
         self.create_subscription(Path, str(self.get_parameter('path_topic').value),
                                  self._on_path, 5)
         self._pub = self.create_publisher(
@@ -55,6 +68,20 @@ class AstarFollower(Node):
         self._path = [(float(p.pose.position.x), float(p.pose.position.y))
                       for p in msg.poses]
         self._path_at = time.monotonic()
+
+    def _on_map(self, msg):
+        def value(name):
+            found = re.search(rf'{name}=([0-9.]+|inf)', msg.data)
+            if not found:
+                return None
+            return float('inf') if found.group(1) == 'inf' else float(found.group(1))
+        self._forward = value('nearest_forward_m')
+        self._left = value('left_m')
+        self._right = value('right_m')
+        valid = re.search(r'left_valid=([01])\s+right_valid=([01])', msg.data)
+        if valid:
+            self._left_known = valid.group(1) == '1'
+            self._right_known = valid.group(2) == '1'
 
     def _tick(self):
         if not self._enabled:
@@ -72,13 +99,20 @@ class AstarFollower(Node):
                                   gain=self._gain,
                                   tolerance_m=self._tolerance,
                                   lookahead_m=self._lookahead)
+        heading = ned_yaw_to_enu_yaw(state.heading) if state.heading is not None else 0.0
+        safe = gate_candidate(command.east, command.north, heading_rad=heading,
+                              forward_m=self._forward, left_m=self._left,
+                              right_m=self._right, stop_m=self._stop,
+                              left_known=self._left_known,
+                              right_known=self._right_known)
         twist = Twist()
-        twist.linear.x = command.east
-        twist.linear.y = command.north
+        twist.linear.x = safe.east if not safe.blocked else 0.0
+        twist.linear.y = safe.north if not safe.blocked else 0.0
         self._pub.publish(twist)
         self._status_pub.publish(String(
-            data=f'candidate east={command.east:.2f} north={command.north:.2f} '
-                 f'index={command.index} done={command.done}'))
+            data=f'candidate east={twist.linear.x:.2f} north={twist.linear.y:.2f} '
+                 f'index={command.index} done={command.done} '
+                 f'blocked={safe.blocked} reason={safe.reason}'))
 
 
 def main(args=None):

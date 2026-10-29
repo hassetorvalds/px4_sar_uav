@@ -1,3 +1,11 @@
+## [2026-10-29] A* 候选净空复核
+
+- `candidate_safety.py`：候选速度按前/左/右净空复核，未知侧向 fail-closed；
+- follower 接 local_map status：真实 Path 候选被 `forward,right` 拦截为 0,0；
+- 3 单测；planner 27，总计318 passed / 2 skipped；仍不写 offboard。
+
+---
+
 ## [2026-10-29] A* Path→候选速度实证
 
 - astar_planner：真实 occupied → Path 2点/5.26m；
