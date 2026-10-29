@@ -1,3 +1,11 @@
+## [2026-10-29] VLM TaskSpec Path 到 follower
+
+- planner goal_task_file 发布 cone Path2点(-31.37,31.12)；
+- follower 本次 candidate 0，未形成非零跟随；未接 offboard；
+- 324 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] planner 直接读 VLM TaskSpec
 
 - astar_planner 新增 goal_task_file，启动时读 TaskSpec→goal；
