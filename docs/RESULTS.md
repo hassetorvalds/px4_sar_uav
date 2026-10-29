@@ -56,7 +56,7 @@
 | 搜索→检测→悬停→上报 | ✅ 组合闭环 | 搜索 8/8 + 步进扫描 30 s；`target_confirmed world=[27.41, 30.66, 4.95]`（t=76.1），scan 完成、安全落地；无 abort |
 | 目标自动对准 | ✅ 真机验证 | 确认后 yaw 到世界点，`target_centered error=-3.4°`；search hold 不偏航 |
 | Markdown 证据页 | ✅ | `mission/report.py`：健康/目标/命令/时间线；新增 visual_target/verify 来源、prompt、backend、一致性选择、到点误差 |
-| A* 局部路径原型 | ✅ 候选+净空+安全桥 | Path→candidate→net safety；`astar_velocity_bridge` 默认 disabled，enabled 需 armed/offboard/fresh/限速/限时，仍未实际接管 |
+| A* 局部路径原型 | ✅ 候选+净空+安全桥 | Path→candidate→net safety；`astar_velocity_bridge` 默认 disabled；显式 enabled 但未 armed/offboard 时拒绝（not_armed_offboard），offboard 不收速度 |
 | ROS 2 Action 接口 | ✅ 假 PX4 + 真机 | `ExecuteTask`：TaskSpec goal、阶段/进度 feedback、report result、cancel 落地上锁；真机完整搜索+检测 `success=True` |
 | Action 完整任务 | ✅ 真机 | 搜索 8/8 → 扫描 60 s → 目标 `[29.19,30.78,4.87]` → 对准 3.5° → 落地；result `success=True` |
 | 结构化发现物（findings） | ✅ 真机 | Finding 1.0：字段/ROS 时间/30s 窗口/按 label 半径/`discarded`/history；`frame_seq=10`、`frame_size=1280×720` |

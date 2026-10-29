@@ -1,3 +1,11 @@
+## [2026-10-29] velocity bridge 未解锁拒绝
+
+- enabled=true、候选0.2m/s，但未 armed/offboard → allowed=False/not_armed_offboard；
+- /offboard_bridge/velocity_setpoint 无消息；
+- 321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* velocity bridge 默认关闭
 
 - 新增 `astar_velocity_bridge`：candidate→offboard，默认 disabled；
