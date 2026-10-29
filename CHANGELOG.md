@@ -1,3 +1,11 @@
+## [2026-10-29] A* Path→候选速度实证
+
+- astar_planner：真实 occupied → Path 2点/5.26m；
+- astar_follower enabled=true：candidate east=0.40 north=0.01；
+- 只发 velocity_candidate，未写 offboard；315 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* 节点优雅退出
 
 - follower/planner 捕获 ExternalShutdownException，timeout/SIGTERM 不再打 rclpy traceback；
