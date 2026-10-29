@@ -77,7 +77,7 @@ def main():
     state = client.getMultirotorState()
     pos = state.kinematics_estimated.position
     camera = client.simGetCameraInfo('0', vehicle_name='Drone1')
-    _, _, yaw_ned = airsim.to_eularian_angles(camera.pose.orientation)
+    _, pitch_ned, yaw_ned = airsim.to_eularian_angles(camera.pose.orientation)
     position_enu = ned_to_enu(pos.x_val, pos.y_val, pos.z_val)
     heading_enu = ned_yaw_to_enu_yaw(yaw_ned)
     responses = client.simGetImages([
@@ -109,7 +109,7 @@ def main():
         raise SystemExit('no valid depth at target')
     world = pixel_to_world_enu(
         u, v, depth_m, CameraIntrinsics.from_hfov(width, height, 90.0),
-        heading_enu, position_enu)
+        heading_enu, position_enu, pitch_rad=pitch_ned)
     east = float(world[0] - position_enu[0])
     north = float(world[1] - position_enu[1])
     original_distance = math.hypot(east, north)

@@ -86,3 +86,14 @@ def test_depth_patch_median_out_of_bounds():
 
 def test_scale_pixel():
     assert scale_pixel(320, 240, (640, 480), (1280, 720)) == (640.0, 360.0)
+
+
+def test_pixel_to_world_pitch_down_moves_point_down():
+    import math
+    intrinsics = CameraIntrinsics.from_hfov(1280, 720, 90.0)
+    level = pixel_to_world_enu(640, 360, 10.0, intrinsics, 0.0, (0, 0, 2))
+    down = pixel_to_world_enu(640, 360, 10.0, intrinsics, 0.0, (0, 0, 2),
+                              pitch_rad=math.radians(-20))
+    assert level[0] == pytest.approx(10.0, abs=0.1)
+    assert down[0] < level[0]
+    assert down[2] < level[2]

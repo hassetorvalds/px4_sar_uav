@@ -1,3 +1,12 @@
+## [2026-10-29] 相机 pitch 几何 + 绿色立方体
+
+- `pixel_to_world_enu` 支持相机 pitch；新增单测；
+- 绿色立方体：DINO 触边拒绝，Qwen bbox/depth3.22m、target0.22m；
+- 2m 高度侧视仍 inf（立方体低于下视窗），不算有效侧障碍；未飞；
+- perception 29，总计307 passed / 2 skipped。
+
+---
+
 ## [2026-10-27] 360° 预扫描未建立侧向覆盖
 
 - 原点 scan 90°×驻留、35s；查询 local_map left/right 仍 inf、valid=0；

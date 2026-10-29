@@ -68,9 +68,14 @@ def pixel_to_body_flu(u: float, v: float, depth_m: float,
 def pixel_to_world_enu(u: float, v: float, depth_m: float,
                        intrinsics: CameraIntrinsics,
                        heading_enu: float,
-                       position_enu) -> np.ndarray:
-    """像素 + 深度 → 世界 ENU 点。"""
+                       position_enu,
+                       pitch_rad: float = 0.0) -> np.ndarray:
+    """像素 + 深度 → 世界 ENU 点；pitch_rad 为相机抬头为正。"""
     forward, left, up = pixel_to_body_flu(u, v, depth_m, intrinsics)
+    if abs(float(pitch_rad)) > 1e-9:
+        c = math.cos(float(pitch_rad))
+        s = math.sin(float(pitch_rad))
+        forward, up = c * forward - s * up, s * forward + c * up
     east, north, up_world = body_flu_to_enu(forward, left, up, heading_enu)
     return np.array([position_enu[0] + east,
                      position_enu[1] + north,
