@@ -122,12 +122,14 @@ def _visual_target_section(events, spec, done, aborts):
                        ('target_prompt', '目标 prompt'), ('backend', '主 backend'),
                        ('selected', '一致性选择'), ('disagreement_m', 'backend 分歧'),
                        ('target_spread_m', '目标 spread'), ('median_target', '中位数目标'),
-                       ('confidence', '置信度')):
+                       ('confidence', '置信度'), ('standoff_m', 'standoff'),
+                       ('standoff_requested_m', '请求 standoff')):
         value = _note(notes, key)
         if value is not None:
             suffix = {'qwen_spread_m': ' m', 'qwen_latency_ms': ' ms',
                       'depth_m': ' m', 'disagreement_m': ' m',
-                      'target_spread_m': ' m'}.get(key, '')
+                      'target_spread_m': ' m', 'standoff_m': ' m',
+                      'standoff_requested_m': ' m'}.get(key, '')
             lines.append(f'- {label}：{value}{suffix}')
 
     target = None

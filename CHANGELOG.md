@@ -1,3 +1,10 @@
+## [2026-10-29] 报告补 standoff
+
+- 报告显示 `standoff_m` 与 `standoff_requested_m`，区分实际/请求距离；
+- 报告单测覆盖；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 近距离 standoff 自动收缩
 
 - `effective_standoff`：近距离目标用 min(requested,0.5*distance)，至少0.3m；

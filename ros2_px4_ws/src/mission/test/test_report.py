@@ -186,7 +186,8 @@ def test_summarize_visual_target_verify_notes(tmp_path):
                   'notes': ['backend=dino', 'target_prompt=cone',
                             'selected=primary', 'disagreement_m=0.52',
                             'median_target=21.32,4.96',
-                            'target_spread_m=0.06', 'depth_m=21.12'],
+                            'target_spread_m=0.06', 'depth_m=21.12',
+                            'standoff_m=1.61', 'standoff_requested_m=3.0'],
                   'steps': [
                       {'type': 'takeoff', 'params': {'altitude_m': 2.0}},
                       {'type': 'goto', 'params': {'east_m': 21.32,
@@ -206,6 +207,8 @@ def test_summarize_visual_target_verify_notes(tmp_path):
     assert '## 视觉目标' in text
     assert '来源：visual_target_verify' in text
     assert '目标 prompt：cone' in text
+    assert 'standoff：1.61 m' in text
+    assert '请求 standoff：3.0 m' in text
     assert '一致性选择：primary' in text
     assert '视觉目标：(31.32, 24.96)' in text
     assert '到点误差（水平）：0.32 m' in text
