@@ -51,7 +51,7 @@
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
-| 区域覆盖搜索 | ✅ 小半径真机飞通 | `mission/search_pattern.py`：弓字形；东南侧 r=3 m、8/8 航点到位（7–75 s），无 abort；大区域未飞 |
+| 区域覆盖搜索 | ⚠️ 场景依赖 | 历史东南 r=3 8/8；2026-10-29 同区域回归 0 航点、起飞即 clearance_blocked（新增悬浮绿立方体在场），不宣称当前稳定 |
 | 原地转向 / 扫描（yaw/scan） | ✅ 真机飞通 | `yaw`（±1–360°）+ `scan`（1–120 s）；真机 40 s 扫描，`yaw_complete/scan_complete` 正常 |
 | 搜索→检测→悬停→上报 | ✅ 组合闭环 | 搜索 8/8 + 步进扫描 30 s；`target_confirmed world=[27.41, 30.66, 4.95]`（t=76.1），scan 完成、安全落地；无 abort |
 | 目标自动对准 | ✅ 真机验证 | 确认后 yaw 到世界点，`target_centered error=-3.4°`；search hold 不偏航 |

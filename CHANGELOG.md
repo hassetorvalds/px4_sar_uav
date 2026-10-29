@@ -1,3 +1,11 @@
+## [2026-10-29] search 回归失败（当前场景）
+
+- 东南 r=3 原可飞区域，本次 0 航点、起飞即 clearance_blocked；
+- 场景新增悬浮绿立方体，不能排除其影响；不强行绕过；
+- search 航向对齐/detour 未能恢复；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 绿色 prompt 变体无效
 
 - yaw10 下 green box / green block 仍与 DINO 差15.98m；
