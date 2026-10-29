@@ -59,11 +59,34 @@ def qwen_detect(url, jpeg, prompt, size):
         return [u - 1, v - 1, u + 1, v + 1], confidence, latency
 
 
+
+def translate_target(text, qwen_url):
+    """把任意语言目标短语译成短英文名词短语。"""
+    payload = json.dumps({
+        'model': 'Qwen3-VL-8B-Instruct',
+        'messages': [{'role': 'user', 'content': (
+            'Translate this object description to one short English noun phrase. '
+            'Reply with the phrase only, no punctuation: ' + text)}],
+        'temperature': 0.0, 'max_tokens': 32,
+    }).encode('utf-8')
+    request = urllib.request.Request(
+        qwen_url, data=payload, method='POST',
+        headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = json.loads(response.read().decode('utf-8'))
+    phrase = data['choices'][0]['message']['content'].strip().strip('"').strip("'。.")
+    if not phrase:
+        raise RuntimeError('target translation returned empty')
+    return phrase
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--instruction', default='fly to the object ahead')
     parser.add_argument('--target-prompt', required=True)
     parser.add_argument('--backend', choices=['dino', 'qwen'], default='dino')
+    parser.add_argument('--translate-target', action='store_true',
+                        help='用 Qwen 把目标短语译成英文 DINO prompt')
     parser.add_argument('--dino-url', default='http://127.0.0.1:18082/detect')
     parser.add_argument('--qwen-url', default='http://127.0.0.1:18081/v1/chat/completions')
     parser.add_argument('--standoff-m', type=float, default=3.0)
@@ -72,6 +95,12 @@ def main():
     parser.add_argument('--edge-margin-px', type=float, default=5.0)
     parser.add_argument('--out', default='')
     args = parser.parse_args()
+    prompt = args.target_prompt
+    translated = ''
+    if args.translate_target:
+        translated = translate_target(args.target_prompt, args.qwen_url)
+        prompt = translated
+        print(f'[target] translated prompt: {translated}')
 
     client = airsim.MultirotorClient(ip='172.21.192.1', port=45000, timeout_value=10)
     client.confirmConnection()
@@ -95,10 +124,10 @@ def main():
     jpeg = jpeg_buf.getvalue()
 
     if args.backend == 'dino':
-        bbox, confidence, latency = dino_detect(args.dino_url, jpeg, args.target_prompt)
+        bbox, confidence, latency = dino_detect(args.dino_url, jpeg, prompt)
     else:
         bbox, confidence, latency = qwen_detect(
-            args.qwen_url, jpeg, args.target_prompt, (width, height))
+            args.qwen_url, jpeg, prompt, (width, height))
     if bbox_touches_edge(bbox, width, height, args.edge_margin_px):
         raise SystemExit('target bbox touches image edge; refuse partial object')
     u = (bbox[0] + bbox[2]) / 2.0
@@ -142,6 +171,7 @@ def main():
         ],
         'notes': [
             f'backend={args.backend}', f'target_prompt={args.target_prompt}',
+            f'translated_prompt={translated}',
             f'bbox_px={[round(v, 1) for v in bbox]}',
             f'confidence={confidence}', f'depth_m={depth_m:.2f}',
             f'object_distance_m={original_distance:.2f}',

@@ -1,3 +1,11 @@
+## [2026-10-29] visual_target 任意语言目标
+
+- 新增 --translate-target：Qwen 翻译目标短语后再做 DINO grounding；
+- 仅图像/深度，不读物体坐标；未飞；
+- 325 passed / 3 skipped。
+
+---
+
 ## [2026-10-29] AirSim 碰撞监视
 
 - 新增 airsim_collision：2Hz 发布 /sensor/collision + info；
