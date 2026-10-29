@@ -1,3 +1,11 @@
+## [2026-10-29] 相机/墙面距离复核
+
+- 相机0 Euler pitch=0；DepthPlanar中心22.6m，所谓“近墙”实际在远处；
+- local_map近点/悬停点云 z 是地面带；A*高度层没有真实障碍；
+- 不接飞控；321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 相机点云高度异常
 
 - 悬停时 /airsim_camera/points body z≈-0.89m（范围0.01），PX4离地1.7m；
