@@ -1,3 +1,11 @@
+## [2026-10-29] 全仓测试 325 passed/3 skipped
+
+- px4_offboard flake8 在沙箱 semaphore PermissionError 下显式 skip；
+- 全仓 325 passed / 3 skipped，无失败；
+- 未改功能代码。
+
+---
+
 ## [2026-10-29] style test 作用域修复
 
 - pep257/flake8 只检查 px4_offboard 包目录，不再扫 PX4-Autopilot；

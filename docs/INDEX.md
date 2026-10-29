@@ -34,7 +34,7 @@
 - **通用搜索检测**：文本 prompt → `/perception/best`；单 finding、revisit 合并、目标轨迹报告。
 - **DINO**：5 帧 IoU 0.48–0.62，~170 ms；edge-aware bbox 已验证。
 - **安全**：dynamic target acquire/stale/围栏 abort；standoff 避免贴近物体。
-- **测试**：325 passed / 2 skipped（选定包）；全仓 pytest 325 passed/1 failed/2 skipped；唯一失败为 px4_offboard flake8 沙箱权限。
+- **测试**：325 passed / 2 skipped（选定包）；全仓 pytest 325 passed/3 skipped；px4_offboard flake8 在沙箱权限下显式 skip。
 
 ## 历史/背景文档（保留，不作为当前结论）
 
