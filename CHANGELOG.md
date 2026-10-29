@@ -1,3 +1,10 @@
+## [2026-10-29] 空中 VLM 目标非零候选
+
+- 2m悬停：cone TaskSpec→Path→follower candidate east=-0.285,north=0.281；
+- 未写 offboard；324 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] follower 收到Path/净空拦截
 
 - follower诊断：path=2，candidate0,0 blocked forward,left；
