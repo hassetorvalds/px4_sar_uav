@@ -1,3 +1,11 @@
+## [2026-10-29] planner 直接读 VLM TaskSpec
+
+- astar_planner 新增 goal_task_file，启动时读 TaskSpec→goal；
+- cone TaskSpec：Path44.02m/2点，occupied1152；
+- 未飞/未接 offboard；324 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] VLM cone 目标→A* Path
 
 - 用 visual target TaskSpec 作为 --goal-task；

@@ -21,6 +21,7 @@ from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 
 from .astar import plan_path
+from .visual_goal import goal_from_task
 
 
 def height_layer(points, altitude_m, min_above_m, max_above_m):
@@ -44,6 +45,7 @@ class AstarPlanner(Node):
         self.declare_parameter('height_max_above_m', 1.5)
         self.declare_parameter('plan_rate_hz', 1.0)
         self.declare_parameter('map_timeout_s', 2.0)
+        self.declare_parameter('goal_task_file', '')
 
         self._resolution = float(self.get_parameter('resolution_m').value)
         self._inflate = float(self.get_parameter('inflate_m').value)
@@ -54,6 +56,8 @@ class AstarPlanner(Node):
         self._points = None
         self._map_at = 0.0
         self._goal = None
+        self._goal_task_file = str(self.get_parameter('goal_task_file').value)
+        self._goal_task_loaded = False
         self._monitor = Px4StateMonitor(self)
 
         self.create_subscription(PointCloud2, str(self.get_parameter('occupied_topic').value),
@@ -76,6 +80,17 @@ class AstarPlanner(Node):
         self._goal = (float(p.x), float(p.y))
 
     def _tick(self):
+        if self._goal is None and self._goal_task_file and not self._goal_task_loaded:
+            try:
+                import json
+                with open(self._goal_task_file, encoding='utf-8') as handle:
+                    task = json.load(handle)
+                state = self._monitor.snapshot()
+                if state.position_ned is not None:
+                    self._goal = goal_from_task(task, ned_to_enu(*state.position_ned))
+                    self._goal_task_loaded = True
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                self.get_logger().warn(f'goal_task_file 读取失败：{exc}', throttle_duration_sec=10.0)
         if self._goal is None or self._points is None:
             return
         if time.monotonic() - self._map_at > self._map_timeout:
