@@ -1,3 +1,11 @@
+## [2026-10-29] 禁止盲侧移 detour
+
+- 侧向 valid/距离不足时 detour_refused，避免绕过净空门撞墙；
+- 验证 search abort 无墙碰撞；AirSim collision=Ground_6/penetration0；
+- mission 170，总计321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] astar_planner Nx3 解包修复
 
 - 节点将 Nx3 occupied 投影为 (x,y) 再传 A*；

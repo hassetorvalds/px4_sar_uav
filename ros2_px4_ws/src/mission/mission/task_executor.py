@@ -1166,11 +1166,18 @@ class TaskExecutor(Node):
             return False
         left = self._clearance_left
         right = self._clearance_right
-        if left is None and right is None:
-            base = 1
-        else:
-            base = 1 if (left if left is not None else -1) >= (
-                right if right is not None else -1) else -1
+        # 侧向数据未知/不足时禁止 detour：detour 会直接发侧向速度，
+        # 绕过前向净空门；盲侧移是撞墙根因。
+        if not (self._clearance_left_valid and self._clearance_right_valid):
+            self._report('detour_refused', reason='side_clearance_unknown')
+            return False
+        if left is None or right is None:
+            self._report('detour_refused', reason='side_clearance_missing')
+            return False
+        if max(float(left), float(right)) <= self._clearance_stop:
+            self._report('detour_refused', reason='both_sides_tight')
+            return False
+        base = 1 if float(left) >= float(right) else -1
         if self._detour_attempts % 2 == 1:
             base = -base
         self._detour_direction = base
