@@ -1,3 +1,11 @@
+## [2026-10-29] occupied 只在地面层
+
+- 悬停2m时 occupied 320点，z≈-0.22..-0.08；高度层0；
+- A* 过滤后0、直线；不是A*问题，是地图高度点缺失；
+- 321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 悬停2m A* 仍无占据
 
 - hover 2m 时 astar_preview：occupied=0，path 5m 直线；
