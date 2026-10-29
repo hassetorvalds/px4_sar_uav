@@ -223,3 +223,17 @@ cone 两 backend 差0.52m → selected=primary。
 拒绝（`refuse partial object`），不再把半截目标算多视角。
 
 边缘门：bbox 距边 ≤ `--edge-margin-px`（默认5px）直接拒绝；yaw45 正常。
+
+
+## 11. 绿色立方体（2026-10-29）
+
+退后悬浮后：
+
+```text
+DINO bbox 完整，confidence0.767，depth6.60m
+3帧 target=(0,5.10)，spread0.00m
+Qwen 本次 spread 16m → 一致性门拒绝，selected=primary
+final=(0.05,4.63)，abort=0
+```
+
+说明：绿色立方体可用于近距离目标；Qwen 在单色大物体上可能不稳定，一致性门会拒绝而非盲目采用。
