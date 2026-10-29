@@ -72,6 +72,8 @@ class LocalMap(Node):
         rate = max(float(self.get_parameter('publish_rate_hz').value), 0.2)
         self.create_timer(1.0 / rate, self._tick)
         self._frames = 0
+        self._airborne_cleared = False
+        self._grounded = True
         self._dropped_near = 0          # 上一帧被近场过滤丢弃的点数
         self._dropped_min_m = float('inf')  # 被丢弃点中的最小距离（诊断用）
         self.get_logger().info(
@@ -145,6 +147,17 @@ class LocalMap(Node):
 
         state = self._monitor.snapshot()
         position_ned = state.position_ned
+        if position_ned is not None:
+            up = -float(position_ned[2])
+            if up < 0.15:
+                self._grounded = True
+                self._airborne_cleared = False
+            elif up > 0.6 and self._grounded and not self._airborne_cleared:
+                cleared = self._grid.clear()
+                self._airborne_cleared = True
+                self._grounded = False
+                self.get_logger().info(
+                    f'离地 {up:.2f}m：清除着陆期局部地图 {cleared} 体素')
         if position_ned is None:
             forward = left = right = float('inf')
             left_valid = right_valid = False

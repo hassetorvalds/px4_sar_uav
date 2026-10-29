@@ -47,11 +47,11 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **308 passed / 2 skipped**（vlm 45 / mission 170 / perception 29+1skip / px4_interface 23 / planner 18 / mapping 22 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
+| 单元测试 | ✅ | **309 passed / 2 skipped**（vlm 45 / mission 170 / perception 29+1skip / px4_interface 23 / planner 18 / mapping 23 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
-| 区域覆盖搜索 | ⚠️ 场景依赖 | 历史东南 r=3 8/8；2026-10-29 同区域回归 0 航点；原点最近点0.54m；深度点云自身近点残留（min_range0.45），墙实际3.45m；search 被自点挡，非场景障碍 |
+| 区域覆盖搜索 | ⚠️ 场景依赖 | 历史东南 r=3 8/8；2026-10-29 同区域回归 0 航点；离地清图已加：起飞>0.6m 清空着陆期体素；search 仍被 south≈4.65m 障碍挡住，非起飞点地面点 |
 | 原地转向 / 扫描（yaw/scan） | ✅ 真机飞通 | `yaw`（±1–360°）+ `scan`（1–120 s）；真机 40 s 扫描，`yaw_complete/scan_complete` 正常 |
 | 搜索→检测→悬停→上报 | ✅ 组合闭环 | 搜索 8/8 + 步进扫描 30 s；`target_confirmed world=[27.41, 30.66, 4.95]`（t=76.1），scan 完成、安全落地；无 abort |
 | 目标自动对准 | ✅ 真机验证 | 确认后 yaw 到世界点，`target_centered error=-3.4°`；search hold 不偏航 |

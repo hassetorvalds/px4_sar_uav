@@ -1,3 +1,11 @@
+## [2026-10-29] 离地清局部地图
+
+- VoxelGrid.clear；local_map 在 up>0.6m 清空着陆期体素；
+- 原点地面近点被清；search 仍在 south≈4.65m 被真实障碍挡住；
+- mapping 23，总计309 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] local_map 自点根因
 
 - 深度点云 110720/307200 像素 <0.5m，最小0.14m；local_map min_range0.45 残留0.54m；

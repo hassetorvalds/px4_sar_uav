@@ -181,3 +181,12 @@ def test_clearance_profile_valid_sees_front_left_point():
     assert left_valid is True
     assert left == pytest.approx(3.0 * math.sqrt(2.0), abs=0.3)
     assert right_valid is False
+
+
+def test_clear_removes_all_voxels():
+    grid = VoxelGrid(resolution=0.15, extent=8.0, height_min=-2.0, height_max=6.0)
+    grid.insert(np.array([[2.0, 3.0, 1.0], [4.0, 5.0, 1.0]]),
+                origin_enu=(0.0, 0.0, 0.0), now=0.0)
+    assert grid.voxel_count == 2
+    assert grid.clear() == 2
+    assert grid.voxel_count == 0

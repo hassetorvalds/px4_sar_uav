@@ -105,6 +105,12 @@ class VoxelGrid:
             updated += 1
         return updated
 
+    def clear(self) -> int:
+        """清空全部体素；返回清除数量。"""
+        count = len(self._voxels)
+        self._voxels.clear()
+        return count
+
     def decay(self, now: float) -> int:
         """清除超时体素，返回清除数量。"""
         expired = [key for key, stamp in self._voxels.items()
