@@ -1,3 +1,11 @@
+## [2026-10-29] 全仓回归说明
+
+- 选定包：325 passed / 2 skipped；
+- 全仓 pytest：324 passed / 2 failed / 2 skipped；
+- 失败为 px4_offboard flake8 权限、pep257 检查到 PX4-Autopilot 第三方文件；非本次改动。
+
+---
+
 ## [2026-10-29] A* launch 默认关闭 smoke
 
 - 启动默认 astar.launch.py：planner/follower/bridge 节点起；
