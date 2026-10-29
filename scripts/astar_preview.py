@@ -19,6 +19,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 
 from planner.astar import plan_path
+from planner.visual_goal import goal_from_task
 
 
 def cloud_xyz(msg):
@@ -48,8 +49,9 @@ class Preview(Node):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--occupied-topic', default='/local_map/occupied')
-    parser.add_argument('--goal-east', type=float, required=True)
-    parser.add_argument('--goal-north', type=float, required=True)
+    parser.add_argument('--goal-east', type=float)
+    parser.add_argument('--goal-north', type=float)
+    parser.add_argument('--goal-task', default='', help='VLM TaskSpec JSON；读取第一个 goto')
     parser.add_argument('--height-min-above-m', type=float, default=0.5)
     parser.add_argument('--height-max-above-m', type=float, default=1.5)
     parser.add_argument('--resolution-m', type=float, default=0.25)
@@ -70,11 +72,21 @@ def main():
             break
     if position is None or node.points is None:
         raise SystemExit('没有收到 PX4 位置或 occupied 点云')
+    if args.goal_task:
+        import json
+        with open(args.goal_task, encoding='utf-8') as handle:
+            task = json.load(handle)
+        east, north = goal_from_task(task, position)
+    elif args.goal_east is not None and args.goal_north is not None:
+        east = position[0] + args.goal_east
+        north = position[1] + args.goal_north
+    else:
+        raise SystemExit('需要 --goal-task 或 --goal-east/--goal-north')
     pts = node.points
     band = ((pts[:, 2] >= position[2] + args.height_min_above_m)
             & (pts[:, 2] <= position[2] + args.height_max_above_m))
     obstacles = [(float(p[0]), float(p[1])) for p in pts[band]]
-    goal = (position[0] + args.goal_east, position[1] + args.goal_north)
+    goal = (east, north)
     path = plan_path(obstacles, position[:2], goal,
                      resolution=args.resolution_m, inflate_m=args.inflate_m,
                      max_radius_m=args.max_radius_m)

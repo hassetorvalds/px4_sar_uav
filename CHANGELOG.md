@@ -1,3 +1,11 @@
+## [2026-10-29] VLM TaskSpec→A* 目标
+
+- `visual_goal.goal_from_task`：relative/map goto → A* 目标；
+- `astar_preview --goal-task` 连接 VLM TaskSpec；
+- 3 单测；planner 33，总计324 passed / 2 skipped；未飞。
+
+---
+
 ## [2026-10-29] 空中 follower 非零候选
 
 - 2m悬停、goal north5，follower candidate east0.016/north0.400；
