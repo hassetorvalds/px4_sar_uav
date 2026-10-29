@@ -1,3 +1,11 @@
+## [2026-10-29] A* 真实 occupied 预览
+
+- `scripts/astar_preview.py`：订阅 /local_map/occupied + PX4，真实图→A* 路径；
+- 当前地面层过滤后无障碍，路径直线；不能当避障证据；
+- 未接飞控；312 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* 局部规划原型
 
 - 新增 `planner/astar.py`：2D A*、安全膨胀、搜索半径上限、路径平滑；

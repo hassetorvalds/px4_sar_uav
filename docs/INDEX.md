@@ -8,7 +8,7 @@
 | 文档 | 作用 |
 |---|---|
 | [README 第 0 节](../README.md#0-现行规划2026-10-26) | 当前优先级、已完成能力、边界 |
-| [RESULTS.md](RESULTS.md) | 能力矩阵、真机证据、测试数；顶部为当前状态 |
+| [RESULTS.md](RESULTS.md) | 能力矩阵、真机证据、测试数；A* 原型 |
 | [DEMO.md](DEMO.md) | 当前推荐 demo/入口 + 历史步骤 |
 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | 未决/已拍板/已关闭 |
 | [GROUNDING_BASELINE.md](GROUNDING_BASELINE.md) | LightNav/Qwen grounding 基线 + 后续真机 |
