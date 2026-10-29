@@ -1,3 +1,11 @@
+## [2026-10-29] A* launch 默认关闭 smoke
+
+- 启动默认 astar.launch.py：planner/follower/bridge 节点起；
+- follower/bridge enabled=False；offboard 无速度；timeout正常退出；
+- 325 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* 部署 launch
 
 - 新增 astar.launch.py：planner/follower/bridge 参数化；
