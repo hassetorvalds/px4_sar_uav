@@ -1,3 +1,11 @@
+## [2026-10-29] velocity bridge 双授权
+
+- 新增 allow_flight 默认 false；即使 enabled=true 也拒绝写 offboard；
+- enabled=true/allow=false → flight_not_authorized；
+- planner 34，总计325 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 空中 VLM 目标非零候选
 
 - 2m悬停：cone TaskSpec→Path→follower candidate east=-0.285,north=0.281；

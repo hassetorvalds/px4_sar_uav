@@ -4,7 +4,7 @@ from planner.astar_velocity_bridge import bridge_allowed
 
 
 def _ok(**overrides):
-    values = dict(enabled=True, armed=True, offboard=True, failsafe=False,
+    values = dict(enabled=True, allow_flight=True, armed=True, offboard=True, failsafe=False,
                   age_s=0.1, timeout_s=0.5, speed_mps=0.2,
                   max_speed_mps=0.3, active_s=1.0, max_active_s=10.0)
     values.update(overrides)
@@ -13,6 +13,10 @@ def _ok(**overrides):
 
 def test_bridge_allows_safe_candidate():
     assert _ok() == (True, 'ok')
+
+
+def test_bridge_requires_flight_authorization():
+    assert _ok(allow_flight=False)[1] == 'flight_not_authorized'
 
 
 def test_bridge_refuses_disabled_or_stale():

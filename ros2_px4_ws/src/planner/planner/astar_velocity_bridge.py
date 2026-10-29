@@ -14,12 +14,14 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 
-def bridge_allowed(*, enabled: bool, armed: bool, offboard: bool, failsafe: bool,
+def bridge_allowed(*, enabled: bool, allow_flight: bool, armed: bool, offboard: bool, failsafe: bool,
                    age_s: float, timeout_s: float, speed_mps: float,
                    max_speed_mps: float, active_s: float,
                    max_active_s: float):
     if not enabled:
         return False, 'disabled'
+    if not allow_flight:
+        return False, 'flight_not_authorized'
     if not armed or not offboard:
         return False, 'not_armed_offboard'
     if failsafe:
@@ -39,11 +41,13 @@ class AstarVelocityBridge(Node):
         self.declare_parameter('candidate_topic', '/astar_follower/velocity_candidate')
         self.declare_parameter('output_topic', '/offboard_bridge/velocity_setpoint')
         self.declare_parameter('enabled', False)
+        self.declare_parameter('allow_flight', False)
         self.declare_parameter('max_speed_mps', 0.3)
         self.declare_parameter('candidate_timeout_s', 0.5)
         self.declare_parameter('max_active_s', 10.0)
         self.declare_parameter('rate_hz', 20.0)
         self._enabled = bool(self.get_parameter('enabled').value)
+        self._allow_flight = bool(self.get_parameter('allow_flight').value)
         self._max_speed = float(self.get_parameter('max_speed_mps').value)
         self._timeout = float(self.get_parameter('candidate_timeout_s').value)
         self._max_active = float(self.get_parameter('max_active_s').value)
@@ -79,7 +83,8 @@ class AstarVelocityBridge(Node):
             self._active_since = now
         active = 0.0 if self._active_since is None else now - self._active_since
         allowed, reason = bridge_allowed(
-            enabled=self._enabled, armed=bool(state.armed),
+            enabled=self._enabled, allow_flight=self._allow_flight,
+            armed=bool(state.armed),
             offboard=bool(state.offboard), failsafe=bool(state.failsafe),
             age_s=now - self._candidate_at, timeout_s=self._timeout,
             speed_mps=speed, max_speed_mps=self._max_speed,
