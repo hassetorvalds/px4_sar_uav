@@ -1,3 +1,11 @@
+## [2026-10-29] A* velocity bridge 默认关闭
+
+- 新增 `astar_velocity_bridge`：candidate→offboard，默认 disabled；
+- 安全门：armed/offboard/not failsafe/fresh/speed/max_active；
+- 3 单测；planner 30，总计321 passed / 2 skipped；未实际接管。
+
+---
+
 ## [2026-10-29] A* 候选净空复核
 
 - `candidate_safety.py`：候选速度按前/左/右净空复核，未知侧向 fail-closed；

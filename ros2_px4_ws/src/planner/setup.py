@@ -23,6 +23,7 @@ setup(
             'frontier_explorer = planner.frontier_explorer:main',
             'astar_planner = planner.astar_planner:main',
             'astar_follower = planner.astar_follower:main',
+            'astar_velocity_bridge = planner.astar_velocity_bridge:main',
         ],
     },
 )
