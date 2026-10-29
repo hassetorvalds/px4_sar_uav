@@ -1,3 +1,11 @@
+## [2026-10-29] search 根因：原点近场障碍
+
+- 原点 local_map nearest_fwd=(0.07,0.52,-0.08)@0.54m；
+- 净空门 stop=0.6m，起飞后前向 search 立即 blocked；
+- 不是 search 解析/围栏问题；不绕过；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 东向 search 也 clearance
 
 - 东侧5/北0/r3 搜索同样 0 航点、clearance_blocked；
