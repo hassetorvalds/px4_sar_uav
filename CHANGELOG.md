@@ -1,3 +1,10 @@
+## [2026-10-29] follower 收到绕墙 Path 但被净空拦
+
+- Path4点（west8.9）；follower candidate 0,0 blocked forward,left；
+- 安全门有效；未接 offboard；321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] planner Path 节点修复验证
 
 - astar_planner Nx3→(x,y)后，goal north25 发布4点Path（含 west8.9）；
