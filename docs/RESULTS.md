@@ -91,7 +91,7 @@
 | DINO 独立物体（Cone_5） | ⚠️ 有限成功 | `cone` score 0.491、深度 47.3m；直飞本体因 clearance abort；3m standoff 成功，final 距 cone≈4.8m |
 | 通用 VLM 视觉目标 | ✅ 真机 | 图像 bbox/depth + standoff，不读 AirSim 物体坐标；cone 到点 0.43 m；3帧 targets spread 0.01/0.06m，飞行无 abort |
 | 橙色球目标（P1） | ✅ 到点（测试物） | DINO conf0.88、depth42.28m、target(27.35,28.20)，到点0.3m、无 abort；**场景 OrangeBall pose 与渲染/深度投影不一致，不能当 truth**；DINO/深度在投影处约42.16m，一致 |
-| 绿色立方体（当前） | ⚠️ target-only | DINO 触边拒绝，Qwen 全框 depth3.22m、target0.22m；standoff3导致目标几乎原点；未飞 |
+| 绿色立方体（当前） | ⚠️ 当前距离不可用 | 悬浮后仍太近/占满画面，DINO/Qwen bbox 持续触底边，edge guard 拒绝；未飞 |
 | 红色立方体（P1，历史） | ✅ 已测，物体已移除 | yaw45 DINO到点；yaw90 DINO误检→Qwen；**UE4 重启后场景已无红立方体，不再作为当前资产** |
 | VLM 一致性门（Qwen verify） | ✅ 端到端真机 | cone 差0.52m；orange单视角0.04–0.12m；red yaw45 0.04m；red yaw90 DINO失败→Qwen；边缘目标拒绝 |
 | 橙色球多视角 | ⚠️ 边缘目标被拒 | yaw0/yaw90 bbox 触边 → 拒绝；yaw45 正常；UE4 重启后回归 DINO/Qwen 差0.08m |
