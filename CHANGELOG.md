@@ -1,3 +1,11 @@
+## [2026-10-29] AirSim 碰撞监视
+
+- 新增 airsim_collision：2Hz 发布 /sensor/collision + info；
+- 默认不控制飞控；smoke 读到 false；
+- 325 passed / 3 skipped。
+
+---
+
 ## [2026-10-29] 全仓测试 325 passed/3 skipped
 
 - px4_offboard flake8 在沙箱 semaphore PermissionError 下显式 skip；

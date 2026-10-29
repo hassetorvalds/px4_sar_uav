@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'airsim_camera = sensor_bridge.airsim_camera:main',
+            'airsim_collision = sensor_bridge.airsim_collision:main',
         ],
     },
 )

@@ -88,6 +88,10 @@ def generate_launch_description():
                  'max_depth_m': LaunchConfiguration('sensor_max_depth_m'),
              }],
              condition=IfCondition(LaunchConfiguration('with_down_camera'))),
+        Node(package='sensor_bridge', executable='airsim_collision',
+             name='airsim_collision', output='screen',
+             parameters=[{'host': LaunchConfiguration('airsim_host'),
+                          'port': LaunchConfiguration('airsim_port')}]),
         # 地图层：局部体素障碍地图 + 三向净空
         Node(package='mapping', executable='local_map',
              name='local_map', output='screen',
