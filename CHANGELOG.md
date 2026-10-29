@@ -1,3 +1,10 @@
+## [2026-10-29] 空中 follower 非零候选
+
+- 2m悬停、goal north5，follower candidate east0.016/north0.400；
+- 未写 offboard；321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] follower 收到绕墙 Path 但被净空拦
 
 - Path4点（west8.9）；follower candidate 0,0 blocked forward,left；
