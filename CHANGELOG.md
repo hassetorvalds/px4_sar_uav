@@ -1,3 +1,11 @@
+## [2026-10-29] 东向 search 也 clearance
+
+- 东侧5/北0/r3 搜索同样 0 航点、clearance_blocked；
+- 不是南向绿立方体单点问题；当前场景 search 不可用；
+- 不硬改净空门；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] search 实验特性默认关闭
 
 - `search_align_heading` / `search_detour` 改默认 false（需显式 opt-in）；
