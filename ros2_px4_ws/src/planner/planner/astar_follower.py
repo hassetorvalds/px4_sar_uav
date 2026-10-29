@@ -89,6 +89,7 @@ class AstarFollower(Node):
             return
         if not self._path or time.monotonic() - self._path_at > self._timeout:
             self._status_pub.publish(String(data='no_path'))
+            self.get_logger().info('follower no_path', throttle_duration_sec=1.0)
             return
         state = self._monitor.snapshot()
         if state.position_ned is None:
@@ -109,6 +110,9 @@ class AstarFollower(Node):
         twist.linear.x = safe.east if not safe.blocked else 0.0
         twist.linear.y = safe.north if not safe.blocked else 0.0
         self._pub.publish(twist)
+        self.get_logger().info(
+            f'follower path={len(self._path)} candidate=({twist.linear.x:.2f},{twist.linear.y:.2f}) '
+            f'blocked={safe.blocked} reason={safe.reason}', throttle_duration_sec=1.0)
         self._status_pub.publish(String(
             data=f'candidate east={twist.linear.x:.2f} north={twist.linear.y:.2f} '
                  f'index={command.index} done={command.done} '

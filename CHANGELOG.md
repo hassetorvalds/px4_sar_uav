@@ -1,3 +1,11 @@
+## [2026-10-29] follower 收到Path/净空拦截
+
+- follower诊断：path=2，candidate0,0 blocked forward,left；
+- 不是Path未到，是净空门拦截；未接offboard；
+- 324 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] VLM TaskSpec Path 到 follower
 
 - planner goal_task_file 发布 cone Path2点(-31.37,31.12)；
