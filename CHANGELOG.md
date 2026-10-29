@@ -1,3 +1,11 @@
+## [2026-10-29] 绿色 prompt 变体无效
+
+- yaw10 下 green box / green block 仍与 DINO 差15.98m；
+- 不是 prompt 同义词问题，是 Qwen 在该视角选错；
+- 绿色立方体仅 yaw0 可用；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 绿色立方体视角限制
 
 - yaw±10°：DINO/Qwen 分歧15.99m，一致性门拒绝；
