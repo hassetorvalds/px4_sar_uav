@@ -1,3 +1,11 @@
+## [2026-10-29] 东侧矩形搜索也 blocked
+
+- yaw东 + 东侧6×2矩形，0航点，east≈3.93m clear；
+- 当前场景多方向障碍，search 不可用；不继续换区域；
+- 309 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 离地清局部地图
 
 - VoxelGrid.clear；local_map 在 up>0.6m 清空着陆期体素；
