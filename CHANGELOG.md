@@ -1,3 +1,11 @@
+## [2026-10-29] A* 部署 launch
+
+- 新增 astar.launch.py：planner/follower/bridge 参数化；
+- follower_enabled/bridge_enabled/allow_flight 默认 false；
+- 325 passed / 2 skipped；未启动飞行栈。
+
+---
+
 ## [2026-10-29] velocity bridge 双授权
 
 - 新增 allow_flight 默认 false；即使 enabled=true 也拒绝写 offboard；
