@@ -1,3 +1,11 @@
+## [2026-10-29] local_map 自点根因
+
+- 深度点云 110720/307200 像素 <0.5m，最小0.14m；local_map min_range0.45 残留0.54m；
+- 图像/深度墙实际3.45m；0.52m 是自点/近场点，不是场景障碍；
+- 不绕过净空门；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] yaw-east search 仍 clearance
 
 - 起飞后先 yaw -90（东），search 仍0航点，east0.88被挡；
