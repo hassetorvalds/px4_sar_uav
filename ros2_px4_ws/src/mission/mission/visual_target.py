@@ -58,3 +58,12 @@ def bbox_touches_edge(bbox, width: int, height: int, margin_px: float = 5.0) -> 
     m = max(float(margin_px), 0.0)
     return (x1 <= m or y1 <= m
             or x2 >= float(width) - m or y2 >= float(height) - m)
+
+
+def effective_standoff(distance_m: float, requested_m: float) -> float:
+    """近距离目标自动收缩 standoff，至少保留 0.3m，不超过物距一半。"""
+    distance = float(distance_m)
+    if distance <= 0.3:
+        raise ValueError('object too close for safe standoff')
+    requested = max(float(requested_m), 0.0)
+    return min(requested, max(0.3, 0.5 * distance))

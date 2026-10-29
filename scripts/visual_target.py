@@ -18,7 +18,8 @@ import airsim
 import numpy as np
 from PIL import Image
 
-from mission.visual_target import apply_standoff, bbox_touches_edge
+from mission.visual_target import (apply_standoff, bbox_touches_edge,
+                                      effective_standoff)
 from perception.geometry import (CameraIntrinsics, depth_patch_median,
                                  pixel_to_world_enu)
 from px4_interface.frames import ned_to_enu, ned_yaw_to_enu_yaw
@@ -116,8 +117,8 @@ def main():
     if original_distance > args.geofence_m:
         raise SystemExit(f'object {original_distance:.1f} m > geofence {args.geofence_m:.1f} m')
     try:
-        target_east, target_north, _ = apply_standoff(
-            east, north, args.standoff_m)
+        standoff = effective_standoff(original_distance, args.standoff_m)
+        target_east, target_north, _ = apply_standoff(east, north, standoff)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     stamp = time.strftime('%Y%m%d-%H%M%S')
@@ -144,7 +145,7 @@ def main():
             f'bbox_px={[round(v, 1) for v in bbox]}',
             f'confidence={confidence}', f'depth_m={depth_m:.2f}',
             f'object_distance_m={original_distance:.2f}',
-            f'standoff_m={args.standoff_m:g}',
+            f'standoff_requested_m={args.standoff_m:g}', f'standoff_m={standoff:g}',
             f'object_rel_enu={east:.2f},{north:.2f}',
             f'target_rel_enu={target_east:.2f},{target_north:.2f}',
             f'latency_ms={latency:.0f}',
@@ -157,7 +158,7 @@ def main():
         'bbox': [round(v, 1) for v in bbox], 'depth_m': round(depth_m, 2),
         'object_rel_enu': [round(east, 2), round(north, 2)],
         'target_rel_enu': [round(target_east, 2), round(target_north, 2)],
-        'standoff_m': args.standoff_m, 'task': out,
+        'standoff_m': round(standoff, 2), 'task': out,
     }, ensure_ascii=False, indent=2))
 
 

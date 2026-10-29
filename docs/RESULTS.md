@@ -47,7 +47,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **307 passed / 2 skipped**（vlm 45 / mission 169 / perception 29+1skip / px4_interface 23 / planner 18 / mapping 22 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
+| 单元测试 | ✅ | **308 passed / 2 skipped**（vlm 45 / mission 170 / perception 29+1skip / px4_interface 23 / planner 18 / mapping 22 / px4_offboard 1+1skip；px4_offboard flake8 受沙箱 semaphore 限制） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |
@@ -91,7 +91,7 @@
 | DINO 独立物体（Cone_5） | ⚠️ 有限成功 | `cone` score 0.491、深度 47.3m；直飞本体因 clearance abort；3m standoff 成功，final 距 cone≈4.8m |
 | 通用 VLM 视觉目标 | ✅ 真机 | 图像 bbox/depth + standoff，不读 AirSim 物体坐标；cone 到点 0.43 m；3帧 targets spread 0.01/0.06m，飞行无 abort |
 | 橙色球目标（P1） | ✅ 到点（测试物） | DINO conf0.88、depth42.28m、target(27.35,28.20)，到点0.3m、无 abort；**场景 OrangeBall pose 与渲染/深度投影不一致，不能当 truth**；DINO/深度在投影处约42.16m，一致 |
-| 绿色立方体（当前） | ✅ 真机 | 退后悬浮：DINO target(0,5.10)、spread0.0；Qwen spread16m被拒→primary；final(0.05,4.63)、无abort |
+| 绿色立方体（当前） | ✅ 真机 | 退后悬浮：DINO target(0,5.10)、spread0.0；final(0.05,4.63)；近距离自动standoff规则已加 |
 | 红色立方体（P1，历史） | ✅ 已测，物体已移除 | yaw45 DINO到点；yaw90 DINO误检→Qwen；**UE4 重启后场景已无红立方体，不再作为当前资产** |
 | VLM 一致性门（Qwen verify） | ✅ 端到端真机 | cone 差0.52m；orange单视角0.04–0.12m；red yaw45 0.04m；red yaw90 DINO失败→Qwen；边缘目标拒绝 |
 | 橙色球多视角 | ⚠️ 边缘目标被拒 | yaw0/yaw90 bbox 触边 → 拒绝；yaw45 正常；UE4 重启后回归 DINO/Qwen 差0.08m |

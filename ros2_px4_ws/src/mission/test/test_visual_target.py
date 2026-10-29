@@ -53,3 +53,11 @@ def test_bbox_touches_edge_detects_edges():
     assert bbox_touches_edge([0, 100, 200, 300], 1280, 720, 5)
     assert bbox_touches_edge([1200, 100, 1280, 300], 1280, 720, 5)
     assert not bbox_touches_edge([600, 290, 670, 360], 1280, 720, 5)
+
+
+def test_effective_standoff_shrinks_for_close_object():
+    from mission.visual_target import effective_standoff
+    assert effective_standoff(3.22, 3.0) == pytest.approx(1.61)
+    assert effective_standoff(6.6, 1.5) == pytest.approx(1.5)
+    with pytest.raises(ValueError):
+        effective_standoff(0.2, 1.0)

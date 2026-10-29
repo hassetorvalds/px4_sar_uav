@@ -237,3 +237,6 @@ final=(0.05,4.63)，abort=0
 ```
 
 说明：绿色立方体可用于近距离目标；Qwen 在单色大物体上可能不稳定，一致性门会拒绝而非盲目采用。
+
+近距离 standoff：`effective_standoff(distance, requested)` 自动收缩到 `min(requested, 0.5*distance)`，
+至少 0.3m；3.22m 物距 + standoff3 → 1.61m，不再把目标落到原点。

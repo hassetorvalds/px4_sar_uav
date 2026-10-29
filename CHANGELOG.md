@@ -1,3 +1,11 @@
+## [2026-10-29] 近距离 standoff 自动收缩
+
+- `effective_standoff`：近距离目标用 min(requested,0.5*distance)，至少0.3m；
+- 3.22m 物距 + standoff3 → 1.61m；避免目标落到起飞点；
+- mission 170，总计308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 绿色立方体真机
 
 - 退后悬浮；DINO depth6.60m、target(0,5.10)、spread0.0；
