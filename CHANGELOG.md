@@ -1,3 +1,11 @@
+## [2026-10-29] 目标层回归
+
+- 绿立方体移除后，cone/orange target-only 正常；
+- cone DINO/Qwen 差0.33m；orange 差0.09m；均 primary；
+- 321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] velocity bridge 未解锁拒绝
 
 - enabled=true、候选0.2m/s，但未 armed/offboard → allowed=False/not_armed_offboard；
