@@ -1,3 +1,10 @@
+## [2026-10-29] A* 节点优雅退出
+
+- follower/planner 捕获 ExternalShutdownException，timeout/SIGTERM 不再打 rclpy traceback；
+- 315 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] A* follower 默认关闭
 
 - `astar_follower`：Path→velocity_candidate，不写 offboard；

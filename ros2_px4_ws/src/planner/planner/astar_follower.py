@@ -10,6 +10,7 @@ enabled=false 时绝不发布速度候选；即使 enabled=true，也只发布�
 import time
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Path
 from px4_interface.frames import ned_to_enu
@@ -85,11 +86,12 @@ def main(args=None):
     node = AstarFollower()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
