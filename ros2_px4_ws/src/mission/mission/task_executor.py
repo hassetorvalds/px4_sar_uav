@@ -109,7 +109,8 @@ class TaskExecutor(Node):
         self.declare_parameter('goto_align_tolerance_deg', 20.0)
         self.declare_parameter('goto_align_rate_deg_s', 20.0)
         self.declare_parameter('side_clearance_ttl_s', 2.0)
-        self.declare_parameter('search_align_heading', True)
+        self.declare_parameter('search_align_heading', False)
+        self.declare_parameter('search_detour', False)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -171,6 +172,7 @@ class TaskExecutor(Node):
             self.get_parameter('side_clearance_ttl_s').value)
         self._search_align_heading = bool(
             self.get_parameter('search_align_heading').value)
+        self._search_detour = bool(self.get_parameter('search_detour').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -1153,7 +1155,10 @@ class TaskExecutor(Node):
         return True
 
     def _start_detour(self, now) -> bool:
-        if self._current_step_type() not in ('goto', 'search'):
+        step_type = self._current_step_type()
+        if step_type not in ('goto', 'search'):
+            return False
+        if step_type == 'search' and not self._search_detour:
             return False
         if (not self._detour_enabled
                 or self._detour_attempts >= self._detour_max_attempts

@@ -1,3 +1,11 @@
+## [2026-10-29] search 实验特性默认关闭
+
+- `search_align_heading` / `search_detour` 改默认 false（需显式 opt-in）；
+- 关闭后东南 r=3 回归仍 0 航点、clearance_blocked；不是两特性单独导致；
+- 当前场景不宣称 search 稳定；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] search 回归失败（当前场景）
 
 - 东南 r=3 原可飞区域，本次 0 航点、起飞即 clearance_blocked；
