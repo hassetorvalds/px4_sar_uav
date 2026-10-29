@@ -1,3 +1,11 @@
+## [2026-10-29] 中文目标 target-only 验证
+
+- `橙色球` → Qwen 译成 `orange ball` → DINO target (27.33,28.22)；
+- 仅图像/深度，无飞行；
+- 325 passed / 3 skipped。
+
+---
+
 ## [2026-10-29] visual_target 任意语言目标
 
 - 新增 --translate-target：Qwen 翻译目标短语后再做 DINO grounding；
