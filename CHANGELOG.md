@@ -1,3 +1,11 @@
+## [2026-10-29] A* Path 跟随纯逻辑
+
+- `path_follow.py`：跳过到达点、lookahead、限速 P 速度、终点 done；
+- 3 单测；planner 24，总计315 passed / 2 skipped；
+- 未接飞控。
+
+---
+
 ## [2026-10-29] A* ROS Path 节点
 
 - 新增 `astar_planner`：occupied + goal → nav_msgs/Path，1Hz；
