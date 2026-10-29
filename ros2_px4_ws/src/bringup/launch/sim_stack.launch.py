@@ -36,6 +36,9 @@ def generate_launch_description():
         DeclareLaunchArgument('with_arbiter', default_value='true'),
         DeclareLaunchArgument('with_coverage', default_value='true'),
         DeclareLaunchArgument('with_down_camera', default_value='true'),
+        DeclareLaunchArgument('sensor_max_depth_m', default_value='10.0'),
+        DeclareLaunchArgument('map_extent_m', default_value='8.0'),
+        DeclareLaunchArgument('map_cone_max_m', default_value='6.0'),
     ]
     arbiter_on = LaunchConfiguration('with_arbiter')
     arbiter_if = IfCondition(arbiter_on)
@@ -71,6 +74,7 @@ def generate_launch_description():
                  'host': LaunchConfiguration('airsim_host'),
                  'port': LaunchConfiguration('airsim_port'),
                  'rate_hz': LaunchConfiguration('camera_rate_hz'),
+                 'max_depth_m': LaunchConfiguration('sensor_max_depth_m'),
              }]),
         # 传感器层：下视相机（专用于覆盖统计；检测仍用前视 0）
         Node(package='sensor_bridge', executable='airsim_camera',
@@ -81,11 +85,16 @@ def generate_launch_description():
                  'rate_hz': LaunchConfiguration('camera_rate_hz'),
                  'camera_name': 'Down',
                  'camera_pitch_deg': -90.0,
+                 'max_depth_m': LaunchConfiguration('sensor_max_depth_m'),
              }],
              condition=IfCondition(LaunchConfiguration('with_down_camera'))),
         # 地图层：局部体素障碍地图 + 三向净空
         Node(package='mapping', executable='local_map',
-             name='local_map', output='screen'),
+             name='local_map', output='screen',
+             parameters=[{
+                 'extent': LaunchConfiguration('map_extent_m'),
+                 'cone_max_distance': LaunchConfiguration('map_cone_max_m'),
+             }]),
         # 覆盖层：相机点云 → ENU 地面网格，统计实际观测覆盖
         Node(package='mapping', executable='coverage_monitor',
              name='coverage_monitor', output='screen',

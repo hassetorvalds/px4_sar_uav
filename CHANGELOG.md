@@ -1,3 +1,11 @@
+## [2026-10-29] A* 真实远墙绕行路径
+
+- launch 暴露 sensor_max_depth/map_extent/map_cone_max（double，传30.0/25.0/25.0）；
+- 2m悬停：occupied 856、路径34.39m、4点，绕 west8.9 后到 north24.9；
+- 只规划未飞；321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] staging 近墙仍无高度层占据
 
 - staging north15 成功，A* 目标 north25 仍 occupied=0、直线；
