@@ -1,3 +1,11 @@
+## [2026-10-29] VLM cone 目标→A* Path
+
+- 用 visual target TaskSpec 作为 --goal-task；
+- goal(-31.43,31.24)，height obstacles828，Path44.2m/2点；
+- 未飞、未接 offboard；324 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] VLM TaskSpec→A* 目标
 
 - `visual_goal.goal_from_task`：relative/map goto → A* 目标；
