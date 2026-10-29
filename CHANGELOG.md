@@ -1,3 +1,11 @@
+## [2026-10-29] yaw-east search 仍 clearance
+
+- 起飞后先 yaw -90（东），search 仍0航点，east0.88被挡；
+- 当前起飞点周围多点障碍，不是单一绿立方体；
+- 不绕过净空门；308 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] search 根因：原点近场障碍
 
 - 原点 local_map nearest_fwd=(0.07,0.52,-0.08)@0.54m；
