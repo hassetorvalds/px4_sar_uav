@@ -1,3 +1,10 @@
+## [2026-10-29] planner Path 节点修复验证
+
+- astar_planner Nx3→(x,y)后，goal north25 发布4点Path（含 west8.9）；
+- 不飞、不接 offboard；321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 禁止盲侧移 detour
 
 - 侧向 valid/距离不足时 detour_refused，避免绕过净空门撞墙；
