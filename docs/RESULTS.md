@@ -47,7 +47,7 @@
 | 速度仲裁 | ✅ | `velocity_arbiter`：`avoid > vlm`，过期逐级回落；实飞联调 `vlm → avoid → vlm → none` |
 | 四层安全兜底 | ✅ | 机载看门狗 → 驱动阶段超时 → `flight_supervisor` → 全局 `max_flight_s`；sup2 端到端触发 |
 | fail-closed 起飞门禁 | ✅ | `preflight.sh` 7 项各 1 + `/fmu/out` + 地图 frames>0 + 远端 `/health`；曾拦下 local_map 崩溃 |
-| 单元测试 | ✅ | **325 passed / 2 skipped（选定包）**（vlm 45 / mission 170 / perception 29+1skip / px4_interface 23 / planner 34 / mapping 23 / px4_offboard 1+1skip；全仓 pytest 另有 px4_offboard flake8 权限/pep257 检查到 PX4-Autopilot 的2个失败；px4_offboard flake8 受沙箱 semaphore 限制） |
+| 单元测试 | ✅ | **325 passed / 2 skipped（选定包）**（vlm 45 / mission 170 / perception 29+1skip / px4_interface 23 / planner 34 / mapping 23 / px4_offboard 1+1skip；全仓 pytest 325 passed/1 failed/2 skipped；唯一失败为 px4_offboard flake8 沙箱 permission；px4_offboard flake8 受沙箱 semaphore 限制） |
 | 自动降落 | ⚠️ 兜底可用 | EKF z 触地发散 → `land_fast` / `land_autodisarm` 按时间兜底；**实机不可沿用** |
 | 已知点位可复现试验 | ✅ | 固定起始世界位姿（不调 `reset()`）+ 世界坐标点位；同一 layout 可连跑 |
 | 传感器时间同步 / LiDAR | ❌ | 未做 |

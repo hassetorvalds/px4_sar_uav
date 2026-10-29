@@ -1,3 +1,11 @@
+## [2026-10-29] style test 作用域修复
+
+- pep257/flake8 只检查 px4_offboard 包目录，不再扫 PX4-Autopilot；
+- pep257 通过；flake8 仍为沙箱 permission；
+- 全仓 325 passed/1 failed/2 skipped。
+
+---
+
 ## [2026-10-29] 全仓回归说明
 
 - 选定包：325 passed / 2 skipped；
