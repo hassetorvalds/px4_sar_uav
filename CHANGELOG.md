@@ -1,3 +1,11 @@
+## [2026-10-29] staging 近墙仍无高度层占据
+
+- staging north15 成功，A* 目标 north25 仍 occupied=0、直线；
+- 远墙未进入飞行高度层点云，不能验证绕障；
+- 321 passed / 2 skipped。
+
+---
+
 ## [2026-10-29] 相机/墙面距离复核
 
 - 相机0 Euler pitch=0；DepthPlanar中心22.6m，所谓“近墙”实际在远处；
