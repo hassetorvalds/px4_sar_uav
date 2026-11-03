@@ -1,3 +1,11 @@
+## [2026-11-03] 重置场景真实 VLM 目标飞行
+
+- cone TaskSpec（DINO/Qwen差0.26m）真机执行；
+- 到点 (-31.16,30.97)，目标(-31.43,31.24)，误差0.38m；
+- has_collided=False；场景未改；325 passed/3 skipped。
+
+---
+
 ## [2026-10-29] 重置场景 VLM 基线
 
 - 场景对象：Cone_5、OrangeBall；未改布局；

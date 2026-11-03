@@ -11,7 +11,7 @@
 
 - **自然语言**：Hybrid NL（起飞/搜索/扫描/悬停/降落）+ 自由文本视觉目标槽；
 - **任意物体**：中文目标 → Qwen 翻译 → DINO bbox/depth → standoff；不读 AirSim 物体坐标；
-  真机 cone 到点约 0.4 m；直接目标放在物体本体会被净空门 abort；
+  重置场景 cone 真机到点误差约 0.38 m、`has_collided=False`；直接目标放在物体本体会被净空门 abort；
 - **通用搜索检测**：文本 prompt → `/perception/best`；单 finding、revisit 合并、目标轨迹报告；
 - **DINO bbox**：5 帧 IoU 0.48–0.62，~170 ms；edge-aware 已验证；
 - **测试**：294 passed / 2 skipped（mission 158）；px4_offboard flake8 受沙箱 semaphore 限制；
