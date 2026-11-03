@@ -1,3 +1,11 @@
+## [2026-11-03] 重置场景 orange 目标飞行
+
+- orange TaskSpec goal(27.33,28.23) 真机执行；
+- 到点 (27.07,27.95)，误差0.38m；has_collided=False；
+- cone/orange 各1次成功；325 passed/3 skipped。
+
+---
+
 ## [2026-11-03] 重置场景真实 VLM 目标飞行
 
 - cone TaskSpec（DINO/Qwen差0.26m）真机执行；
