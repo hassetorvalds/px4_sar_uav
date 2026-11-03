@@ -1,3 +1,11 @@
+## [2026-10-29] 重置场景 VLM 基线
+
+- 场景对象：Cone_5、OrangeBall；未改布局；
+- DINO target-only：cone(-31.43,31.24)、orange(27.32,28.23)；
+- Qwen 18081 当前不可用，未做一致性验证；325 passed / 3 skipped。
+
+---
+
 ## [2026-10-29] 中文目标→A* Path
 
 - 橙色球 TaskSpec goal(27.33,28.22)，height obstacles846；
