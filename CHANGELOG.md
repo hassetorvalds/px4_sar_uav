@@ -1,3 +1,11 @@
+## [2026-11-09] 真实 VLM 搜索尝试
+
+- DINO 检测 orange：目标初始不可见；搜索中仅边缘 bbox/spread5.33m，拒绝发布；
+- 无 /perception/best → forward_only_progress_timeout → 安全落地；
+- FSM 成功分支仍为注入检测；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 搜索成功分支（注入检测）
 
 - 搜索中注入 /perception/best，触发 search_acquire_start；
