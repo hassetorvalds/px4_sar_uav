@@ -1,3 +1,11 @@
+## [2026-11-09] 真实VLM搜索闭环飞通
+
+- 搜索区域前移(8,8)，检测器延迟10s；
+- 搜索中确认orange，acquire到(27.34,28.65)，误差0.42m；
+- hover/land，has_collided=False；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 真实VLM搜索触发acquire
 
 - 搜索中DINO确认目标(25.24,33.83)，search_acquire_start；
