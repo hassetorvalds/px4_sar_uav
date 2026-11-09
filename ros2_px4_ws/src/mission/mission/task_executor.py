@@ -1522,7 +1522,11 @@ class TaskExecutor(Node):
         if step_index != self._heading_align_step:
             self._heading_align_step = step_index
             self._heading_align_active = False
-        if self._search_align_heading and self._heading_enu is not None:
+        align_unknown = (bool(step and step.params.get('allow_forward_only_unknown'))
+                         and not (self._clearance_left_valid
+                                  and self._clearance_right_valid))
+        if ((self._search_align_heading or align_unknown)
+                and self._heading_enu is not None):
             dx = float(target[0]) - float(position[0])
             dy = float(target[1]) - float(position[1])
             if math.hypot(dx, dy) > self._arrive_tol:

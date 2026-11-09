@@ -1,3 +1,11 @@
+## [2026-11-09] 搜索失败返航分支实测
+
+- 3m搜索6航点全部完成；目标缺失触发 search_failed_return；
+- 返航途中 clearance_blocked，安全落地；未回到原点；
+- 侧向未知时先对准再前向；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 搜索 forward-only unknown
 
 - search 显式 allow_forward_only_unknown：侧向未知时只保留前向；
