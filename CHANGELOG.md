@@ -1,3 +1,11 @@
+## [2026-11-09] 搜索失败返航飞通
+
+- 3m搜索6/6航点完成；无目标触发 search_failed_return；
+- 前向返航到(0.13,0.28)，再land；has_collided=False；
+- mission173，总计328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 搜索失败返航分支实测
 
 - 3m搜索6航点全部完成；目标缺失触发 search_failed_return；
