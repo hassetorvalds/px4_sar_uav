@@ -1,3 +1,11 @@
+## [2026-11-09] 真实VLM yaw前置搜索
+
+- takeoff后yaw-90再search，检测器仍在yaw阶段确认目标；
+- acquire到(26.97,29.89)，hover/land；检测(29.02,30.28)，偏真实orange2.66m；
+- 初始不可见未实现；无碰撞；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 真实VLM搜索acquire
 
 - DINO+detector在起飞阶段确认目标(28.75,31.81)；
