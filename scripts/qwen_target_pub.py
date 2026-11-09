@@ -40,6 +40,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('bbox_area_tolerance', 0.6)
         self.declare_parameter('bbox_size_tolerance', 0.3)
         self.declare_parameter('bbox_edge_margin_px', 5.0)
+        self.declare_parameter('reject_clipped_bbox', False)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
@@ -65,6 +66,8 @@ class QwenTargetPub(Node):
         self._bbox_area_tol = float(self.get_parameter('bbox_area_tolerance').value)
         self._bbox_size_tol = float(self.get_parameter('bbox_size_tolerance').value)
         self._bbox_edge_margin = float(self.get_parameter('bbox_edge_margin_px').value)
+        self._reject_clipped = bool(
+            self.get_parameter('reject_clipped_bbox').value)
         self._bbox_area_history = []
         self._last_bbox = None
         self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
@@ -192,6 +195,8 @@ class QwenTargetPub(Node):
                        or bbox[1] <= self._bbox_edge_margin
                        or bbox[2] >= width - self._bbox_edge_margin
                        or bbox[3] >= height - self._bbox_edge_margin)
+            if clipped and self._reject_clipped:
+                raise ValueError('target bbox clipped')
             adjusted = self._bbox_center(bbox, width, height, clipped)
             if clipped:
                 self.get_logger().info(
