@@ -289,6 +289,7 @@ class TaskExecutor(Node):
         self._search_acquire_target = None
         self._search_return_active = False
         self._search_hold_base = 0
+        self._search_dwell_until = 0.0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -618,6 +619,7 @@ class TaskExecutor(Node):
         self._search_acquire_target = None
         self._search_return_active = False
         self._search_hold_base = 0
+        self._search_dwell_until = 0.0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -958,6 +960,7 @@ class TaskExecutor(Node):
         self._search_acquire_target = None
         self._search_return_active = False
         self._search_hold_base = 0
+        self._search_dwell_until = 0.0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -982,6 +985,7 @@ class TaskExecutor(Node):
             self._target_hold_count = 0
             self._target_hold_until = 0.0
             self._search_hold_base = 0
+            self._search_dwell_until = 0.0
             raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
             if self._spec.coordinate_frame == 'relative':
@@ -1530,6 +1534,9 @@ class TaskExecutor(Node):
 
     def _run_search(self, position, now) -> None:
         step = self._current_step()
+        if self._search_dwell_until > now:
+            self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
+            return
         if self._search_return_active:
             self._run_return_home_forward_only(position)
             return
@@ -1661,6 +1668,14 @@ class TaskExecutor(Node):
         else:
             self._blocked_since = None
         if decision.done:
+            dwell = float(step.params.get('dwell_s', 0.0)) if step else 0.0
+            if dwell > 0.0 and self._search_dwell_until <= now:
+                self._search_dwell_until = now + dwell
+                self._report('search_dwell', seconds=dwell,
+                             index=self._search_index)
+                self._publish_velocity(0.0, 0.0,
+                                       self._altitude_hold_vz(position))
+                return
             self._search_index += 1
             self.get_logger().info(
                 f'搜索航点 {self._search_index}/{len(self._search_wps)} 到位')

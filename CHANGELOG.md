@@ -1,3 +1,11 @@
+## [2026-11-09] 真实VLM搜索acquire
+
+- DINO+detector在起飞阶段确认目标(28.75,31.81)；
+- acquire goal(27.4,30.34)，到点(27.14,30.07)，hover/land，无碰撞；
+- 检测点偏真实orange约3.7m；不是搜索中首次发现；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 服务恢复后的真实搜索
 
 - DINO/Qwen服务可用；DINO+Qwen orange差0.09m；
