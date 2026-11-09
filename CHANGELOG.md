@@ -1,3 +1,11 @@
+## [2026-11-09] 服务恢复后的真实搜索
+
+- DINO/Qwen服务可用；DINO+Qwen orange差0.09m；
+- 真实搜索中目标仅边缘bbox，飞行中area变化过大，未发布；
+- search forward-only timeout安全落地；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 真实 VLM 搜索尝试
 
 - DINO 检测 orange：目标初始不可见；搜索中仅边缘 bbox/spread5.33m，拒绝发布；
