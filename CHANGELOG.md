@@ -1,3 +1,12 @@
+## [2026-11-09] 搜索推进修复
+
+- opt-in forward-only 搜索始终先对准航点；
+- progress timeout 只在速度≈0 时累计，不再误杀前进；
+- 无目标搜索6/6后失败返航到起点附近并land，无碰撞；
+- 真实搜索最后一次preflight local_position invalid，被安全门拒绝。
+
+---
+
 ## [2026-11-09] dwell 单次修复
 
 - 搜索 dwell 改为每个航点只触发一次，不再死循环；

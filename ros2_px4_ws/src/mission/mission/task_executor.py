@@ -1601,9 +1601,7 @@ class TaskExecutor(Node):
         if step_index != self._heading_align_step:
             self._heading_align_step = step_index
             self._heading_align_active = False
-        align_unknown = (bool(step and step.params.get('allow_forward_only_unknown'))
-                         and not (self._clearance_left_valid
-                                  and self._clearance_right_valid))
+        align_unknown = bool(step and step.params.get('allow_forward_only_unknown'))
         if ((self._search_align_heading or align_unknown)
                 and self._heading_enu is not None):
             dx = float(target[0]) - float(position[0])
@@ -1649,7 +1647,10 @@ class TaskExecutor(Node):
                     and unknown_side and forward_clear):
                 # 显式 opt-in：侧向未知时只保留已净空的前向分量，
                 # 绝不侧移；前向门仍然有效。
-                if self._blocked_since is None:
+                speed = math.hypot(decision.east, decision.north)
+                if speed > 1e-6:
+                    self._blocked_since = None
+                elif self._blocked_since is None:
                     self._blocked_since = time.monotonic()
                 elif time.monotonic() - self._blocked_since > self._blocked_abort:
                     self._report('abort', reason='forward_only_progress_timeout')
