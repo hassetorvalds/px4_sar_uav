@@ -1456,6 +1456,42 @@ class TaskExecutor(Node):
             return
         self._transit_active = False
 
+    def _run_acquire_forward_only(self, position) -> None:
+        """搜索发现目标后的接近：先对准，再只走前向；不侧移。"""
+        target = self._search_acquire_target
+        if math.hypot(target[0] - position[0],
+                      target[1] - position[1]) <= self._arrive_tol:
+            self._report('search_acquire_done',
+                         goal=[round(v, 2) for v in target])
+            self._advance_step()
+            return
+        if self._heading_enu is None:
+            self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
+            return
+        desired = math.atan2(target[1] - position[1], target[0] - position[0])
+        error = math.remainder(desired - self._heading_enu, 2.0 * math.pi)
+        if abs(error) > math.radians(3.0):
+            rate, _ = yaw_rate_to_target(
+                self._heading_enu, desired,
+                max_rate_rad_s=self._goto_align_rate,
+                tolerance_rad=math.radians(3.0))
+            self._publish_velocity(0.0, 0.0,
+                                   self._altitude_hold_vz(position), yaw_rate=rate)
+            return
+        decision = velocity_toward(position, target,
+                                   max_speed_mps=self._spec.max_speed_mps,
+                                   tolerance_m=self._arrive_tol)
+        forward = decision.east * math.cos(self._heading_enu) + \
+            decision.north * math.sin(self._heading_enu)
+        if (self._clearance_forward is not None
+                and self._clearance_forward <= self._clearance_stop
+                and forward > 1e-6):
+            self._report('abort', reason='acquire_forward_blocked')
+            self._begin_land()
+            return
+        self._publish_velocity(decision.east, decision.north,
+                               self._altitude_hold_vz(position))
+
     def _run_return_home_forward_only(self, position) -> None:
         """搜索失败返航：先对准起飞点，再只走前向；不侧移。"""
         target = self._step_target
@@ -1524,7 +1560,7 @@ class TaskExecutor(Node):
                              goal=[round(v, 2) for v in self._search_acquire_target])
                 self._advance_step()
                 return
-            self._run_goto(position, self._search_acquire_target)
+            self._run_acquire_forward_only(position)
             return
         if self._transit_active:
             self._run_transit(position, now)

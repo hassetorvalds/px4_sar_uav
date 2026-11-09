@@ -1,3 +1,11 @@
+## [2026-11-09] 搜索成功分支（注入检测）
+
+- 搜索中注入 /perception/best，触发 search_acquire_start；
+- 对准/前向接近到 goal(3.0,0)，search_acquire_done；
+- hover/land，无碰撞；检测为注入，非VLM；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 搜索失败返航飞通
 
 - 3m搜索6/6航点完成；无目标触发 search_failed_return；
