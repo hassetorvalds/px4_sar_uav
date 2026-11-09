@@ -1,3 +1,11 @@
+## [2026-11-09] dwell 单次修复
+
+- 搜索 dwell 改为每个航点只触发一次，不再死循环；
+- 无目标测试只到航点1即forward_only timeout，安全落地；Ground接触非墙；
+- 328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 真实VLM yaw前置搜索
 
 - takeoff后yaw-90再search，检测器仍在yaw阶段确认目标；
