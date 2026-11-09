@@ -45,6 +45,7 @@ from .executor_core import (altitude_hold_vz, apply_clearance_gate, forward_targ
 from .findings import FindingsBook, priority_for_kind
 from .findings_store import persist_findings
 from .health import check_prearm
+from .search_acquire import acquire_goal
 from .search_pattern import estimate_duration_s, search_metrics
 from .task_spec import TaskError, TaskSpec
 
@@ -111,6 +112,7 @@ class TaskExecutor(Node):
         self.declare_parameter('side_clearance_ttl_s', 2.0)
         self.declare_parameter('search_align_heading', False)
         self.declare_parameter('search_detour', False)
+        self.declare_parameter('search_acquire_standoff_m', 2.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -173,6 +175,8 @@ class TaskExecutor(Node):
         self._search_align_heading = bool(
             self.get_parameter('search_align_heading').value)
         self._search_detour = bool(self.get_parameter('search_detour').value)
+        self._search_acquire_standoff = float(
+            self.get_parameter('search_acquire_standoff_m').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -281,6 +285,10 @@ class TaskExecutor(Node):
         self._scan_dwell_until = 0.0
         self._search_wps = []
         self._search_index = 0
+        self._search_acquire_started = False
+        self._search_acquire_target = None
+        self._search_return_active = False
+        self._search_hold_base = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -606,6 +614,10 @@ class TaskExecutor(Node):
         self._scan_dwell_until = 0.0
         self._search_wps = []
         self._search_index = 0
+        self._search_acquire_started = False
+        self._search_acquire_target = None
+        self._search_return_active = False
+        self._search_hold_base = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -942,6 +954,10 @@ class TaskExecutor(Node):
         self._yaw_target_enu = None
         self._search_wps = []
         self._search_index = 0
+        self._search_acquire_started = False
+        self._search_acquire_target = None
+        self._search_return_active = False
+        self._search_hold_base = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -960,6 +976,12 @@ class TaskExecutor(Node):
         self.get_logger().info(f'执行 step {index + 1}/{len(self._spec.steps)}：{step.type}')
         self._report('step', type=step.type, params=step.params)
         if step.type == 'search':
+            self._search_acquire_started = False
+            self._search_acquire_target = None
+            self._search_return_active = False
+            self._target_hold_count = 0
+            self._target_hold_until = 0.0
+            self._search_hold_base = 0
             raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
             if self._spec.coordinate_frame == 'relative':
@@ -1435,6 +1457,43 @@ class TaskExecutor(Node):
         self._transit_active = False
 
     def _run_search(self, position, now) -> None:
+        step = self._current_step()
+        if self._search_return_active:
+            self._run_goto(position, self._step_target)
+            if math.hypot(self._step_target[0] - position[0],
+                          self._step_target[1] - position[1]) <= self._arrive_tol:
+                self._search_return_active = False
+                self._advance_step()
+            return
+        acquire = bool(step and step.params.get('acquire_target'))
+        if acquire and self._target_world is not None and (
+                self._target_hold_count > self._search_hold_base):
+            if self._target_hold_until > now:
+                self._publish_target(position[0], position[1], self._target_up_lcl())
+                self._stop_velocity()
+                return
+            if not self._search_acquire_started:
+                try:
+                    goal = acquire_goal(
+                        position, self._target_world,
+                        standoff_m=self._search_acquire_standoff)
+                except ValueError:
+                    self._report('abort', reason='target_coincident')
+                    self._begin_land()
+                    return
+                self._search_acquire_started = True
+                self._search_acquire_target = goal[:2]
+                self._report('search_acquire_start', target=self._target_world,
+                             goal=[round(v, 2) for v in goal[:2]],
+                             standoff_m=round(goal[2], 2))
+            if math.hypot(self._search_acquire_target[0] - position[0],
+                          self._search_acquire_target[1] - position[1]) <= self._arrive_tol:
+                self._report('search_acquire_done',
+                             goal=[round(v, 2) for v in self._search_acquire_target])
+                self._advance_step()
+                return
+            self._run_goto(position, self._search_acquire_target)
+            return
         if self._transit_active:
             self._run_transit(position, now)
             return
@@ -1449,6 +1508,13 @@ class TaskExecutor(Node):
             self._last_search_end = self._position_enu()
             if self._coverage is not None:
                 self._report('search_coverage', **self._coverage)
+            if (step and step.params.get('on_failure') == 'return_home'
+                    and not self._search_acquire_started):
+                self._search_return_active = True
+                self._step_target = (self._origin_enu[0], self._origin_enu[1],
+                                     self._origin_enu[2])
+                self._report('search_failed_return', reason='no_target')
+                return
             self._advance_step()
             return
         target = self._search_wps[self._search_index]

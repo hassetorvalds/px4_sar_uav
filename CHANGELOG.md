@@ -1,3 +1,12 @@
+## [2026-11-09] 搜索→接近/失败返航 FSM
+
+- `search.acquire_target`：检测确认后按standoff接近；
+- `search.on_failure=return_home`：搜索完成无目标返航；
+- 几何单测3个；mission 173，总计328 selected；
+- 实际搜索在2/3m均先净空abort，FSM飞行未验证。
+
+---
+
 ## [2026-11-03] 目标距离扫描
 
 - orange target-only：20/30/40m 目标距离正确（20.0/30.0/40.0）；
