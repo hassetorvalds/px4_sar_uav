@@ -1,3 +1,11 @@
+## [2026-11-09] 真实初始不可见+失败返航
+
+- 延迟15s启DINO，orange全程不可见；搜索6/6；
+- search_failed_return返航到(-0.03,0.37)附近，land；has_collided=False；
+- 真实搜索发现仍待搜索几何/检测覆盖；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 搜索推进修复
 
 - opt-in forward-only 搜索始终先对准航点；
