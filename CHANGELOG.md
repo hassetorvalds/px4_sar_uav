@@ -1,3 +1,11 @@
+## [2026-11-09] 真实VLM搜索触发acquire
+
+- 搜索中DINO确认目标(25.24,33.83)，search_acquire_start；
+- acquire前向飞到(16.45,22.02)后acquire_forward_blocked，land，无碰撞；
+- 检测偏真实orange约6m，未到standoff；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 真实初始不可见+失败返航
 
 - 延迟15s启DINO，orange全程不可见；搜索6/6；
