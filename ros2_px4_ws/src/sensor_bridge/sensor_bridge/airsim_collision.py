@@ -4,6 +4,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
 
+from .collision_filter import collision_label, significant_collision
+
 try:
     import airsim
 except ImportError:  # pragma: no cover
@@ -43,15 +45,22 @@ class AirSimCollision(Node):
         except Exception as exc:  # pragma: no cover
             self.get_logger().warn(f'碰撞查询失败：{exc}', throttle_duration_sec=10.0)
             return
-        collided = bool(info.has_collided)
+        collided = significant_collision(
+            has_collided=bool(info.has_collided),
+            object_name=str(info.object_name),
+            penetration_m=float(info.penetration_depth))
         self._pub.publish(Bool(data=collided))
-        if collided:
-            text = (f'collided object={info.object_name} '
-                    f'penetration={info.penetration_depth:.3f}')
+        if info.has_collided:
+            text = collision_label(str(info.object_name),
+                                   float(info.penetration_depth))
             self._info_pub.publish(String(data=text))
-            if self._last != (info.object_name, round(info.penetration_depth, 3)):
-                self.get_logger().warn(text)
-                self._last = (info.object_name, round(info.penetration_depth, 3))
+            key = (info.object_name, round(info.penetration_depth, 3))
+            if self._last != key:
+                if collided:
+                    self.get_logger().warn(text)
+                else:
+                    self.get_logger().info(text)
+                self._last = key
         else:
             self._last = None
 

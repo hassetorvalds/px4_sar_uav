@@ -1,3 +1,11 @@
+## [2026-11-09] Ground接触不误报碰撞
+
+- collision_filter：Ground接触且penetration≤0.05不发布显著碰撞；
+- 3单测；smoke /sensor/collision=false；
+- 全仓331 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 检测器贴边拒绝
 
 - qwen_target_pub 新增 reject_clipped_bbox；贴边目标不发布；
