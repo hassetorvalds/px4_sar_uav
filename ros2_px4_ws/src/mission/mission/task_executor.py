@@ -1559,6 +1559,25 @@ class TaskExecutor(Node):
             nearest_left_m=gate_left, nearest_right_m=gate_right,
             left_known=gate_left_known, right_known=gate_right_known)
         if decision.blocked:
+            unknown_side = (not gate_left_known or not gate_right_known)
+            forward_clear = (self._clearance_forward is not None
+                             and self._clearance_forward > self._clearance_stop)
+            if (step and step.params.get('allow_forward_only_unknown')
+                    and unknown_side and forward_clear):
+                # 显式 opt-in：侧向未知时只保留已净空的前向分量，
+                # 绝不侧移；前向门仍然有效。
+                if self._blocked_since is None:
+                    self._blocked_since = time.monotonic()
+                elif time.monotonic() - self._blocked_since > self._blocked_abort:
+                    self._report('abort', reason='forward_only_progress_timeout')
+                    self._begin_land()
+                    return
+                self._report('search_forward_only',
+                             reason=decision.reason,
+                             forward_m=round(float(self._clearance_forward), 2))
+                self._publish_velocity(decision.east, decision.north,
+                                       self._altitude_hold_vz(position))
+                return
             if self._start_detour(time.monotonic()):
                 return
             if self._blocked_since is None:

@@ -1,3 +1,11 @@
+## [2026-11-09] 搜索 forward-only unknown
+
+- search 显式 allow_forward_only_unknown：侧向未知时只保留前向；
+- 首个航点相对机头侧向，前向分量0 → forward_only_progress_timeout；
+- 未飞通；需先对航向；328 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 搜索→接近/失败返航 FSM
 
 - `search.acquire_target`：检测确认后按standoff接近；
