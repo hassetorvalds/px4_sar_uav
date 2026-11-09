@@ -1,3 +1,11 @@
+## [2026-11-09] 贴边拒绝搜索连续2次成功
+
+- 第2次：检测(28.99,30.38)，acquire到(27.36,28.63)，误差0.41m；
+- has_collided=False（Ground接触已过滤）；
+- 331 passed/3 skipped。
+
+---
+
 ## [2026-11-09] Ground接触不误报碰撞
 
 - collision_filter：Ground接触且penetration≤0.05不发布显著碰撞；
