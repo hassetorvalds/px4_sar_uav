@@ -115,6 +115,7 @@ class TaskExecutor(Node):
         self.declare_parameter('search_acquire_standoff_m', 2.0)
         self.declare_parameter('search_acquire_lost_timeout_s', 8.0)
         self.declare_parameter('search_acquire_max_losses', 2)
+        self.declare_parameter('return_grace_s', 30.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -183,6 +184,7 @@ class TaskExecutor(Node):
             self.get_parameter('search_acquire_lost_timeout_s').value)
         self._search_acquire_max_losses = int(
             self.get_parameter('search_acquire_max_losses').value)
+        self._return_grace = float(self.get_parameter('return_grace_s').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -1546,6 +1548,14 @@ class TaskExecutor(Node):
         self._publish_velocity(decision.east, decision.north,
                                self._altitude_hold_vz(position))
 
+    def _allow_failure_return_budget(self) -> None:
+        """返航/land 使用独立宽限，避免被任务级 max_duration 提前截断。"""
+        if self._task_started is None:
+            return
+        elapsed = time.monotonic() - self._task_started
+        self._spec.max_duration_s = max(
+            float(self._spec.max_duration_s), elapsed + self._return_grace)
+
     def _run_search(self, position, now) -> None:
         step = self._current_step()
         if self._search_dwell_until > now:
@@ -1574,6 +1584,7 @@ class TaskExecutor(Node):
                 self._target_hold_count = 0
                 self._target_hold_until = 0.0
                 if self._search_acquire_loss_count >= self._search_acquire_max_losses:
+                    self._allow_failure_return_budget()
                     self._search_return_active = True
                     self._step_target = (self._origin_enu[0], self._origin_enu[1],
                                          self._origin_enu[2])
@@ -1617,6 +1628,7 @@ class TaskExecutor(Node):
                 self._report('search_coverage', **self._coverage)
             if (step and step.params.get('on_failure') == 'return_home'
                     and not self._search_acquire_started):
+                self._allow_failure_return_budget()
                 self._search_return_active = True
                 self._step_target = (self._origin_enu[0], self._origin_enu[1],
                                      self._origin_enu[2])

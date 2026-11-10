@@ -1,3 +1,11 @@
+## [2026-11-10] 连续丢失→失败返航飞通
+
+- 注入目标消失：lost count1→重新acquire→lost count2；
+- search_failed_return(target_lost)→返航/hover/land；
+- 无max_duration、无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 目标丢失飞行验证
 
 - 注入目标消失触发acquire_target_lost(count1)；
