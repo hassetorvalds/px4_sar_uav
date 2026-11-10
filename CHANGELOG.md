@@ -1,3 +1,11 @@
+## [2026-11-10] DINO阈值参数化/cone检测
+
+- qwen_target_pub 新增 dino_box_threshold（默认0.5）；
+- cone 在0.4阈值/0.3置信度下检测(-33.54,33.34)，conf≈0.49；
+- 仅target-only，未飞acquire；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 检测器置信度阈值
 
 - qwen_target_pub 新增 min_confidence（默认0.5）；

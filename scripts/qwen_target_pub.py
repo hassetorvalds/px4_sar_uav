@@ -42,6 +42,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('bbox_edge_margin_px', 5.0)
         self.declare_parameter('reject_clipped_bbox', False)
         self.declare_parameter('min_confidence', 0.5)
+        self.declare_parameter('dino_box_threshold', 0.5)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
@@ -70,6 +71,8 @@ class QwenTargetPub(Node):
         self._reject_clipped = bool(
             self.get_parameter('reject_clipped_bbox').value)
         self._min_confidence = float(self.get_parameter('min_confidence').value)
+        self._dino_box_threshold = float(
+            self.get_parameter('dino_box_threshold').value)
         self._bbox_area_history = []
         self._last_bbox = None
         self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
@@ -140,7 +143,7 @@ class QwenTargetPub(Node):
         payload = json.dumps({
             'image_b64': base64.b64encode(jpeg).decode('ascii'),
             'prompt': self._target_prompt,
-            'box_threshold': 0.5,
+            'box_threshold': self._dino_box_threshold,
             'text_threshold': 0.25,
             'meta': {'frame_seq': 0},
         }).encode('utf-8')
