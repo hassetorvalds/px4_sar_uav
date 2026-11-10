@@ -1,3 +1,11 @@
+## [2026-11-10] 重捕获启动/二次丢失
+
+- 目标重现后search_acquire重新启动；8s内再次丢失count2；
+- search_failed_return(target_lost)→land，无碰撞；
+- 重捕获闭环未完成；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 连续丢失→失败返航飞通
 
 - 注入目标消失：lost count1→重新acquire→lost count2；
