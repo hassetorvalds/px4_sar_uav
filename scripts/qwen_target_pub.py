@@ -41,6 +41,7 @@ class QwenTargetPub(Node):
         self.declare_parameter('bbox_size_tolerance', 0.3)
         self.declare_parameter('bbox_edge_margin_px', 5.0)
         self.declare_parameter('reject_clipped_bbox', False)
+        self.declare_parameter('min_confidence', 0.5)
         self.declare_parameter('roi_margin_ratio', 0.2)
         self.declare_parameter('roi_tolerance_ratio', 0.12)
         self.declare_parameter('qwen_url',
@@ -68,6 +69,7 @@ class QwenTargetPub(Node):
         self._bbox_edge_margin = float(self.get_parameter('bbox_edge_margin_px').value)
         self._reject_clipped = bool(
             self.get_parameter('reject_clipped_bbox').value)
+        self._min_confidence = float(self.get_parameter('min_confidence').value)
         self._bbox_area_history = []
         self._last_bbox = None
         self._roi_margin = float(self.get_parameter('roi_margin_ratio').value)
@@ -279,7 +281,7 @@ class QwenTargetPub(Node):
             proxy_error = math.hypot(u / width - expected[0], v / height - expected[1])
             if proxy_error > 0.15:
                 raise ValueError(f'Qwen proxy error {proxy_error:.3f} > 0.15')
-        if confidence is not None and float(confidence) < 0.5:
+        if confidence is not None and float(confidence) < self._min_confidence:
             raise ValueError(f'Qwen confidence too low: {confidence}')
         depth_m = depth_patch_median(depth, u * dw / width, v * dh / height, radius=2)
         if depth_m is None or not math.isfinite(depth_m) or depth_m <= 0.0:

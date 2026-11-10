@@ -1,3 +1,11 @@
+## [2026-11-10] 检测器置信度阈值
+
+- qwen_target_pub 新增 min_confidence（默认0.5）；
+- 用于过滤 cone 0.57 类误检；本次cone机位DINO no boxes，阈值未实飞验证；
+- 331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] cone 真实搜索检测/超时
 
 - require_orange=false 后 DINO 发布 cone target(-21.11,-17.26)；
