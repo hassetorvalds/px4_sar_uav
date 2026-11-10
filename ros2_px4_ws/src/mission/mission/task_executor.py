@@ -1610,6 +1610,18 @@ class TaskExecutor(Node):
                 self._report('search_acquire_start', target=self._target_world,
                              goal=[round(v, 2) for v in goal[:2]],
                              standoff_m=round(goal[2], 2))
+            else:
+                # 目标仍新鲜时刷新接近点，支持慢速运动目标；目标丢失分支
+                # 已在上面处理，不会用旧目标刷新。
+                try:
+                    goal = acquire_goal(
+                        position, self._target_world,
+                        standoff_m=self._search_acquire_standoff)
+                except ValueError:
+                    self._report('abort', reason='target_coincident')
+                    self._begin_land()
+                    return
+                self._search_acquire_target = goal[:2]
             if math.hypot(self._search_acquire_target[0] - position[0],
                           self._search_acquire_target[1] - position[1]) <= self._arrive_tol:
                 self._report('search_acquire_done',
