@@ -121,6 +121,8 @@ class TaskExecutor(Node):
         self.declare_parameter('search_reacquire_scan_dwell_s', 1.5)
         self.declare_parameter('search_reacquire_scan_total_s', 18.0)
         self.declare_parameter('target_max_jump_m', 4.0)
+        self.declare_parameter('target_jump_confirm_frames', 3)
+        self.declare_parameter('target_jump_confirm_s', 1.5)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -199,6 +201,10 @@ class TaskExecutor(Node):
         self._search_reacquire_total = float(
             self.get_parameter('search_reacquire_scan_total_s').value)
         self._target_max_jump = float(self.get_parameter('target_max_jump_m').value)
+        self._target_jump_confirm_frames = int(
+            self.get_parameter('target_jump_confirm_frames').value)
+        self._target_jump_confirm_s = float(
+            self.get_parameter('target_jump_confirm_s').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -327,6 +333,9 @@ class TaskExecutor(Node):
         self._target_world = None
         self._last_confirmed_target = None
         self._last_jump_report_at = 0.0
+        self._jump_candidate = None
+        self._jump_candidate_count = 0
+        self._jump_candidate_at = 0.0
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -665,6 +674,9 @@ class TaskExecutor(Node):
         self._target_world = None
         self._last_confirmed_target = None
         self._last_jump_report_at = 0.0
+        self._jump_candidate = None
+        self._jump_candidate_count = 0
+        self._jump_candidate_at = 0.0
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -756,15 +768,33 @@ class TaskExecutor(Node):
                 and math.hypot(world[0] - self._last_confirmed_target[0],
                                world[1] - self._last_confirmed_target[1])
                 > self._target_max_jump):
-            if now - self._last_jump_report_at >= 1.0:
-                self._last_jump_report_at = now
-                self._report('target_jump_rejected',
-                             delta_m=round(math.hypot(
-                                 world[0] - self._last_confirmed_target[0],
-                                 world[1] - self._last_confirmed_target[1]), 2),
+            same = (self._jump_candidate is not None
+                    and math.hypot(world[0] - self._jump_candidate[0],
+                                   world[1] - self._jump_candidate[1]) <= 1.0)
+            if not same:
+                self._jump_candidate = [float(v) for v in world]
+                self._jump_candidate_count = 1
+                self._jump_candidate_at = now
+            else:
+                self._jump_candidate_count += 1
+            if (self._jump_candidate_count >= self._target_jump_confirm_frames
+                    and now - self._jump_candidate_at >= self._target_jump_confirm_s):
+                self._report('target_jump_accepted',
                              target_world=world,
                              last_target=self._last_confirmed_target)
-            return
+                self._last_confirmed_target = [float(v) for v in world]
+                self._jump_candidate = None
+                self._jump_candidate_count = 0
+            else:
+                if now - self._last_jump_report_at >= 1.0:
+                    self._last_jump_report_at = now
+                    self._report('target_jump_rejected',
+                                 delta_m=round(math.hypot(
+                                     world[0] - self._last_confirmed_target[0],
+                                     world[1] - self._last_confirmed_target[1]), 2),
+                                 target_world=world,
+                                 last_target=self._last_confirmed_target)
+                return
         if self._hold_once_per_step and self._target_hold_count >= 1:
             step = self._current_step()
             if step is not None and step.type == 'search' and \
@@ -1035,6 +1065,9 @@ class TaskExecutor(Node):
         self._target_world = None
         self._last_confirmed_target = None
         self._last_jump_report_at = 0.0
+        self._jump_candidate = None
+        self._jump_candidate_count = 0
+        self._jump_candidate_at = 0.0
         self._target_centered_reported = False
         step = self._current_step()
         self._scan_phase = 'dwell'
