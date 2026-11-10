@@ -1,3 +1,11 @@
+## [2026-11-10] acquire目标丢失实测
+
+- 注入目标后停止发布：acquire_target_lost age=8.1s触发2次；
+- 丢弃旧目标并重新搜索；目标永久消失后max_duration安全落地；
+- 无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] acquire目标丢失保护
 
 - acquire中若 /perception/best 超过8s未更新，丢弃旧目标并回到搜索；
