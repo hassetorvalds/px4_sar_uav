@@ -1,3 +1,11 @@
+## [2026-11-10] cone静态acquire真实碰撞
+
+- cone检测(-33.49,32.14)，acquire到(-32.48,32.40)；
+- has_collided=True object=Cone_5，误差1.44m；
+- 静态open-loop不能保证目标standoff/避碰；orange成功不能推广。
+
+---
+
 ## [2026-11-10] 静态open-loop正确验证
 
 - search step正确配置require_fresh=false/standoff4；
