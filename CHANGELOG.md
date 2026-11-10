@@ -1,3 +1,11 @@
+## [2026-11-10] 目标跳变门实测
+
+- 注入(5,0)→(10,0)跳5m，连续target_jump_rejected(delta5.0)；
+- 未错误acquire；任务max_duration安全落地，无碰撞；
+- 跳变日志未节流，需后续降噪；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 目标跳变门
 
 - 新检测相对最后确认目标>target_max_jump_m(默认4m)被拒绝；
