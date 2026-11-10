@@ -1,3 +1,11 @@
+## [2026-11-10] 重捕获再次失败
+
+- 第二发布窗口延长到20s，重现后仍8s target_lost count2；
+- search_failed_return(target_lost)安全落地；无碰撞；
+- 重捕获闭环仍未完成；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 重捕获启动/二次丢失
 
 - 目标重现后search_acquire重新启动；8s内再次丢失count2；
