@@ -1,3 +1,11 @@
+## [2026-11-10] cone初始不可见搜索成功
+
+- 无yaw前置，延迟检测器；搜索中clip拒绝后确认cone(-33.46,32.62)；
+- acquire到(-31.75,30.96)，误差0.43m；hover/land，无碰撞；
+- orange2/2、cone1/1真实搜索成功；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] cone真实搜索/acquire成功
 
 - takeoff后yaw+135，DINO阈0.4/0.3，detect(-32.46,33.60)；
