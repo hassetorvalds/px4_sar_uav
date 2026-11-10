@@ -21,3 +21,10 @@ def test_acquire_goal_shrinks_near_target():
 def test_acquire_goal_rejects_coincident():
     with pytest.raises(ValueError):
         acquire_goal((1.0, 1.0), (1.0, 1.0))
+
+
+def test_acquire_goal_fixed_standoff_no_shrink():
+    east, north, standoff = acquire_goal((0.0, 0.0), (1.0, 0.0),
+                                         standoff_m=3.0, shrink=False)
+    assert east == pytest.approx(-2.0)
+    assert standoff == pytest.approx(3.0)

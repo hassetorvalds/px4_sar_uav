@@ -1757,7 +1757,7 @@ class TaskExecutor(Node):
                 try:
                     goal = acquire_goal(
                         position, self._target_world,
-                        standoff_m=acquire_standoff)
+                        standoff_m=acquire_standoff, shrink=False)
                 except ValueError:
                     self._report('abort', reason='target_coincident')
                     self._begin_land()
@@ -1773,7 +1773,7 @@ class TaskExecutor(Node):
                 try:
                     goal = acquire_goal(
                         position, self._target_world,
-                        standoff_m=acquire_standoff)
+                        standoff_m=acquire_standoff, shrink=False)
                 except ValueError:
                     self._report('abort', reason='target_coincident')
                     self._begin_land()

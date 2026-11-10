@@ -1,3 +1,11 @@
+## [2026-11-10] 修复acquire standoff自收缩
+
+- acquire刷新不再按当前距离缩小standoff；
+- cone静态standoff6停在距真实目标4.13m，has_collided=False；
+- 4个几何单测；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] cone静态acquire真实碰撞
 
 - cone检测(-33.49,32.14)，acquire到(-32.48,32.40)；
