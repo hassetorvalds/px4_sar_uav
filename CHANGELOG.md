@@ -2,7 +2,7 @@
 
 - acquire刷新不再按当前距离缩小standoff；
 - cone静态standoff6停在距真实目标4.13m，has_collided=False；
-- 4个几何单测；331 passed/3 skipped。
+- 4个几何单测；332 passed/3 skipped。
 
 ---
 

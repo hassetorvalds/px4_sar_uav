@@ -150,7 +150,7 @@ A* 执行/offboard：默认关闭
 ## 5. 测试口径
 
 ```text
-全仓 pytest: 331 passed / 3 skipped
+全仓 pytest: 332 passed / 3 skipped
 ```
 
 关键安全测试：
