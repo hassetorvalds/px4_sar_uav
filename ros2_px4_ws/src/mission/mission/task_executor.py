@@ -113,6 +113,7 @@ class TaskExecutor(Node):
         self.declare_parameter('search_align_heading', False)
         self.declare_parameter('search_detour', False)
         self.declare_parameter('search_acquire_standoff_m', 2.0)
+        self.declare_parameter('search_acquire_lost_timeout_s', 8.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -177,6 +178,8 @@ class TaskExecutor(Node):
         self._search_detour = bool(self.get_parameter('search_detour').value)
         self._search_acquire_standoff = float(
             self.get_parameter('search_acquire_standoff_m').value)
+        self._search_acquire_lost_timeout = float(
+            self.get_parameter('search_acquire_lost_timeout_s').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -1550,6 +1553,17 @@ class TaskExecutor(Node):
             if self._target_hold_until > now:
                 self._publish_target(position[0], position[1], self._target_up_lcl())
                 self._stop_velocity()
+                return
+            if (self._search_acquire_started
+                    and now - self._last_target_report_at
+                    > self._search_acquire_lost_timeout):
+                self._report('acquire_target_lost',
+                             age_s=round(now - self._last_target_report_at, 2))
+                self._search_acquire_started = False
+                self._search_acquire_target = None
+                self._target_world = None
+                self._target_hold_count = 0
+                self._target_hold_until = 0.0
                 return
             if not self._search_acquire_started:
                 try:
