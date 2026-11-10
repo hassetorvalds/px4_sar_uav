@@ -1,3 +1,10 @@
+## [2026-11-10] 跳变日志节流
+
+- target_jump_rejected最多1s一条，避免刷屏；
+- mission173通过；331 total；未新飞行。
+
+---
+
 ## [2026-11-10] 目标跳变门实测
 
 - 注入(5,0)→(10,0)跳5m，连续target_jump_rejected(delta5.0)；

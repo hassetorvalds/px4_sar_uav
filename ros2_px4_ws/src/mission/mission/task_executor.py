@@ -326,6 +326,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._last_confirmed_target = None
+        self._last_jump_report_at = 0.0
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -663,6 +664,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._last_confirmed_target = None
+        self._last_jump_report_at = 0.0
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -754,12 +756,14 @@ class TaskExecutor(Node):
                 and math.hypot(world[0] - self._last_confirmed_target[0],
                                world[1] - self._last_confirmed_target[1])
                 > self._target_max_jump):
-            self._report('target_jump_rejected',
-                         delta_m=round(math.hypot(
-                             world[0] - self._last_confirmed_target[0],
-                             world[1] - self._last_confirmed_target[1]), 2),
-                         target_world=world,
-                         last_target=self._last_confirmed_target)
+            if now - self._last_jump_report_at >= 1.0:
+                self._last_jump_report_at = now
+                self._report('target_jump_rejected',
+                             delta_m=round(math.hypot(
+                                 world[0] - self._last_confirmed_target[0],
+                                 world[1] - self._last_confirmed_target[1]), 2),
+                             target_world=world,
+                             last_target=self._last_confirmed_target)
             return
         if self._hold_once_per_step and self._target_hold_count >= 1:
             step = self._current_step()
@@ -1030,6 +1034,7 @@ class TaskExecutor(Node):
         self._target_hold_count = 0
         self._target_world = None
         self._last_confirmed_target = None
+        self._last_jump_report_at = 0.0
         self._target_centered_reported = False
         step = self._current_step()
         self._scan_phase = 'dwell'
