@@ -1,3 +1,11 @@
+## [2026-11-10] cone搜索失败返航
+
+- cone任务修正center(-8,8)/angle-45；acquire step timeout提高≥180s；
+- 真实搜索仅clipped bbox，拒绝发布；搜索后失败返航落地，无碰撞；
+- 331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] DINO阈值参数化/cone检测
 
 - qwen_target_pub 新增 dino_box_threshold（默认0.5）；

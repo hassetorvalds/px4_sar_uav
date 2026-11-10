@@ -1799,6 +1799,8 @@ class TaskExecutor(Node):
         if step.type == 'search' and self._search_wps:
             flat = [(point[0], point[1]) for point in self._search_wps]
             budget = estimate_duration_s(flat, self._spec.max_speed_mps)
+            if step.params.get('acquire_target'):
+                return max(180.0, 2.0 * budget + 30.0)
             return max(60.0, 2.0 * budget + 30.0)
         return step_timeout_s(step, speed_mps=self._spec.max_speed_mps)
 
