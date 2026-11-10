@@ -1,3 +1,11 @@
+## [2026-11-10] 目标丢失飞行验证
+
+- 注入目标消失触发acquire_target_lost(count1)；
+- 搜索耗尽先search_failed_return(no_target)，未到max_losses2；
+- 返航中max_duration abort，安全落地；无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 连续目标丢失→失败返航
 
 - search_acquire_max_losses默认2；达到后直接search_failed_return(target_lost)；
