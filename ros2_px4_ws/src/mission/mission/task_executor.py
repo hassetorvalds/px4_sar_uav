@@ -721,16 +721,22 @@ class TaskExecutor(Node):
         if not self._hold_on_target or self._phase != PHASE_RUN:
             return
         now = time.monotonic()
+        world = [round(float(msg.pose.position.x), 2),
+                 round(float(msg.pose.position.y), 2),
+                 round(float(msg.pose.position.z), 2)]
         if self._hold_once_per_step and self._target_hold_count >= 1:
+            step = self._current_step()
+            if step is not None and step.type == 'search' and \
+                    step.params.get('acquire_target'):
+                # 重捕获期间保持目标新鲜度，但不重复写 finding。
+                self._target_world = [float(v) for v in world]
+                self._last_target_report_at = now
             return
         # 去抖：同一目标持续可见时不要把搜索无限期拖住
         if now - self._last_target_report_at < 5.0:
             return
         self._target_hold_count += 1
         self._last_target_report_at = now
-        world = [round(float(msg.pose.position.x), 2),
-                 round(float(msg.pose.position.y), 2),
-                 round(float(msg.pose.position.z), 2)]
         self.get_logger().info(f'确认目标：world={world} → 悬停 {self._target_hold_s:.0f} s')
         self._target_world = [float(v) for v in world]
         self._target_centered_reported = False

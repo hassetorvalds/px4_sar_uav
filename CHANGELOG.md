@@ -1,3 +1,11 @@
+## [2026-11-10] 短暂丢失→重捕获飞通
+
+- hold_once_per_step期间搜索acquire仍更新目标新鲜度；
+- 注入目标丢失1次→重现→acquire到(2.93,0.02)→hover/land；
+- 无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 重捕获再次失败
 
 - 第二发布窗口延长到20s，重现后仍8s target_lost count2；
