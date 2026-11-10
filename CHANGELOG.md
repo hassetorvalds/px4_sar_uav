@@ -1,3 +1,11 @@
+## [2026-11-10] 真实VLM yaw重捕获仍失败
+
+- 丢失后yaw到最后目标方向并hold，检测器重启；
+- 目标短暂重现(29.53,30.20)后二次lost count2；
+- search_failed_return返航落地，无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 真实VLM hold重捕获仍失败
 
 - 检测器重启后目标重现并acquire，到(14.59,14.63)再次lost count2；

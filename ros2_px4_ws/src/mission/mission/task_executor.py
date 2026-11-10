@@ -304,6 +304,7 @@ class TaskExecutor(Node):
         self._search_dwell_index = -1
         self._search_acquire_loss_count = 0
         self._search_lost_hold_until = 0.0
+        self._search_reacquire_heading = None
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -637,6 +638,7 @@ class TaskExecutor(Node):
         self._search_dwell_index = -1
         self._search_acquire_loss_count = 0
         self._search_lost_hold_until = 0.0
+        self._search_reacquire_heading = None
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -987,6 +989,7 @@ class TaskExecutor(Node):
         self._search_dwell_index = -1
         self._search_acquire_loss_count = 0
         self._search_lost_hold_until = 0.0
+        self._search_reacquire_heading = None
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -1015,6 +1018,7 @@ class TaskExecutor(Node):
             self._search_dwell_index = -1
             self._search_acquire_loss_count = 0
             self._search_lost_hold_until = 0.0
+            self._search_reacquire_heading = None
             raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
             if self._spec.coordinate_frame == 'relative':
@@ -1572,6 +1576,17 @@ class TaskExecutor(Node):
     def _run_search(self, position, now) -> None:
         step = self._current_step()
         if self._search_lost_hold_until > now:
+            if (self._search_reacquire_heading is not None
+                    and self._heading_enu is not None):
+                rate, done = yaw_rate_to_target(
+                    self._heading_enu, self._search_reacquire_heading,
+                    max_rate_rad_s=self._goto_align_rate,
+                    tolerance_rad=math.radians(8.0))
+                if not done:
+                    self._publish_velocity(
+                        0.0, 0.0, self._altitude_hold_vz(position), yaw_rate=rate)
+                    return
+                self._search_reacquire_heading = None
             self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
             return
         if self._search_dwell_until > now:
@@ -1594,6 +1609,12 @@ class TaskExecutor(Node):
                 self._report('acquire_target_lost',
                              age_s=round(now - self._last_target_report_at, 2),
                              count=self._search_acquire_loss_count)
+                if self._target_world is not None:
+                    self._search_reacquire_heading = math.atan2(
+                        float(self._target_world[1]) - position[1],
+                        float(self._target_world[0]) - position[0])
+                else:
+                    self._search_reacquire_heading = None
                 self._search_acquire_started = False
                 self._search_acquire_target = None
                 self._target_world = None
