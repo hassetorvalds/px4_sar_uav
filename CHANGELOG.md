@@ -1,3 +1,11 @@
+## [2026-11-10] 真实VLM hold重捕获仍失败
+
+- 检测器重启后目标重现并acquire，到(14.59,14.63)再次lost count2；
+- search_failed_return→返航/land，无碰撞；
+- 注入目标hold重捕获成功，真实VLM未完成；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 丢失后hold重捕获成功
 
 - acquire丢失后原地hold3s，不立即继续搜索；
