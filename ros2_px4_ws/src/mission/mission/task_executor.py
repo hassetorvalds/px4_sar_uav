@@ -117,6 +117,9 @@ class TaskExecutor(Node):
         self.declare_parameter('search_acquire_max_losses', 2)
         self.declare_parameter('return_grace_s', 30.0)
         self.declare_parameter('search_reacquire_hold_s', 3.0)
+        self.declare_parameter('search_reacquire_scan_deg', 45.0)
+        self.declare_parameter('search_reacquire_scan_dwell_s', 1.5)
+        self.declare_parameter('search_reacquire_scan_total_s', 12.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -188,6 +191,12 @@ class TaskExecutor(Node):
         self._return_grace = float(self.get_parameter('return_grace_s').value)
         self._search_reacquire_hold = float(
             self.get_parameter('search_reacquire_hold_s').value)
+        self._search_reacquire_scan_deg = float(
+            self.get_parameter('search_reacquire_scan_deg').value)
+        self._search_reacquire_dwell_s = float(
+            self.get_parameter('search_reacquire_scan_dwell_s').value)
+        self._search_reacquire_total = float(
+            self.get_parameter('search_reacquire_scan_total_s').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -305,6 +314,9 @@ class TaskExecutor(Node):
         self._search_acquire_loss_count = 0
         self._search_lost_hold_until = 0.0
         self._search_reacquire_heading = None
+        self._search_reacquire_scan_headings = []
+        self._search_reacquire_scan_index = 0
+        self._search_reacquire_dwell_until = 0.0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -639,6 +651,9 @@ class TaskExecutor(Node):
         self._search_acquire_loss_count = 0
         self._search_lost_hold_until = 0.0
         self._search_reacquire_heading = None
+        self._search_reacquire_scan_headings = []
+        self._search_reacquire_scan_index = 0
+        self._search_reacquire_dwell_until = 0.0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -990,6 +1005,9 @@ class TaskExecutor(Node):
         self._search_acquire_loss_count = 0
         self._search_lost_hold_until = 0.0
         self._search_reacquire_heading = None
+        self._search_reacquire_scan_headings = []
+        self._search_reacquire_scan_index = 0
+        self._search_reacquire_dwell_until = 0.0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -1019,6 +1037,9 @@ class TaskExecutor(Node):
             self._search_acquire_loss_count = 0
             self._search_lost_hold_until = 0.0
             self._search_reacquire_heading = None
+            self._search_reacquire_scan_headings = []
+            self._search_reacquire_scan_index = 0
+            self._search_reacquire_dwell_until = 0.0
             raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
             if self._spec.coordinate_frame == 'relative':
@@ -1576,17 +1597,30 @@ class TaskExecutor(Node):
     def _run_search(self, position, now) -> None:
         step = self._current_step()
         if self._search_lost_hold_until > now:
-            if (self._search_reacquire_heading is not None
-                    and self._heading_enu is not None):
+            if self._target_world is not None and (
+                    self._target_hold_count > self._search_hold_base):
+                self._search_lost_hold_until = 0.0
+                return
+            if (self._search_reacquire_scan_index
+                    >= len(self._search_reacquire_scan_headings)):
+                self._search_lost_hold_until = 0.0
+                return
+            if self._search_reacquire_dwell_until > now:
+                self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
+                return
+            heading = self._search_reacquire_scan_headings[
+                self._search_reacquire_scan_index]
+            if self._heading_enu is not None:
                 rate, done = yaw_rate_to_target(
-                    self._heading_enu, self._search_reacquire_heading,
+                    self._heading_enu, heading,
                     max_rate_rad_s=self._goto_align_rate,
                     tolerance_rad=math.radians(8.0))
                 if not done:
                     self._publish_velocity(
                         0.0, 0.0, self._altitude_hold_vz(position), yaw_rate=rate)
                     return
-                self._search_reacquire_heading = None
+            self._search_reacquire_dwell_until = now + self._search_reacquire_dwell_s
+            self._search_reacquire_scan_index += 1
             self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
             return
         if self._search_dwell_until > now:
@@ -1610,17 +1644,23 @@ class TaskExecutor(Node):
                              age_s=round(now - self._last_target_report_at, 2),
                              count=self._search_acquire_loss_count)
                 if self._target_world is not None:
-                    self._search_reacquire_heading = math.atan2(
+                    base = math.atan2(
                         float(self._target_world[1]) - position[1],
                         float(self._target_world[0]) - position[0])
+                    offset = math.radians(self._search_reacquire_scan_deg)
+                    self._search_reacquire_scan_headings = [
+                        base, base + offset, base - offset]
+                    self._search_reacquire_scan_index = 0
+                    self._search_reacquire_dwell_until = 0.0
+                    self._search_lost_hold_until = now + self._search_reacquire_total
                 else:
-                    self._search_reacquire_heading = None
+                    self._search_reacquire_scan_headings = []
+                    self._search_lost_hold_until = now + self._search_reacquire_hold
                 self._search_acquire_started = False
                 self._search_acquire_target = None
                 self._target_world = None
                 self._target_hold_count = 0
                 self._target_hold_until = 0.0
-                self._search_lost_hold_until = now + self._search_reacquire_hold
                 if self._search_acquire_loss_count >= self._search_acquire_max_losses:
                     self._allow_failure_return_budget()
                     self._search_return_active = True
