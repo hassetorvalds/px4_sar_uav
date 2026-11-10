@@ -1,3 +1,11 @@
+## [2026-11-10] 丢失现场遥测
+
+- acquire_target_lost记录distance/bearing/altitude/target_up；
+- 首丢35.28m/46.7°；二次检测(32.4,27.1)偏真实约5m，再丢22.14m；
+- 失败返航落地无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] standoff4未解决重捕获
 
 - acquire standoff可配为4m；目标二次确认后仍8s丢失count2；

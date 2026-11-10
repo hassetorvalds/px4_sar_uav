@@ -1642,9 +1642,23 @@ class TaskExecutor(Node):
                     and now - self._last_target_report_at
                     > self._search_acquire_lost_timeout):
                 self._search_acquire_loss_count += 1
+                lost_world = (None if self._target_world is None
+                              else list(self._target_world))
+                lost_distance = (None if lost_world is None else round(math.hypot(
+                    float(lost_world[0]) - position[0],
+                    float(lost_world[1]) - position[1]), 2))
+                lost_bearing = (None if lost_world is None else round(math.degrees(
+                    math.atan2(float(lost_world[1]) - position[1],
+                               float(lost_world[0]) - position[0])), 1))
                 self._report('acquire_target_lost',
                              age_s=round(now - self._last_target_report_at, 2),
-                             count=self._search_acquire_loss_count)
+                             count=self._search_acquire_loss_count,
+                             target_world=lost_world,
+                             distance_m=lost_distance,
+                             bearing_deg=lost_bearing,
+                             altitude_m=round(float(position[2]), 2),
+                             target_up_m=(None if lost_world is None
+                                          else round(float(lost_world[2]), 2)))
                 if self._target_world is not None:
                     base = math.atan2(
                         float(self._target_world[1]) - position[1],
