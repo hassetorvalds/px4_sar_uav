@@ -1,3 +1,11 @@
+## [2026-11-10] cone真实搜索/acquire成功
+
+- takeoff后yaw+135，DINO阈0.4/0.3，detect(-32.46,33.60)；
+- acquire到(-30.82,31.87)，真实cone(-31.43,31.24)，误差0.88m；
+- hover/land，has_collided=False；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] cone搜索失败返航
 
 - cone任务修正center(-8,8)/angle-45；acquire step timeout提高≥180s；
