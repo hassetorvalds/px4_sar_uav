@@ -1,3 +1,11 @@
+## [2026-11-10] cone 真实搜索检测/超时
+
+- require_orange=false 后 DINO 发布 cone target(-21.11,-17.26)；
+- acquire 开始但 step_timeout:search 于(-2.37,0.30)终止；
+- 无显著碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-09] 贴边拒绝搜索连续2次成功
 
 - 第2次：检测(28.99,30.38)，acquire到(27.36,28.63)，误差0.41m；
