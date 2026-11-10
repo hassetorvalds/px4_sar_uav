@@ -1,3 +1,10 @@
+## [2026-11-10] 连续目标丢失→失败返航
+
+- search_acquire_max_losses默认2；达到后直接search_failed_return(target_lost)；
+- 不再依赖max_duration超时；mission173通过；331 total。
+
+---
+
 ## [2026-11-10] acquire目标丢失实测
 
 - 注入目标后停止发布：acquire_target_lost age=8.1s触发2次；

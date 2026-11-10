@@ -114,6 +114,7 @@ class TaskExecutor(Node):
         self.declare_parameter('search_detour', False)
         self.declare_parameter('search_acquire_standoff_m', 2.0)
         self.declare_parameter('search_acquire_lost_timeout_s', 8.0)
+        self.declare_parameter('search_acquire_max_losses', 2)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -180,6 +181,8 @@ class TaskExecutor(Node):
             self.get_parameter('search_acquire_standoff_m').value)
         self._search_acquire_lost_timeout = float(
             self.get_parameter('search_acquire_lost_timeout_s').value)
+        self._search_acquire_max_losses = int(
+            self.get_parameter('search_acquire_max_losses').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -294,6 +297,7 @@ class TaskExecutor(Node):
         self._search_hold_base = 0
         self._search_dwell_until = 0.0
         self._search_dwell_index = -1
+        self._search_acquire_loss_count = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -625,6 +629,7 @@ class TaskExecutor(Node):
         self._search_hold_base = 0
         self._search_dwell_until = 0.0
         self._search_dwell_index = -1
+        self._search_acquire_loss_count = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -967,6 +972,7 @@ class TaskExecutor(Node):
         self._search_hold_base = 0
         self._search_dwell_until = 0.0
         self._search_dwell_index = -1
+        self._search_acquire_loss_count = 0
         self._takeoff_stable_at = None
         self._blocked_since = None
         self._target_hold_until = 0.0
@@ -993,6 +999,7 @@ class TaskExecutor(Node):
             self._search_hold_base = 0
             self._search_dwell_until = 0.0
             self._search_dwell_index = -1
+            self._search_acquire_loss_count = 0
             raw_waypoints = search_waypoints(
                 step.params, altitude_m=self._spec.altitude_m)
             if self._spec.coordinate_frame == 'relative':
@@ -1557,13 +1564,20 @@ class TaskExecutor(Node):
             if (self._search_acquire_started
                     and now - self._last_target_report_at
                     > self._search_acquire_lost_timeout):
+                self._search_acquire_loss_count += 1
                 self._report('acquire_target_lost',
-                             age_s=round(now - self._last_target_report_at, 2))
+                             age_s=round(now - self._last_target_report_at, 2),
+                             count=self._search_acquire_loss_count)
                 self._search_acquire_started = False
                 self._search_acquire_target = None
                 self._target_world = None
                 self._target_hold_count = 0
                 self._target_hold_until = 0.0
+                if self._search_acquire_loss_count >= self._search_acquire_max_losses:
+                    self._search_return_active = True
+                    self._step_target = (self._origin_enu[0], self._origin_enu[1],
+                                         self._origin_enu[2])
+                    self._report('search_failed_return', reason='target_lost')
                 return
             if not self._search_acquire_started:
                 try:
