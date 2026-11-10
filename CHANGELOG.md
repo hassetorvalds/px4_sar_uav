@@ -1,3 +1,10 @@
+## [2026-11-10] 静态open-loop文档
+
+- VLM_NAV记录静态open-loop模式、误差1.87m、动态目标需fresh；
+- 331 passed/3 skipped；未新飞行。
+
+---
+
 ## [2026-11-10] 静态目标open-loop acquire
 
 - 新增acquire_require_fresh_target；静态任务设为false；
