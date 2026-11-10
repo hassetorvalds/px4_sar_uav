@@ -1,3 +1,11 @@
+## [2026-11-10] 目标跳变门
+
+- 新检测相对最后确认目标>target_max_jump_m(默认4m)被拒绝；
+- 防止远距DINO跳变被当成当前目标acquire；
+- mission173通过；331 total；未新飞行。
+
+---
+
 ## [2026-11-10] 丢失现场遥测
 
 - acquire_target_lost记录distance/bearing/altitude/target_up；

@@ -120,6 +120,7 @@ class TaskExecutor(Node):
         self.declare_parameter('search_reacquire_scan_deg', 90.0)
         self.declare_parameter('search_reacquire_scan_dwell_s', 1.5)
         self.declare_parameter('search_reacquire_scan_total_s', 18.0)
+        self.declare_parameter('target_max_jump_m', 4.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -197,6 +198,7 @@ class TaskExecutor(Node):
             self.get_parameter('search_reacquire_scan_dwell_s').value)
         self._search_reacquire_total = float(
             self.get_parameter('search_reacquire_scan_total_s').value)
+        self._target_max_jump = float(self.get_parameter('target_max_jump_m').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -323,6 +325,7 @@ class TaskExecutor(Node):
         self._last_target_report_at = 0.0
         self._target_hold_count = 0
         self._target_world = None
+        self._last_confirmed_target = None
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -659,6 +662,7 @@ class TaskExecutor(Node):
         self._target_hold_until = 0.0
         self._target_hold_count = 0
         self._target_world = None
+        self._last_confirmed_target = None
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -746,6 +750,17 @@ class TaskExecutor(Node):
         world = [round(float(msg.pose.position.x), 2),
                  round(float(msg.pose.position.y), 2),
                  round(float(msg.pose.position.z), 2)]
+        if (self._last_confirmed_target is not None
+                and math.hypot(world[0] - self._last_confirmed_target[0],
+                               world[1] - self._last_confirmed_target[1])
+                > self._target_max_jump):
+            self._report('target_jump_rejected',
+                         delta_m=round(math.hypot(
+                             world[0] - self._last_confirmed_target[0],
+                             world[1] - self._last_confirmed_target[1]), 2),
+                         target_world=world,
+                         last_target=self._last_confirmed_target)
+            return
         if self._hold_once_per_step and self._target_hold_count >= 1:
             step = self._current_step()
             if step is not None and step.type == 'search' and \
@@ -759,6 +774,7 @@ class TaskExecutor(Node):
             return
         self._target_hold_count += 1
         self._last_target_report_at = now
+        self._last_confirmed_target = [float(v) for v in world]
         self.get_logger().info(f'确认目标：world={world} → 悬停 {self._target_hold_s:.0f} s')
         self._target_world = [float(v) for v in world]
         self._target_centered_reported = False
@@ -1013,6 +1029,7 @@ class TaskExecutor(Node):
         self._target_hold_until = 0.0
         self._target_hold_count = 0
         self._target_world = None
+        self._last_confirmed_target = None
         self._target_centered_reported = False
         step = self._current_step()
         self._scan_phase = 'dwell'
