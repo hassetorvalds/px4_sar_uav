@@ -1,3 +1,11 @@
+## [2026-11-10] 静态目标open-loop acquire
+
+- 新增acquire_require_fresh_target；静态任务设为false；
+- 检测器中断后不再abort，按最后确认目标完成接近；
+- 到(28.69,29.58)，真实orange误差1.87m；land无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] acquire周期停顿无效
 
 - 每4s停1s仍二次lost；真实重捕获未完成；

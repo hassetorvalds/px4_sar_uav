@@ -1697,6 +1697,8 @@ class TaskExecutor(Node):
             self._run_return_home_forward_only(position)
             return
         acquire = bool(step and step.params.get('acquire_target'))
+        require_fresh = True if step is None else bool(
+            step.params.get('acquire_require_fresh_target', True))
         acquire_standoff = float(
             step.params.get('acquire_standoff_m', self._search_acquire_standoff)) if step else self._search_acquire_standoff
         if acquire and self._target_world is not None and (
@@ -1705,7 +1707,7 @@ class TaskExecutor(Node):
                 self._publish_target(position[0], position[1], self._target_up_lcl())
                 self._stop_velocity()
                 return
-            if (self._search_acquire_started
+            if (require_fresh and self._search_acquire_started
                     and now - self._last_target_report_at
                     > self._search_acquire_lost_timeout):
                 self._search_acquire_loss_count += 1
