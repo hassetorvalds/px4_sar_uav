@@ -123,6 +123,8 @@ class TaskExecutor(Node):
         self.declare_parameter('target_max_jump_m', 4.0)
         self.declare_parameter('target_jump_confirm_frames', 3)
         self.declare_parameter('target_jump_confirm_s', 1.5)
+        self.declare_parameter('acquire_pause_interval_s', 0.0)
+        self.declare_parameter('acquire_pause_s', 1.0)
         self.declare_parameter('findings_radius_by_label', '{}')
         self.declare_parameter('findings_dir', 'logs/findings')
         self.declare_parameter('persist_findings', True)
@@ -205,6 +207,10 @@ class TaskExecutor(Node):
             self.get_parameter('target_jump_confirm_frames').value)
         self._target_jump_confirm_s = float(
             self.get_parameter('target_jump_confirm_s').value)
+        self._acquire_pause_interval = float(
+            self.get_parameter('acquire_pause_interval_s').value)
+        self._acquire_pause_s = float(
+            self.get_parameter('acquire_pause_s').value)
         self._last_valid_left = None
         self._last_valid_right = None
         self._last_valid_left_at = 0.0
@@ -336,6 +342,8 @@ class TaskExecutor(Node):
         self._jump_candidate = None
         self._jump_candidate_count = 0
         self._jump_candidate_at = 0.0
+        self._acquire_last_pause_at = 0.0
+        self._acquire_pause_until = 0.0
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -677,6 +685,8 @@ class TaskExecutor(Node):
         self._jump_candidate = None
         self._jump_candidate_count = 0
         self._jump_candidate_at = 0.0
+        self._acquire_last_pause_at = 0.0
+        self._acquire_pause_until = 0.0
         self._target_centered_reported = False
         self._coverage = None
         self._last_search_end = None
@@ -1068,6 +1078,8 @@ class TaskExecutor(Node):
         self._jump_candidate = None
         self._jump_candidate_count = 0
         self._jump_candidate_at = 0.0
+        self._acquire_last_pause_at = 0.0
+        self._acquire_pause_until = 0.0
         self._target_centered_reported = False
         step = self._current_step()
         self._scan_phase = 'dwell'
@@ -1765,6 +1777,17 @@ class TaskExecutor(Node):
                     self._begin_land()
                     return
                 self._search_acquire_target = goal[:2]
+            if now < self._acquire_pause_until:
+                self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
+                return
+            if (self._acquire_pause_interval > 0.0
+                    and now - self._acquire_last_pause_at
+                    >= self._acquire_pause_interval):
+                self._acquire_last_pause_at = now
+                self._acquire_pause_until = now + self._acquire_pause_s
+                self._report('acquire_pause', seconds=self._acquire_pause_s)
+                self._publish_velocity(0.0, 0.0, self._altitude_hold_vz(position))
+                return
             if math.hypot(self._search_acquire_target[0] - position[0],
                           self._search_acquire_target[1] - position[1]) <= self._arrive_tol:
                 self._report('search_acquire_done',

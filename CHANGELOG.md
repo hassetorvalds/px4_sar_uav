@@ -1,3 +1,11 @@
+## [2026-11-10] acquire周期停顿无效
+
+- 每4s停1s仍二次lost；真实重捕获未完成；
+- pause功能默认关闭，保留opt-in；
+- 331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 放宽检测仍无法真实重捕获
 
 - 检测器重启改reject_clipped=false/area2.0，目标二次确认后仍8s lost count2；
