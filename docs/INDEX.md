@@ -8,6 +8,7 @@
 | 文档 | 作用 |
 |---|---|
 | [README 第 0 节](../README.md#0-现行规划2026-10-26) | 当前优先级、已完成能力、边界 |
+| [VLM_NAV.md](VLM_NAV.md) | VLM 搜索导航架构、已验证条件、限制 |
 | [RESULTS.md](RESULTS.md) | 能力矩阵、真机证据、测试数；A* Path 节点 |
 | [DEMO.md](DEMO.md) | 当前推荐 demo/入口 + 历史步骤 |
 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | 未决/已拍板/已关闭 |
