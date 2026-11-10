@@ -1,3 +1,11 @@
+## [2026-11-10] 修正搜索step参数配置
+
+- acquire_standoff/require_fresh曾误写到hover step，导致静态模式实际未生效；
+- 已移到search step；复测未检测到目标，未完成静态模式飞行验证；
+- 331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 静态open-loop文档
 
 - VLM_NAV记录静态open-loop模式、误差1.87m、动态目标需fresh；
