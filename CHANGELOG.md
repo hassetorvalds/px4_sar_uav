@@ -1,3 +1,11 @@
+## [2026-11-10] standoff4未解决重捕获
+
+- acquire standoff可配为4m；目标二次确认后仍8s丢失count2；
+- search_failed_return返航落地，无碰撞；
+- 真实重捕获未完成；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 真实扫描90°仍失败
 
 - 扫描窗口扩到±90/18s；目标二次确认后仍8s丢失count2；

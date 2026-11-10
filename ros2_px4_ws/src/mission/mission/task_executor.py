@@ -1630,6 +1630,8 @@ class TaskExecutor(Node):
             self._run_return_home_forward_only(position)
             return
         acquire = bool(step and step.params.get('acquire_target'))
+        acquire_standoff = float(
+            step.params.get('acquire_standoff_m', self._search_acquire_standoff)) if step else self._search_acquire_standoff
         if acquire and self._target_world is not None and (
                 self._target_hold_count > self._search_hold_base):
             if self._target_hold_until > now:
@@ -1672,7 +1674,7 @@ class TaskExecutor(Node):
                 try:
                     goal = acquire_goal(
                         position, self._target_world,
-                        standoff_m=self._search_acquire_standoff)
+                        standoff_m=acquire_standoff)
                 except ValueError:
                     self._report('abort', reason='target_coincident')
                     self._begin_land()
@@ -1688,7 +1690,7 @@ class TaskExecutor(Node):
                 try:
                     goal = acquire_goal(
                         position, self._target_world,
-                        standoff_m=self._search_acquire_standoff)
+                        standoff_m=acquire_standoff)
                 except ValueError:
                     self._report('abort', reason='target_coincident')
                     self._begin_land()
