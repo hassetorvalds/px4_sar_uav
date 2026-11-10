@@ -1,3 +1,11 @@
+## [2026-11-10] 放宽检测仍无法真实重捕获
+
+- 检测器重启改reject_clipped=false/area2.0，目标二次确认后仍8s lost count2；
+- search_failed_return→返航/land，无碰撞；真实重捕获未完成；
+- 331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 跳变确认/接受
 
 - 单帧跳变拒绝；同一新位置连续3帧且1.5s→target_jump_accepted；
