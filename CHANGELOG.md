@@ -1,3 +1,11 @@
+## [2026-11-10] 静态open-loop正确验证
+
+- search step正确配置require_fresh=false/standoff4；
+- 检测器停止后无target_lost，acquire到(28.7,29.59)；
+- 真实orange误差1.89m，land无碰撞；331 passed/3 skipped。
+
+---
+
 ## [2026-11-10] 修正搜索step参数配置
 
 - acquire_standoff/require_fresh曾误写到hover step，导致静态模式实际未生效；
